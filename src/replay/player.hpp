@@ -36,6 +36,9 @@ class LvrPlayer : public Player {
     // Before every step the world is replaced by a copy of itself: what a snapshot keeps (a rewind, a quicksave)
     // is then all a replay needs, or the replay differs from its golden.
     bool copies = false;
+    // The same with the world written out and read back into a world made anew for the level (lvr/archive.hpp):
+    // what a save holds must be all a replay needs. A world that can't be read back ends the run with an error.
+    bool saves = false;
 
   private:
     LvrPlayer(Replay replay, assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, SharedGraphics shared,
@@ -45,6 +48,7 @@ class LvrPlayer : public Player {
     void play_step();
 
     Draw draw_;
+    bool save_failed_ = false;  // a world written out didn't read back as it was
     Replay replay_;
     assets::GameFiles files_;  // the scenes the play goes on to are loaded from them
     SharedGraphics shared_;

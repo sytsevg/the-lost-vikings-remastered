@@ -22,7 +22,7 @@ class SwitchedCell : public Entity {
   public:
     void update(World& world) override {
         const bool on = switches_on(world, argument);
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kSwitchedCellAppears);
                 world.animate(*this);
@@ -31,7 +31,7 @@ class SwitchedCell : public Entity {
                 } else {
                     world.play(*this, anim::kSwitchedCellIsOff);
                     acts_as = kOffType;
-                    state_ = State::kOff;
+                    s.state = State::kOff;
                 }
                 break;
             case State::kOff:
@@ -44,7 +44,7 @@ class SwitchedCell : public Entity {
                     world.play(*this, anim::kSwitchedCellGoesOff);
                     acts_as = kOffType;
                     set_cell(world, kOffType);
-                    state_ = State::kOff;
+                    s.state = State::kOff;
                 }
                 break;
         }
@@ -64,10 +64,13 @@ class SwitchedCell : public Entity {
         world.play(*this, anim::kSwitchedCellGoesOn);
         acts_as = tile::kGround;
         set_cell(world, tile::kGround);
-        state_ = State::kOn;
+        s.state = State::kOn;
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // Two cells of the map that are solid while its switches are on (one kind reads the level's second set), and
@@ -77,10 +80,10 @@ class SwitchedCellPair : public Entity {
     void update(World& world) override {
         const std::uint16_t switches = kind == wacky_kind::kSwitchedCells ? world.switches : world.more_switches;
         const bool on = (switches & argument) == argument;
-        if (!first_turn() && on == on_) {
+        if (!first_turn() && on == s.on) {
             return;
         }
-        on_ = on;
+        s.on = on;
         const int column = cell_of(x - 8);
         const int row = cell_of(y);
         for (int i = 0; i < 2; ++i) {
@@ -92,7 +95,10 @@ class SwitchedCellPair : public Entity {
     }
 
   private:
-    bool on_ = false;
+    struct Saved {
+        bool on = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A wall that a switch opens, or a floor that a switch builds: when its switches come on it goes from its cell to
@@ -101,24 +107,24 @@ class SwitchedCellPair : public Entity {
 class OpeningWall : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 stay_active();
                 if (kind == kind::kOpeningWall) {
-                    loud_ = (argument & kLoudBit) != 0;
+                    s.loud = (argument & kLoudBit) != 0;
                     argument &= static_cast<std::uint16_t>(~kLoudBit);
                 }
-                column_ = cell_of(x);
-                row_ = cell_of(y);
+                s.column = cell_of(x);
+                s.row = cell_of(y);
                 world.play(*this, kind == kind::kOpeningWall ? anim::kSwitchedCellsOpeningWaits
                                                              : anim::kSwitchedCellsBuildingWaits);
-                state_ = State::kWaiting;
+                s.state = State::kWaiting;
                 break;
             case State::kWaiting:
                 if (!switches_on(world, argument)) {
                     break;
                 }
-                type_ = type_at(world, column_, row_);
+                s.type = type_at(world, s.column, s.row);
                 change(world);
                 break;
             case State::kGoing: {
@@ -126,9 +132,9 @@ class OpeningWall : public Entity {
                 const std::array<std::array<int, 2>, 4> next{{{ahead, 0}, {-ahead, 0}, {0, -1}, {0, 1}}};
                 bool found = false;
                 for (const auto& [across, down] : next) {
-                    if (type_at(world, column_ + across, row_ + down) == type_) {
-                        column_ += across;
-                        row_ += down;
+                    if (type_at(world, s.column + across, s.row + down) == s.type) {
+                        s.column += across;
+                        s.row += down;
                         push_x += (across * ahead * kCell);
                         push_y += (down * kCell);
                         found = true;
@@ -139,7 +145,7 @@ class OpeningWall : public Entity {
                     gone_for_good(world, *this);
                     return;
                 }
-                if (loud_) {
+                if (s.loud) {
                     world.shake_x = {.amount = 3, .offset = 0, .ticks = 6};
                     rumble(world);
                 }
@@ -164,19 +170,22 @@ class OpeningWall : public Entity {
         if (kind == kind::kBuildingFloor) {
             rumble(world);
         }
-        if (column_ >= 0 && column_ < world.map.width && row_ >= 0 && row_ < world.map.height) {
-            world.map.cells.at((static_cast<std::size_t>(row_) * static_cast<std::size_t>(world.map.width)) +
-                               static_cast<std::size_t>(column_)) =
+        if (s.column >= 0 && s.column < world.map.width && s.row >= 0 && s.row < world.map.height) {
+            world.map.cells.at((static_cast<std::size_t>(s.row) * static_cast<std::size_t>(world.map.width)) +
+                               static_cast<std::size_t>(s.column)) =
                 kind == kind::kOpeningWall ? world.cleared_cell : world.filled_cell;
         }
-        state_ = State::kGoing;
+        s.state = State::kGoing;
     }
 
-    State state_ = State::kStart;
-    bool loud_ = false;
-    int column_ = 0;
-    int row_ = 0;
-    int type_ = 0;  // the tile type of the cells it goes through
+    struct Saved {
+        State state = State::kStart;
+        bool loud = false;
+        int column = 0;
+        int row = 0;
+        int type = 0;  // the tile type of the cells it goes through
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // What differs between the walls that go: the two animations, and whether one stays solid while it goes.
@@ -190,26 +199,26 @@ struct WallThatGoesLooks {
 // wall (open as soon as it starts to go). What differs between them is what the maker is given.
 class WallThatGoes : public Entity {
   public:
-    explicit WallThatGoes(const WallThatGoesLooks& looks) : looks_{looks} {}
+    explicit WallThatGoes(const WallThatGoesLooks& looks) { wall.looks = looks; }
 
     void update(World& world) override {
-        switch (state_) {
+        switch (wall.state) {
             case State::kStart:
-                world.play(*this, looks_.stands);
+                world.play(*this, wall.looks.stands);
                 world.animate(*this);
                 acts_as = tile::kGround;
-                state_ = State::kStanding;
+                wall.state = State::kStanding;
                 return;
             case State::kStanding:
                 if (!switches_on(world, argument)) {
                     return;
                 }
-                world.play(*this, looks_.goes);
-                if (!looks_.solid_while_it_goes) {
+                world.play(*this, wall.looks.goes);
+                if (!wall.looks.solid_while_it_goes) {
                     acts_as = tile::kFree;
                 }
                 never_again(world, *this);
-                state_ = State::kGoing;
+                wall.state = State::kGoing;
                 break;
             case State::kGoing:
                 if (animation_over()) {
@@ -224,8 +233,11 @@ class WallThatGoes : public Entity {
   private:
     enum class State : std::uint8_t { kStart, kStanding, kGoing };
 
-    WallThatGoesLooks looks_;
-    State state_ = State::kStart;
+    struct Saved {
+        WallThatGoesLooks looks;
+        State state = State::kStart;
+    } wall;
+    LVR_SAVES_AS(Entity, wall)
 };
 
 // Egypt's gate: solid until it is gone.
@@ -247,10 +259,10 @@ class WackyWall : public WallThatGoes {
 class Gate : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kGateAppears);
-                stays_open_ = kind == prehistoric_kind::kGateThatStaysOpen;
+                s.stays_open = kind == prehistoric_kind::kGateThatStaysOpen;
                 world.animate(*this);
                 if (switches_on(world, argument)) {
                     world.play(*this, anim::kGateIsOpen);
@@ -261,7 +273,7 @@ class Gate : public Entity {
                 }
                 break;
             case State::kOpen:
-                if (!stays_open_ && !switches_on(world, argument)) {
+                if (!s.stays_open && !switches_on(world, argument)) {
                     world.play(*this, anim::kGateShuts);
                     world.sound(*this, effect::kCreak);
                     shut();
@@ -284,16 +296,19 @@ class Gate : public Entity {
     void open() {
         acts_as = tile::kBody;
         hit_mask &= static_cast<std::uint16_t>(~hit::kStopsArrow);
-        state_ = State::kOpen;
+        s.state = State::kOpen;
     }
     void shut() {
         acts_as = tile::kGround;
         hit_mask |= hit::kStopsArrow;
-        state_ = State::kShut;
+        s.state = State::kShut;
     }
 
-    State state_ = State::kStart;
-    bool stays_open_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool stays_open = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A hatch: open while its switches are on, solid while they are off.
@@ -301,26 +316,26 @@ class Hatch : public Entity {
   public:
     void update(World& world) override {
         const bool on = switches_on(world, argument);
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kHatchAppears);
                 world.animate(*this);
                 world.play(*this, on ? anim::kHatchIsOpen : anim::kHatchIsShut);
                 acts_as = on ? 0 : tile::kGround;
-                state_ = on ? State::kOpen : State::kShut;
+                s.state = on ? State::kOpen : State::kShut;
                 break;
             case State::kOpen:
                 if (!on) {
                     world.play(*this, anim::kHatchShuts);
                     acts_as = tile::kGround;
-                    state_ = State::kShut;
+                    s.state = State::kShut;
                 }
                 break;
             case State::kShut:
                 if (on) {
                     world.play(*this, anim::kHatchOpens);
                     acts_as = tile::kFree;
-                    state_ = State::kOpen;
+                    s.state = State::kOpen;
                 }
                 break;
         }
@@ -330,7 +345,10 @@ class Hatch : public Entity {
   private:
     enum class State : std::uint8_t { kStart, kOpen, kShut };
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A door. One kind opens while a living Viking is near it; the other while its switches are on. Closed, it is a
@@ -338,7 +356,7 @@ class Hatch : public Entity {
 class Door : public Entity {
   public:
     void update(World& world) override {
-        if (state_ == State::kStart) {
+        if (s.state == State::kStart) {
             world.play(*this, anim::kDoorFrame);
             world.animate(*this);
             if (kind == kind::kSwitchedDoor && wanted_open(world)) {
@@ -348,7 +366,7 @@ class Door : public Entity {
             world.play(*this, anim::kDoorStandsClosed);
             return stay(world, false);
         }
-        const bool open = state_ == State::kOpen;
+        const bool open = s.state == State::kOpen;
         if (wanted_open(world) != open) {
             world.play(*this, open ? anim::kDoorCloses : anim::kDoorOpens);
             world.sound(*this, effect::kDoor);
@@ -372,25 +390,28 @@ class Door : public Entity {
     }
 
     void stay(World& world, bool open) {
-        state_ = open ? State::kOpen : State::kClosed;
+        s.state = open ? State::kOpen : State::kClosed;
         acts_as = open ? 0 : tile::kGround;
         hit_mask =
             static_cast<std::uint16_t>(open ? (hit_mask & ~unsigned{hit::kStopsArrow}) : (hit_mask | hit::kStopsArrow));
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A plug: when its switches come on, the cells above and below it open, and it is gone.
 class Plug : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kPlugStands);
                 world.animate(*this);
-                state_ = State::kStanding;
+                s.state = State::kStanding;
                 return;
             case State::kStanding: {
                 if (!switches_on(world, argument)) {
@@ -405,7 +426,7 @@ class Plug : public Entity {
                     }
                 }
                 never_again(world, *this);
-                state_ = State::kGoing;
+                s.state = State::kGoing;
                 break;
             }
             case State::kGoing:
@@ -421,19 +442,22 @@ class Plug : public Entity {
   private:
     enum class State : std::uint8_t { kStart, kStanding, kGoing };
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A floor of spikes over six cells: a Viking on it is impaled. When its switches come on it folds away.
 class SpikedFloor : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kSpikedFloorLooks);
                 world.animate(*this);
                 acts_as = tile::kSpikes;
-                state_ = State::kOut;
+                s.state = State::kOut;
                 return;
             case State::kOut: {
                 for (const int on_it : vikings_in_row(world, *this, Row::kAbove)) {
@@ -452,7 +476,7 @@ class SpikedFloor : public Entity {
                     }
                 }
                 world.play(*this, anim::kSpikedFloorFoldsAway);
-                state_ = State::kFolding;
+                s.state = State::kFolding;
                 break;
             }
             case State::kFolding:
@@ -468,7 +492,10 @@ class SpikedFloor : public Entity {
   private:
     enum class State : std::uint8_t { kStart, kOut, kFolding };
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A bridge that stands on end, solid, until its switches are on; then it falls over, to the side it faces, and
@@ -476,7 +503,7 @@ class SpikedFloor : public Entity {
 class FallingBridge : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return at_start(world);
             case State::kStanding:
@@ -494,7 +521,7 @@ class FallingBridge : public Entity {
     void at_start(World& world) {
         world.play(*this, anim::kFallingBridgeAppears);
         world.animate(*this);
-        stays_ = (argument & kTopBit) != 0;
+        s.stays = (argument & kTopBit) != 0;
         argument &= ~kTopBit;
         acts_as = tile::kGround;
         if (switches_on(world, argument)) {
@@ -507,7 +534,7 @@ class FallingBridge : public Entity {
         world.animate(*this);
         set_upright_cells(world, tile::kGround);
         box = {.left = x, .top = y, .right = x, .bottom = y};
-        state_ = State::kStanding;
+        s.state = State::kStanding;
         world.animate(*this);
     }
     void when_standing(World& world) {
@@ -517,7 +544,7 @@ class FallingBridge : public Entity {
         }
         set_upright_cells(world, tile::kFree);
         world.play(*this, anim::kFallingBridgeFalls);
-        state_ = State::kFalling;
+        s.state = State::kFalling;
         world.animate(*this);
     }
 
@@ -545,22 +572,25 @@ class FallingBridge : public Entity {
         const int row = cell_of(y);
         for (int along = 0; along < kCells; ++along) {
             if (Cell* cell = world.map.cell(column + along, row)) {
-                if (stays_) {
+                if (s.stays) {
                     cell->tile_type = tile::kGround;
                 } else {
                     *cell = Cell{.metatile = 1, .tile_type = tile::kGround};
                 }
             }
         }
-        if (stays_) {
-            state_ = State::kLying;
+        if (s.stays) {
+            s.state = State::kLying;
             return;
         }
         gone_for_good(world, *this);
     }
 
-    State state_ = State::kStart;
-    bool stays_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool stays = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A bridge of light, four cells wide: there while its switches are on. When they go off (or were off from the
@@ -568,7 +598,7 @@ class FallingBridge : public Entity {
 class LightBridge : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kLightBridgeAppears);
                 world.animate(*this);
@@ -578,7 +608,7 @@ class LightBridge : public Entity {
                 acts_as = tile::kRotatingSpikes;
                 world.play(*this, anim::kLightBridgeShines);
                 world.animate(*this);
-                state_ = State::kOn;
+                s.state = State::kOn;
                 return;
             case State::kOn: {
                 if (switches_on(world, argument)) {
@@ -606,22 +636,25 @@ class LightBridge : public Entity {
         acts_as = tile::kGround;
         world.play(*this, anim::kLightBridgeSolid);
         world.animate(*this);
-        state_ = State::kClosed;
+        s.state = State::kClosed;
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A deadly surface (tile type 12) that drains away for good when its switches come on.
 class DeadlyPool : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kDeadlyPoolLooks);
                 world.animate(*this);
                 acts_as = tile::kLava;
-                state_ = State::kFull;
+                s.state = State::kFull;
                 return;
             case State::kFull:
                 if (!switches_on(world, argument)) {
@@ -631,7 +664,7 @@ class DeadlyPool : public Entity {
                 world.sound(*this, effect::kPoolDrains);
                 world.play(*this, anim::kDeadlyPoolDrains);
                 never_again(world, *this);
-                state_ = State::kDraining;
+                s.state = State::kDraining;
                 break;
             case State::kDraining:
                 if (animation_over()) {
@@ -646,7 +679,10 @@ class DeadlyPool : public Entity {
   private:
     enum class State : std::uint8_t { kStart, kFull, kDraining };
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // An electric barrier across a passage, on while its switches are. A Viking that touches it is electrocuted.
@@ -655,7 +691,7 @@ class DeadlyPool : public Entity {
 class Barrier : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return at_start(world);
             case State::kOn:
@@ -677,7 +713,7 @@ class Barrier : public Entity {
             world.play(*this, kind == kind::kElectricField ? anim::kBarrierFieldHumming : anim::kBarrierHumming);
         }
         acts_as = tile::kBarrier;
-        state_ = State::kOn;
+        s.state = State::kOn;
         if (kind != kind::kUnseenBarrier) {
             world.animate(*this);
         }
@@ -697,7 +733,7 @@ class Barrier : public Entity {
                 free_cells(world);
             }
             gone(world);
-            state_ = State::kFading;
+            s.state = State::kFading;
         }
         if (kind != kind::kUnseenBarrier) {
             world.animate(*this);
@@ -711,7 +747,7 @@ class Barrier : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        return state_ == State::kOn
+        return s.state == State::kOn
                    ? Looks{touching_any(hit::kVikingInField, &Saw::viking, kind != kind::kElectricField)}
                    : Looks{};
     }
@@ -738,7 +774,10 @@ class Barrier : public Entity {
         }
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A beam that is there while its switches are on: a Viking who touches it is electrocuted (one kind: anything
@@ -747,7 +786,7 @@ class SwitchedBeam : public Entity {
   public:
     void update(World& world) override {
         const bool wanted = switches_on(world, argument);
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 if (wanted) {
                     turn_on(world);
@@ -763,7 +802,7 @@ class SwitchedBeam : public Entity {
                 if (!wanted) {
                     world.play(*this,
                                kind == kind::kSwitchedBeam ? anim::kSwitchedBeamFades : anim::kSwitchedBeamFadesToo);
-                    state_ = State::kFading;
+                    s.state = State::kFading;
                 }
                 break;
             case State::kFading:
@@ -780,7 +819,7 @@ class SwitchedBeam : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        return state_ == State::kOn
+        return s.state == State::kOn
                    ? Looks{touching_any(hit::kVikingInField, &Saw::other, kind == kind::kOtherSwitchedBeam)}
                    : Looks{};
     }
@@ -792,15 +831,18 @@ class SwitchedBeam : public Entity {
         world.show_pieces(*this);
         world.play(*this, kind == kind::kSwitchedBeam ? anim::kSwitchedBeamShines : anim::kSwitchedBeamShinesToo);
         acts_as = tile::kBarrier;
-        state_ = State::kOn;
+        s.state = State::kOn;
     }
     void turn_off(World& world) {
         acts_as = tile::kFree;
         world.hide_pieces(*this);
-        state_ = State::kOff;
+        s.state = State::kOff;
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A place without gravity, on while its switches are: a Viking in it is drawn upwards, and the first of the level's
@@ -811,7 +853,7 @@ class Weightlessness : public Entity {
         if (first_turn()) {
             place(static_cast<std::uint8_t>(argument & kLowByte));
             argument &= kHighByte;
-        } else if (on_) {
+        } else if (s.on) {
             stay_active(false);
             if (wanted(world)) {
                 for (const int viking : {1, 0, 2}) {
@@ -822,11 +864,11 @@ class Weightlessness : public Entity {
         } else if (!wanted(world)) {
             return;
         }
-        on_ = wanted(world);
+        s.on = wanted(world);
         if (!world.cycles.empty()) {
-            world.cycles.front().running = on_;
+            world.cycles.front().running = s.on;
         }
-        hit_class = on_ ? hit_class::kAirStream : 0;
+        hit_class = s.on ? hit_class::kAirStream : 0;
     }
 
   private:
@@ -883,7 +925,10 @@ class Weightlessness : public Entity {
         viking->speed_y -= kPull;
     }
 
-    bool on_ = false;
+    struct Saved {
+        bool on = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A thing that, once its switches (its argument's low byte) are on, plays its animation through and then turns
@@ -891,32 +936,32 @@ class Weightlessness : public Entity {
 class SwitchRelay : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kSwitchRelayAppears);
                 world.animate(*this);
-                turns_on_ = argument & kHighByte;
+                s.turns_on = argument & kHighByte;
                 argument &= kLowByte;
                 if (switches_on(world, argument)) {
                     world.play(*this, anim::kSwitchRelayIsDone);
                     world.animate(*this);
-                    state_ = State::kDone;
+                    s.state = State::kDone;
                     return;
                 }
                 world.play(*this, anim::kSwitchRelayWaits);
-                state_ = State::kWaiting;
+                s.state = State::kWaiting;
                 break;
             case State::kWaiting:
                 if (switches_on(world, argument)) {
                     world.sound(*this, effect::kWorks);
                     world.play(*this, anim::kSwitchRelayGoes);
-                    state_ = State::kGoing;
+                    s.state = State::kGoing;
                 }
                 break;
             case State::kGoing:
                 if (animation_over()) {
-                    world.switches |= turns_on_;
-                    state_ = State::kDone;
+                    world.switches |= s.turns_on;
+                    s.state = State::kDone;
                     return;
                 }
                 break;
@@ -929,8 +974,11 @@ class SwitchRelay : public Entity {
   private:
     enum class State : std::uint8_t { kStart, kWaiting, kGoing, kDone };
 
-    State state_ = State::kStart;
-    std::uint16_t turns_on_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        std::uint16_t turns_on = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // An unseen thing that turns on four switches in turn (bits 8 to 11, those of them its argument has), ten ticks
@@ -941,22 +989,25 @@ class SwitchSequence : public Entity {
         if (first_turn()) {
             count_down();
             world.switches &= static_cast<std::uint16_t>(~argument);
-            bit_ = kLastSwitch;
+            s.bit = kLastSwitch;
         } else {
             if (countdown != 0) {
                 return;
             }
             world.switches &= static_cast<std::uint16_t>(~argument);
-            bit_ = bit_ == kLastSwitch ? kFirstSwitch : static_cast<std::uint16_t>(bit_ << 1U);
+            s.bit = s.bit == kLastSwitch ? kFirstSwitch : static_cast<std::uint16_t>(s.bit << 1U);
         }
-        world.switches |= static_cast<std::uint16_t>(bit_ & argument);
+        world.switches |= static_cast<std::uint16_t>(s.bit & argument);
         countdown = 10;
     }
 
   private:
     static constexpr std::uint16_t kFirstSwitch = 0x0100;  // in World::switches: it lights these four in turn
     static constexpr std::uint16_t kLastSwitch = 0x0800;
-    std::uint16_t bit_ = 0;
+    struct Saved {
+        std::uint16_t bit = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // The ground shakes every so often (one of four waits, at random), until its switches are on.
@@ -992,24 +1043,24 @@ class Quake : public Entity {
 class Dispenser : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
-                item_ = argument & kLowByte;
+                s.item = argument & kLowByte;
                 argument &= kHighByte;
-                state_ = State::kWaiting;
+                s.state = State::kWaiting;
                 return;
             case State::kWaiting:
                 if (switches_on(world, argument)) {
                     world.sound(*this, effect::kDispenserWorks);
                     count_down_from(30);
-                    state_ = State::kWorking;
+                    s.state = State::kWorking;
                 }
                 return;
             case State::kWorking:
                 if (countdown != 0) {
                     return;
                 }
-                world.spawn(*this, kind::kItem, x, y, bits(item_, item::kFalling), entity_flag::kAlwaysActive);
+                world.spawn(*this, kind::kItem, x, y, bits(s.item, item::kFalling), entity_flag::kAlwaysActive);
                 gone_for_good(world, *this);
                 return;
         }
@@ -1018,8 +1069,11 @@ class Dispenser : public Entity {
   private:
     enum class State : std::uint8_t { kStart, kWaiting, kWorking };
 
-    State state_ = State::kStart;
-    std::uint16_t item_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        std::uint16_t item = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 }  // namespace

@@ -13,7 +13,7 @@ void Viking::jump(World& world) {
 }
 
 void Viking::charge(World& world) {
-    doing_ = Doing::kCharging;
+    s.doing = Doing::kCharging;
     world.play(*this, anim::kErikCharges);
     charging(world);
 }
@@ -34,7 +34,7 @@ void Viking::charging_after_acting(World& world) {
 void Viking::charging_after_item(World& world) {
     // He charges on until the charge's animation ends, or the key of the way he faces is let go.
     if (!animation_waits() || (world.held & (facing_left() ? key::kLeft : key::kRight)) == 0) {
-        doing_ = Doing::kStoppingCharge;
+        s.doing = Doing::kStoppingCharge;
         world.play(*this, anim::kErikStopsCharging);
         return on_his_feet(world);
     }
@@ -42,8 +42,8 @@ void Viking::charging_after_item(World& world) {
 }
 
 void Viking::head_hits_enemy(World& world) {
-    target = touched_;
-    if (Entity* enemy = world.at(touched_)) {
+    target = s.touched;
+    if (Entity* enemy = world.at(s.touched)) {
         harm(*enemy, message::kHeadButt, 2, facing_left());
         // The roller, in four frames of his (13 to 16), shows no spark.
         const bool shielded = enemy->kind == prehistoric_kind::kRoller && enemy->sprite.packed_frame >= 13 &&
@@ -65,7 +65,7 @@ void Viking::head_hits_wall(World& world, bool breakable) {
 }
 
 void Viking::head_hits(World& world) {
-    doing_ = Doing::kHeadHit;
+    s.doing = Doing::kHeadHit;
     world.shake_x = {.amount = 1, .offset = 0, .ticks = 2};
     speed_x = 0;
     world.play(*this, anim::kErikHitsHisHead);
@@ -94,7 +94,7 @@ void Viking::head_hit_after_item(World& world) {
     }
     // Thrown back, up and away from it.
     world.play(*this, anim::kErikBouncesBack);
-    doing_ = Doing::kBouncing;
+    s.doing = Doing::kBouncing;
     speed_x = px(-3.5);
     speed_y = px(-4);
     set_falling(true);
@@ -118,7 +118,7 @@ void Viking::bouncing_after_acting(World& world) {
 }
 
 void Viking::bounce_again(World& world) {
-    doing_ = Doing::kBouncingAgain;
+    s.doing = Doing::kBouncingAgain;
     world.play(*this, anim::kErikBouncesAgain);
     speed_y = px(-3);
     set_falling(true);
@@ -129,7 +129,7 @@ void Viking::bounce_again(World& world) {
 }
 
 void Viking::get_up(World& world) {
-    doing_ = Doing::kGettingUp;
+    s.doing = Doing::kGettingUp;
     sound(world, effect::kBackOnHisFeet);
     world.play(*this, anim::kErikGetsUp);
     speed_x = speed_y = 0;
@@ -140,7 +140,7 @@ void Viking::get_up(World& world) {
 void Viking::on_his_feet(World& world) {
     keep_on_ground();
     world.animate(*this);
-    wait(doing_ == Doing::kGettingUp ? At::kGettingUp : At::kStoppingCharge, {Test::kWall, Test::kDeadly});
+    wait(s.doing == Doing::kGettingUp ? At::kGettingUp : At::kStoppingCharge, {Test::kWall, Test::kDeadly});
 }
 
 void Viking::on_his_feet_after_acting(World& world) {
@@ -153,13 +153,13 @@ void Viking::on_his_feet_after_acting(World& world) {
 // --- Olaf: the shield ---
 
 void Viking::turn_shield(World& world) {
-    if (shield_up_) {
+    if (s.shield_up) {
         lower_shield(world);
     } else {
-        shield_up_ = true;
+        s.shield_up = true;
         if (sprite.packed_frame < kOlafRaises.size()) {
             world.play(*this, kOlafRaises.at(sprite.packed_frame));
-        } else if (doing_ != Doing::kPushing) {
+        } else if (s.doing != Doing::kPushing) {
             world.play(*this, anim::kOlafStopsShieldUp);
         }
     }
@@ -170,18 +170,18 @@ void Viking::turn_shield(World& world) {
 }
 
 void Viking::lower_shield(const World& world) {
-    shield_up_ = false;
+    s.shield_up = false;
     const std::size_t frame = sprite.packed_frame;
     if (frame >= kOlafRaises.size() && frame < kOlafRaises.size() + kOlafLowers.size()) {
         world.play(*this, kOlafLowers.at(frame - kOlafRaises.size()));
-    } else if (doing_ != Doing::kPushing) {
+    } else if (s.doing != Doing::kPushing) {
         world.play(*this, looks().stops);
     }
 }
 
 void Viking::hang(World& world) {
     message = 0;
-    doing_ = Doing::kHanging;
+    s.doing = Doing::kHanging;
     world.play(*this, anim::kOlafGlides);
     world.animate(*this);
     wait(At::kHanging, {Test::kWall});
@@ -190,7 +190,7 @@ void Viking::hang(World& world) {
 void Viking::hanging(World& world) {
     if (played(world)) {
         if ((world.pressed & key::kFOrD) != 0) {
-            doing_ = Doing::kOther;
+            s.doing = Doing::kOther;
             return turn_shield(world);
         }
         if ((world.pressed & key::kE) != 0 && use_item(world)) {
@@ -213,10 +213,10 @@ void Viking::hanging_after_item(World& world) {
 // --- Baleog: the sword and the bow ---
 
 void Viking::swing(World& world) {
-    swing_ = world.random() < 30000 ? 0 : 1;
-    world.play(*this, kBaleogSwings.at(swing_));
-    doing_ = Doing::kStanding;
-    if (swing_ == 1) {
+    s.swing = world.random() < 30000 ? 0 : 1;
+    world.play(*this, kBaleogSwings.at(s.swing));
+    s.doing = Doing::kStanding;
+    if (s.swing == 1) {
         set_falling(false);
         speed_y = 0;
     }
@@ -227,7 +227,7 @@ void Viking::swing(World& world) {
 
 void Viking::draw_bow(World& world) {
     world.play(*this, anim::kBaleogDrawsBow);
-    doing_ = Doing::kOther;
+    s.doing = Doing::kOther;
     speed_x = speed_y = 0;
     set_falling(false);
     baleog_waits(world, At::kDrawingBow);
@@ -239,7 +239,7 @@ void Viking::baleog_waits(World& world, At at) {
 }
 
 void Viking::baleog_goes_on(World& world) {
-    switch (at_) {
+    switch (s.at) {
         case At::kDrawingBow:
             return baleog_waits(world, animation_waits() ? At::kDrawingBow : At::kAiming);
         case At::kAiming:
@@ -248,7 +248,7 @@ void Viking::baleog_goes_on(World& world) {
             }
             world.play(*this, anim::kBaleogLooses);
             sound(world, effect::kArrowLoosed);
-            world.spawn(*this, has_fire_arrows_ ? kind::kFireArrow : kind::kArrow, x, y - 4);
+            world.spawn(*this, s.has_fire_arrows ? kind::kFireArrow : kind::kArrow, x, y - 4);
             return baleog_waits(world, At::kLoosing);
         case At::kLoosing:
             if (animation_waits()) {
@@ -260,7 +260,7 @@ void Viking::baleog_goes_on(World& world) {
             if (animation_waits()) {
                 return baleog_waits(world, At::kSwinging);
             }
-            world.play(*this, kBaleogSwingsOn.at(swing_));
+            world.play(*this, kBaleogSwingsOn.at(s.swing));
             return baleog_waits(world, At::kSwingingOn);
         default:
             if (animation_waits()) {
@@ -272,7 +272,7 @@ void Viking::baleog_goes_on(World& world) {
 
 // A turn of what only one of them can do: Erik's charge and its ends, Baleog's bow and sword, Olaf blown back.
 void Viking::resume_ability(World& world) {
-    switch (at_) {
+    switch (s.at) {
         case At::kCharging:
             if (found(Test::kTouchesEnemy)) {
                 return head_hits_enemy(world);
@@ -313,8 +313,8 @@ void Viking::resume_ability(World& world) {
                 speed_x = 0;
             }
             if (landed() || found(Test::kFloorOrCeiling)) {
-                if (at_ == At::kBouncingDown) {
-                    return doing_ == Doing::kBouncing ? bounce_again(world) : get_up(world);
+                if (s.at == At::kBouncingDown) {
+                    return s.doing == Doing::kBouncing ? bounce_again(world) : get_up(world);
                 }
                 speed_y = 0;
             }

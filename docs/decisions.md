@@ -57,6 +57,16 @@ comments and other docs points here). A decision that was later replaced is not 
   place the original's script waits. `update(World&)` is one tick's turn. No coroutines.
 - The engine's services (tile tests, moving, gravity, creating entities, the camera) belong to `World`. A snapshot
   copies the world.
+- **A kind keeps everything it remembers in one plain struct nested in its class**, `Saved`, as its member `s`
+  (`s.timer`, `s.state`), with `LVR_SAVES(Base)` after it. `Entity` and `World` have their plain data the same
+  way, in a struct they are derived from (`EntityState`, `WorldState`), so that the code using them reads as
+  before. That is what lets the game's state be written out without naming any field (ADR-0020): adding a field
+  to a kind is adding it to its struct. A kind others are derived from names its member otherwise (`enemy`,
+  `shot`, `wall`). Entities refer to each other by slot number, never by pointer. `scripts/kind_state.py`, in
+  the checks, holds every kind to it, and `LVR_SAVES` asserts at compile time that a `Saved` is standard-layout
+  and trivially copyable (no vectors or strings: a list is a fixed array with a count), asks for no more
+  alignment than a 64-bit number, and is the only member its class adds. How its fields are padded in memory
+  doesn't matter between platforms, since they are never written as memory (ADR-0020).
 - Kept on purpose under Vanilla rules: 20 entity slots, a new entity takes the lowest free one, update and draw in
   slot order, and the 128 sprite pieces in three pools with the original's allocation, since those decide what is
   drawn over what.
@@ -66,6 +76,28 @@ comments and other docs points here). A decision that was later replaced is not 
   what it looks for (`stopped_by(walls())`, `lands_on(ground())`, `touching_a_viking()`); the engine does the
   looking after the tick's move, in that order, and the kind reads the answers in `saw` at its next turn.
 - Which tests run, and in which order, is behaviour: the list is part of the kind.
+
+### ADR-0020: The game's state can be written out and read back
+- **Why:** a quicksave in a file now; later, in co-op over a network, the snapshots a server sends its clients
+  to keep them in step. So it is every kind's state that is written, not the keys that led to it.
+- **How** (`archive.hpp`): a plain struct is taken apart field by field (glaze's reflection of aggregates, by
+  position, no names), and each field written with a fixed width, the low byte first: a bool as a byte, an enum
+  as its number, arrays and vectors element by element. Nothing is written as the memory it sits in, so the
+  bytes are the same on every platform. C++26's reflection would do this for any class; the compiler in use
+  doesn't have it, hence the plain structs (ADR-0018).
+- **A world** is its `WorldState`, then each slot's entity: its kind, and what it wrote, each with its length.
+  It is read into a world made anew for the same level, which has the level's own data and makes the kinds. A
+  part whose length is another than this engine would write (a kind remembers more or less by now) is refused.
+- **One version stamp**, `kStateVersion`: the fields have no names, so what was written by an engine whose state
+  was laid out otherwise can't be read by this one. It is the first thing in a quicksave's file, and what two
+  machines will tell each other before a snapshot is sent; another version is refused with a message. It is
+  raised by hand when a `Saved`, `EntityState` or `WorldState` changes, and a test that pins the written size
+  of four worlds says when that was forgotten.
+- **That nothing is missing** is checked on the replays: `scripts/saves.sh` (`lv-replay --saves`) writes the
+  world out and reads it back before every step, and all 119 must still match their goldens.
+- A world is 25 to 40 KB written out under Vanilla rules and 70 to 90 KB under Remaster rules (most of it the
+  larger layer of sprite pieces). Fine for a file; a snapshot sent many times a second will want only what
+  changed.
 
 ## Data
 
@@ -206,8 +238,8 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   everything is checked on the replays: `lv-replay --copies` replaces the world by a copy of itself before
   every step, and all 119 still match their goldens.
 - **Quicksave** (built), only with the game's own cheat on (its password typed at the title, or `--cheat`): F7
-  keeps the play as it is, in a level; F8 brings it back from wherever the game is by then. One, kept until the
-  game is closed.
+  keeps the play as it is, in a level; F8 brings it back from wherever the game is by then, in this run or a
+  later one. One.
 - **No autosave and no level select** (taken out of M7): the passwords are how a level is reached, under both
   rules.
 - **The player's profile** (built): a folder of what is the player's and not the simulation's, kept from one
@@ -215,7 +247,9 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   where to look (not a folder somewhere in the user's home); or `--profile DIR`. In it so far `minimap.txt`: what the minimap has seen of each level, as text (runs of seen
   and unseen pixels). It is read at the start and written when a scene is loaded and when the game is closed; a
   file that can't be read is said and written over.
-- **For later:** the quicksave written to a file in the profile.
+- **The quicksave is a file in the profile too** (`quicksave.bin`, ADR-0020): written when F7 keeps the play,
+  read when the game starts. It begins with the state's version (ADR-0020) and ends with a sum over the world's
+  bytes: a file of another version, or a damaged one, is said and left alone.
 - **An unlimited active area** is not built: one player doesn't need it. It comes back with co-op (ADR-0012),
   where several views share one world: either the active area is every view's together, or everything runs.
 

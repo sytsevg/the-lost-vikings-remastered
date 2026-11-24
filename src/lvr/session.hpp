@@ -88,6 +88,9 @@ class Session {
     // the profile is used all the same, and the file that couldn't be read is written over at the next save.
     std::expected<void, std::string> use_profile(const std::filesystem::path& folder);
     std::expected<void, std::string> save_profile() const;
+    // The quicksave as the profile's file: written when one is made, read when the profile is taken into use.
+    std::expected<void, std::string> write_quicksave() const;
+    std::expected<void, std::string> read_quicksave();
     void toggle_minimap() noexcept {
         if (!minimap_.pixels.empty()) {  // only where there is one: in a level
             minimap_on_ = !minimap_on_;

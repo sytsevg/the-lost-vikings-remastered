@@ -325,10 +325,10 @@ inline void hit_viking_touched(World& world, Entity& shot, int spark_x) {
 class StraightShot : public Entity {
   public:
     void update(World& world) final {
-        switch (state_) {
+        switch (shot.state) {
             case State::kStart:
                 fired(world);
-                state_ = State::kFlying;
+                shot.state = State::kFlying;
                 break;
             case State::kFlying:
                 if (wall_stops_it_first() && saw.wall) {
@@ -355,9 +355,9 @@ class StraightShot : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const final {
-        return state_ == State::kFlying ? Looks{stopped_by(solid()), touching_any(hit::kShield, &Saw::shield),
-                                                touching_any(hit::kViking, &Saw::viking)}
-                                        : Looks{};
+        return shot.state == State::kFlying ? Looks{stopped_by(solid()), touching_any(hit::kShield, &Saw::shield),
+                                                    touching_any(hit::kViking, &Saw::viking)}
+                                            : Looks{};
     }
 
   protected:
@@ -369,18 +369,23 @@ class StraightShot : public Entity {
 
     void burst(World& world) {
         bursting(world);
-        state_ = State::kEnding;
+        shot.state = State::kEnding;
         world.animate(*this);
     }
     // It ends with an animation, without the rest of bursting. The turn goes on.
     void end_with(World& world, Animation animation) {
         world.play(*this, animation);
-        state_ = State::kEnding;
+        shot.state = State::kEnding;
     }
 
   private:
     enum class State : std::uint8_t { kStart, kFlying, kEnding };
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } shot;
+
+  protected:
+    LVR_SAVES_AS(Entity, shot)
 };
 
 }  // namespace lvr

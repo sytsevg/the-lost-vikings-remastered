@@ -78,7 +78,7 @@ namespace {
 class LevelStart : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kBegin:
                 begin(world);
                 return;
@@ -149,12 +149,12 @@ class LevelStart : public Entity {
         }
         // Olaf's boxes have their tail on the side he faces away from.
         const Entity* olaf = world.entities[slot::kOlaf].get();
-        olaf_anchor_ = olaf != nullptr && olaf->facing_left() ? 2 : kTailBottomLeft;
+        s.olaf_anchor = olaf != nullptr && olaf->facing_left() ? 2 : kTailBottomLeft;
         if (comes_in) {
             world.vikings_arriving = 7;
-            state_ = State::kArriving;
+            s.state = State::kArriving;
         } else {
-            state_ = State::kOpening;
+            s.state = State::kOpening;
         }
     }
 
@@ -171,7 +171,7 @@ class LevelStart : public Entity {
             for (int viking = 0; viking < kVikingSlots; ++viking) {
                 world.tell(viking, message::kConversation);
             }
-            state_ = State::kBanter;
+            s.state = State::kBanter;
             return;
         }
         // The first level of each world has an opening, and the level the Vikings find their way home in.
@@ -184,7 +184,7 @@ class LevelStart : public Entity {
         for (int viking = 0; viking < kVikingSlots; ++viking) {
             world.tell(viking, message::kConversation);
         }
-        state_ = State::kFirstLevel;
+        s.state = State::kFirstLevel;
     }
 
     // What they say after losing again: one of a few conversations, picked at random (who speaks: 0 Erik, 1
@@ -208,7 +208,7 @@ class LevelStart : public Entity {
                 break;
             }
             if (said.who == talk::Who::kBaleog || said.who == talk::Who::kOlaf) {
-                said.anchor = olaf_anchor_;
+                said.anchor = s.olaf_anchor;
             }
             speak(world, said);
         }
@@ -222,43 +222,46 @@ class LevelStart : public Entity {
             done(world);
         } else {  // the last level: the Vikings find the way home, in three parts
             speak(world, talk::kWayHomeFirst);
-            state_ = State::kSecondPart;
+            s.state = State::kSecondPart;
         }
     }
 
     void later_part(World& world) {
-        if (state_ == State::kSecondPart) {
+        if (s.state == State::kSecondPart) {
             speak(world, talk::kWayHomeSecond);
-            state_ = State::kThirdPart;
+            s.state = State::kThirdPart;
         } else {
             speak(world, talk::kWayHomeThird);
             done(world);
         }
     }
 
-    State state_ = State::kBegin;
-    int olaf_anchor_ = kTailBottomLeft;
+    struct Saved {
+        State state = State::kBegin;
+        int olaf_anchor = kTailBottomLeft;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A hint box: a Viking who asks it (the action key beside it) is shown its hint; the kind that greets also shows
 // it the first time the Viking being played touches it.
 class Hint : public Entity {
   public:
-    explicit Hint(bool greets) : greets_{greets} {}
+    explicit Hint(bool greets) { s.greets = greets; }
 
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 acts_as = tile::kThing;
                 world.play(*this, anim::kHintStands);
                 world.animate(*this);
-                state_ = State::kAnswering;
-                if (greets_) {
+                s.state = State::kAnswering;
+                if (s.greets) {
                     // Its argument is the hint's number and, above that, its bit among the hints seen.
-                    seen_bit_ = argument & kHighByte;
+                    s.seen_bit = argument & kHighByte;
                     argument &= kLowByte;
-                    if ((world.hints_seen & seen_bit_) != seen_bit_) {
-                        state_ = State::kGreeting;
+                    if ((world.hints_seen & s.seen_bit) != s.seen_bit) {
+                        s.state = State::kGreeting;
                     }
                 }
                 return;
@@ -278,7 +281,7 @@ class Hint : public Entity {
                 return;
         }
     }
-    Looks looks_for() const override { return state_ == State::kGreeting ? Looks{touching_a_viking()} : Looks{}; }
+    Looks looks_for() const override { return s.state == State::kGreeting ? Looks{touching_a_viking()} : Looks{}; }
 
   private:
     enum class State : std::uint8_t { kStart, kGreeting, kAnswering };
@@ -298,14 +301,17 @@ class Hint : public Entity {
     void show(World& world) {
         world.sound(*this, effect::kTalk);
         world.speak_at_point(text_colour::kErik, kFirstHintText + argument, tail::kNone, x, y - kAboveIt);
-        world.hints_seen |= seen_bit_;
+        world.hints_seen |= s.seen_bit;
         message = 0;
-        state_ = State::kAnswering;
+        s.state = State::kAnswering;
     }
 
-    bool greets_;
-    State state_ = State::kStart;
-    std::uint16_t seen_bit_ = 0;
+    struct Saved {
+        bool greets;
+        State state = State::kStart;
+        std::uint16_t seen_bit = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A stop on the ship's last level (kind 56), unseen. When the three Vikings are all within 32 pixels of it they
@@ -314,9 +320,9 @@ class Hint : public Entity {
 class ShipStop : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
-                state_ = State::kWaiting;
+                s.state = State::kWaiting;
                 return;
             case State::kWaiting:
                 return when_waiting(world);
@@ -335,28 +341,28 @@ class ShipStop : public Entity {
         }
     }
     void when_waiting(World& world) {
-        if (!all_vikings_here(world, *this, missing_)) {
+        if (!all_vikings_here(world, *this, s.missing)) {
             return;
         }
-        if (missing_) {
+        if (s.missing) {
             world.next_scene = scene::kGameOver;
             world.leave = true;
             return;
         }
         stay_active();
         tell_all(world, message::kConversation);
-        state_ = State::kTalking;
+        s.state = State::kTalking;
     }
     void when_talking(World& world) {
         world.sound(*this, effect::kTalk);
         if (argument == 1) {
             say_all(world, talk::kShipSecondStop);
             beam(world, 112, 432);
-            state_ = State::kWaitingForThem;
+            s.state = State::kWaitingForThem;
             return;
         }
         say_all(world, talk::kShipFirstStop);
-        state_ = State::kBeaming;
+        s.state = State::kBeaming;
     }
     void when_waiting_for_them(World& world) {
         for (const int viking : {slot::kErik, slot::kBaleog, slot::kOlaf}) {
@@ -367,7 +373,7 @@ class ShipStop : public Entity {
             }
         }
         tell_all(world, message::kConversation);
-        state_ = State::kTalkingAgain;
+        s.state = State::kTalkingAgain;
     }
 
   private:
@@ -393,8 +399,11 @@ class ShipStop : public Entity {
         tell_all(world, message::kBeamed);
     }
 
-    State state_ = State::kStart;
-    bool missing_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool missing = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // Where most levels end: an unseen place. When the three Vikings are all within 32 pixels of it they have a
@@ -402,9 +411,9 @@ class ShipStop : public Entity {
 class LevelEnd : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
-                state_ = State::kWaiting;
+                s.state = State::kWaiting;
                 return;
             case State::kWaiting:
                 return when_waiting(world);
@@ -416,10 +425,10 @@ class LevelEnd : public Entity {
         }
     }
     void when_waiting(World& world) {
-        if (!all_vikings_here(world, *this, missing_)) {
+        if (!all_vikings_here(world, *this, s.missing)) {
             return;
         }
-        if (missing_) {  // not all three: no words, and the scene after this is the game-over one
+        if (s.missing) {  // not all three: no words, and the scene after this is the game-over one
             world.next_scene = scene::kGameOver;
             world.leave = true;
             return;
@@ -432,7 +441,7 @@ class LevelEnd : public Entity {
             world.tell(viking, message::kConversation);
         }
         target = slot::kOlaf;
-        state_ = State::kTalking;
+        s.state = State::kTalking;
     }
     void when_talking(World& world) {
         world.sound(*this, effect::kTalk);
@@ -442,13 +451,16 @@ class LevelEnd : public Entity {
             }
             speak(world, said);
         }
-        state_ = State::kSaid;
+        s.state = State::kSaid;
     }
 
   private:
     enum class State : std::uint8_t { kStart, kWaiting, kTalking, kSaid };
-    State state_ = State::kStart;
-    bool missing_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool missing = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // Whether a Viking can be spoken to by an entity: on his feet, the one being played with the view at rest, and
@@ -515,7 +527,7 @@ class Mechanic : public Entity {
             world.animate(*this);
             return;
         }
-        if ((world.hints_seen & argument) == argument || said_) {
+        if ((world.hints_seen & argument) == argument || s.said) {
             if (was_asked(*this)) {
                 say(world, 0x30, tail::kBelowMiddle, -24, (world.hints_seen & argument) != argument);
             }
@@ -523,11 +535,11 @@ class Mechanic : public Entity {
             if (viking_comes_near(world, *this, 30, -10)) {
                 say(world, 0x30, tail::kBelowMiddle, -24, true);
             }
-        } else if (!warned_ && viking_comes_near(world, *this, 60, -5)) {
+        } else if (!s.warned && viking_comes_near(world, *this, 60, -5)) {
             if (can_talk(world, *this, target)) {
                 world.sound(*this, effect::kTalk);
                 world.speak_at_point(text_colour::kOthers, 0x2f, tail::kAboveLeft, x, y + 24);
-                warned_ = true;
+                s.warned = true;
                 message = 0;
             }
         }
@@ -544,12 +556,15 @@ class Mechanic : public Entity {
         if (first) {
             world.hints_seen |= argument;
         }
-        said_ = true;
+        s.said = true;
         message = 0;
     }
 
-    bool said_ = false;
-    bool warned_ = false;
+    struct Saved {
+        bool said = false;
+        bool warned = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // The prehistoric world's elder: once his switches are on, the Viking who comes up to him hears him out, and that
@@ -559,14 +574,14 @@ class Elder : public Entity {
     void update(World& world) override {
         if (first_turn()) {
             acts_as = tile::kThing;
-            changes_ = argument & kLowByte;
+            s.changes = argument & kLowByte;
             argument &= kHighByte;
             world.play(*this, anim::kElderStands);
             world.animate(*this);
             return;
         }
         const bool known = (world.hints_seen & argument) == argument;
-        if (known || said_) {
+        if (known || s.said) {
             if (was_asked(*this)) {
                 talk(world, !known);
             }
@@ -587,25 +602,28 @@ class Elder : public Entity {
         if (whole) {
             speak(world, talk::kElder, this, target);
             world.hints_seen |= argument;
-            world.switches ^= changes_;
+            world.switches ^= s.changes;
         } else {
             speak(world, talk::kElderAgain, this, target);
         }
-        said_ = true;
+        s.said = true;
         message = 0;
     }
 
-    bool said_ = false;
-    std::uint16_t changes_ = 0;
+    struct Saved {
+        bool said = false;
+        std::uint16_t changes = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A place the Viking being played remarks on when he comes to it (two boxes, by its argument), once.
 class Remark : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
-                state_ = State::kWaiting;
+                s.state = State::kWaiting;
                 return;
             case State::kWaiting: {
                 if (saw.other == kNobody) {
@@ -617,7 +635,7 @@ class Remark : public Entity {
                     return;
                 }
                 viking->message = message::kConversation;
-                state_ = State::kSaying;
+                s.state = State::kSaying;
                 return;
             }
             case State::kSaying: {
@@ -634,13 +652,16 @@ class Remark : public Entity {
         }
     }
     Looks looks_for() const override {
-        return state_ == State::kWaiting ? Looks{touching_any(hit::kVikingInField, &Saw::other)} : Looks{};
+        return s.state == State::kWaiting ? Looks{touching_any(hit::kVikingInField, &Saw::other)} : Looks{};
     }
 
   private:
     enum class State : std::uint8_t { kStart, kWaiting, kSaying };
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // Another of the spaceship's to talk to: the Viking who comes up to him gets the whole story, and whoever asks
@@ -690,7 +711,7 @@ class Caveman : public Entity {
             return;
         }
         const bool known = (world.hints_seen & argument) == argument;
-        if (known || said_) {
+        if (known || s.said) {
             if (was_asked(*this)) {
                 talk(world, !known);
             }
@@ -714,11 +735,14 @@ class Caveman : public Entity {
         } else {
             speak(world, talk::kCavemanAgain, this, target);
         }
-        said_ = true;
+        s.said = true;
         message = 0;
     }
 
-    bool said_ = false;
+    struct Saved {
+        bool said = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // The exit: when the three Vikings are all at it, the level is done. In the last level of each world they first
@@ -726,17 +750,17 @@ class Caveman : public Entity {
 class Exit : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kExitStands);
-                state_ = State::kWaiting;
+                s.state = State::kWaiting;
                 break;
             case State::kWaiting:
-                if (!all_vikings_here(world, *this, missing_, 48)) {
+                if (!all_vikings_here(world, *this, s.missing, 48)) {
                     world.animate(*this);
                     return;
                 }
-                if (missing_) {  // not all three: the level starts again
+                if (s.missing) {  // not all three: the level starts again
                     world.next_scene = world.scene;
                     world.leave = true;
                     return;
@@ -749,12 +773,12 @@ class Exit : public Entity {
                     world.tell(viking, message::kConversation);
                 }
                 target = slot::kOlaf;
-                state_ = State::kTalking;
+                s.state = State::kTalking;
                 return;
             case State::kTalking:
                 world.sound(*this, effect::kTalk);
                 talk(world);
-                state_ = State::kSaid;
+                s.state = State::kSaid;
                 return;
             case State::kSaid:
                 world.level_done = true;
@@ -765,7 +789,11 @@ class Exit : public Entity {
 
   private:
     enum class State : std::uint8_t { kStart, kWaiting, kTalking, kSaid };
-    bool missing_ = false;
+    struct Saved {
+        bool missing = false;
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 
     static bool talk_here(const World& world) { return level::ends_a_world(world.level); }
 
@@ -776,8 +804,6 @@ class Exit : public Entity {
             speak(world, said);
         }
     }
-
-    State state_ = State::kStart;
 };
 
 // Someone to talk to: the first time the Viking being played comes up to him (standing, well in view), and

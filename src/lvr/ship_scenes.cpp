@@ -83,11 +83,14 @@ class Starfield : public Entity {
             cue::wait(20),
             cue::leave(),
         }};
-        (void)run_cues(world, *this, kCues, at_);
+        (void)run_cues(world, *this, kCues, s.at);
     }
 
   private:
-    std::size_t at_ = 0;
+    struct Saved {
+        std::size_t at = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // The Vikings' ship in the starfield: it bobs up and down, five ticks each way.
@@ -101,15 +104,18 @@ class BobbingShip : public Entity {
             world.animate(*this);
             return;
         } else {
-            rising_ = !rising_;
+            s.rising = !s.rising;
         }
-        speed_y = rising_ ? px(-1) : px(1);
+        speed_y = s.rising ? px(-1) : px(1);
         countdown = 5;
         world.animate(*this);
     }
 
   private:
-    bool rising_ = true;
+    struct Saved {
+        bool rising = true;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // Something fixed to the ship (the entity in slot 1) while it has health.
@@ -138,12 +144,12 @@ class ShipsRider : public Entity {
         if (first_turn()) {
             world.play(*this, anim::kShipsRiderLooks);
             count_down_from(20);
-        } else if (riding_ && countdown == 0) {
-            riding_ = false;
+        } else if (s.riding && countdown == 0) {
+            s.riding = false;
             speed_x = px(-5);
             speed_y = px(-1.5);
         }
-        if (riding_) {
+        if (s.riding) {
             target = 1;
             moved_by = 1;
             push_x = 24;
@@ -153,7 +159,10 @@ class ShipsRider : public Entity {
     }
 
   private:
-    bool riding_ = true;
+    struct Saved {
+        bool riding = true;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // The spaceship's trooper as the ship's curtain call has it: it waits to be led, walks where it is told, and
@@ -162,7 +171,7 @@ class SceneTrooper : public Enemy {
   public:
   protected:
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 return at_start(world);
             case At::kWaiting:
@@ -183,7 +192,7 @@ class SceneTrooper : public Enemy {
     void at_start(World& world) {
         appear(world, anim::kSceneTrooperAppears);
         clear_flag(entity_flag::kFalls);
-        at_ = At::kWaiting;
+        s.at = At::kWaiting;
         if (message != 0) {
             (void)told_all(world);
         }
@@ -195,8 +204,8 @@ class SceneTrooper : public Enemy {
         if (animation_over()) {
             return stand(world);
         }
-        if (sprite.packed_frame == kFiresAt && !fired_) {
-            fired_ = true;
+        if (sprite.packed_frame == kFiresAt && !s.fired) {
+            s.fired = true;
             world.spawn(*this, kind::kBullet, x + (facing_left() ? -6 : 6), y + 4);
             world.sound(*this, effect::kShot30);
         }
@@ -210,7 +219,7 @@ class SceneTrooper : public Enemy {
 
     void go(World& world, At at) {
         world.animate_on_ground(*this);
-        at_ = at;
+        s.at = at;
     }
     void stand(World& world) {
         message = 0;
@@ -225,7 +234,7 @@ class SceneTrooper : public Enemy {
                 message = 0;
                 world.play(*this, anim::kSceneTrooperFires);
                 speed_x = 0;
-                fired_ = false;
+                s.fired = false;
                 go(world, At::kFiring);
                 return true;
             case message::kLedStand:
@@ -252,8 +261,11 @@ class SceneTrooper : public Enemy {
         }
     }
 
-    At at_ = At::kStart;
-    bool fired_ = false;
+    struct Saved {
+        At at = At::kStart;
+        bool fired = false;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // One of the curtain call's creatures.
@@ -271,7 +283,7 @@ struct Creature {
 class CurtainCall : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 count_down();
                 world.spawn(*this, scene_kind::kAlarm, 0, 92, 0, entity_flag::kAlwaysActive);
@@ -310,7 +322,7 @@ class CurtainCall : public Entity {
                 if (countdown != 0) {
                     return;
                 }
-                ++number_;
+                ++s.number;
                 return bring_on(world);
             case State::kDropping:
                 return when_dropping(world);
@@ -323,10 +335,10 @@ class CurtainCall : public Entity {
             return;
         }
         if (const Entity* creature = its(world)) {
-            world.say_at_point(0x16b + static_cast<int>(number_), tail::kBelowMiddle, creature->x, creature->y - 80);
+            world.say_at_point(0x16b + static_cast<int>(s.number), tail::kBelowMiddle, creature->x, creature->y - 80);
         }
         countdown = 80;
-        state_ = State::kNamed;
+        s.state = State::kNamed;
     }
     void when_named(World& world) {
         if (countdown != 0) {
@@ -341,11 +353,11 @@ class CurtainCall : public Entity {
             return;
         }
         if (Entity* last = world.create_by(*this, prehistoric_kind::kRoller, 192, 0, 0, 1)) {
-            creature_ = last->slot;
+            s.creature = last->slot;
             last->message = message::kLedColours;
         }
         never_again(world, *this);
-        state_ = State::kOver;
+        s.state = State::kOver;
     }
 
   private:
@@ -378,8 +390,8 @@ class CurtainCall : public Entity {
         {.kind = prehistoric_kind::kBrawler, .across = 0, .below = 0, .walk_in = 27, .walk_out = 27},
     }};
 
-    const Creature& now() const { return kCreatures.at(number_); }
-    Entity* its(World& world) const { return world.at(creature_); }
+    const Creature& now() const { return kCreatures.at(s.number); }
+    Entity* its(World& world) const { return world.at(s.creature); }
     void tell(World& world, std::uint16_t what) const {
         if (Entity* creature = its(world)) {
             creature->message = what;
@@ -388,25 +400,28 @@ class CurtainCall : public Entity {
     // A wait takes a tick at least.
     void wait(std::uint16_t ticks, State then) {
         countdown = ticks;
-        state_ = then;
+        s.state = then;
     }
 
     void bring_on(World& world) {
-        if (number_ >= kCreatures.size()) {  // the end: something drops in
+        if (s.number >= kCreatures.size()) {  // the end: something drops in
             world.spawn(*this, scene_kind::kDroppedIn, 160, 0, 0, entity_flag::kLargePieces);
             return wait(100, State::kDropping);
         }
         const Creature& creature = now();
         Entity* created = world.create_by(*this, creature.kind, x + creature.across, y + creature.below, 0,
                                           entity_flag::kAlwaysActive | entity_flag::kLargePieces);
-        creature_ = created != nullptr ? created->slot : kNobody;
+        s.creature = created != nullptr ? created->slot : kNobody;
         tell(world, message::kLedColours);
-        state_ = State::kBroughtOn;
+        s.state = State::kBroughtOn;
     }
 
-    State state_ = State::kStart;
-    std::size_t number_ = 0;
-    int creature_ = kNobody;
+    struct Saved {
+        State state = State::kStart;
+        std::size_t number = 0;
+        int creature = kNobody;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // The ship's alarm: the picture turns blue-green and red in turn, six ticks each, with six between.
@@ -417,17 +432,20 @@ class Alarm : public Entity {
         if (!first_turn() && countdown != 0) {
             return;
         }
-        if (phase_ == 1) {
+        if (s.phase == 1) {
             world.tint = {0, 10, 10};
-        } else if (phase_ == 2) {
+        } else if (s.phase == 2) {
             world.tint = {10, 0, 0};
         }
-        phase_ = (phase_ + 1) % 3;
+        s.phase = (s.phase + 1) % 3;
         countdown = 6;
     }
 
   private:
-    int phase_ = 0;
+    struct Saved {
+        int phase = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // Something of the ship that only plays its animation.
@@ -445,11 +463,11 @@ class ShipPart : public Entity {
 class DroppedIn : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kDroppedInLooks);
                 start_falling();
-                state_ = State::kFalling;
+                s.state = State::kFalling;
                 break;
             case State::kFalling:
                 if (y < kFloor) {
@@ -457,18 +475,18 @@ class DroppedIn : public Entity {
                 }
                 world.sound(*this, effect::kThud3C);
                 speed_y = px(-6);
-                floor_ = y;
+                s.floor = y;
                 world.shake_y = {.amount = 2, .offset = 0, .ticks = 8};
-                state_ = State::kBouncing;
+                s.state = State::kBouncing;
                 break;
             case State::kBouncing:
-                if (speed_y < 0 || static_cast<std::uint16_t>(y) < static_cast<std::uint16_t>(floor_)) {
+                if (speed_y < 0 || static_cast<std::uint16_t>(y) < static_cast<std::uint16_t>(s.floor)) {
                     break;
                 }
                 stop_falling();
                 world.shake_y = {.amount = 1, .offset = 0, .ticks = 4};
                 world.sound(*this, effect::kThud3C);
-                state_ = State::kLying;
+                s.state = State::kLying;
                 return;
             case State::kLying:
                 return;
@@ -480,8 +498,11 @@ class DroppedIn : public Entity {
     enum class State : std::uint8_t { kStart, kFalling, kBouncing, kLying };
     static constexpr std::int16_t kFloor = 134;
 
-    State state_ = State::kStart;
-    std::int16_t floor_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        std::int16_t floor = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 }  // namespace

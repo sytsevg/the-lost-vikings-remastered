@@ -15,6 +15,7 @@
 
 #include "assets/data_dat.hpp"
 #include "assets/graphics.hpp"
+#include "lvr/archive.hpp"
 
 namespace lvr {
 
@@ -79,8 +80,8 @@ inline constexpr PieceLayout kRemasterPieces{
 // The layer.
 class Pieces {
   public:
-    explicit Pieces(const PieceLayout& layout = kOriginalPieces)
-        : layout_{layout}, all_(static_cast<std::size_t>(layout.size)) {}
+    Pieces() : Pieces{kOriginalPieces} {}
+    explicit Pieces(const PieceLayout& layout) : layout_{layout}, all_(static_cast<std::size_t>(layout.size)) {}
 
     const PieceLayout& layout() const noexcept { return layout_; }
     std::size_t size() const noexcept { return all_.size(); }
@@ -94,6 +95,16 @@ class Pieces {
     auto end() const noexcept { return all_.end(); }
 
     bool operator==(const Pieces&) const = default;
+
+    // Written out and read back (lvr/archive.hpp): the layout, then every piece.
+    void save(Writer& to) const {
+        to(layout_);
+        to(all_);
+    }
+    void load(Reader& from) {
+        from(layout_);
+        from(all_);
+    }
 
   private:
     PieceLayout layout_;

@@ -12,6 +12,8 @@
 //                      to be the same
 //       --copies       the world replaced by a copy of itself before every step: a copy (the rewind's snapshot)
 //                      must keep everything a replay needs
+//       --saves        the world written out and read back (lvr/archive.hpp) before every step: what is written
+//                      must be all of it
 //       --data DIR     the game's files (default gamedata/original)
 //       --out DIR      where a difference is written (default gamedata/previews/match): per replay
 //                      NAME-shown.png (the picture at the first refresh that differs) and NAME.txt (which
@@ -54,6 +56,7 @@ struct Options {
     fs::path shot;
     bool gpu = false;
     bool copies = false;
+    bool saves = false;
     std::vector<fs::path> replays;
 };
 
@@ -78,6 +81,7 @@ void draw_on_gpu(Screen& screen, const View& view, const SceneGraphics& scene, c
 PlayerPtr open_engine(const Options& options, const Replay& replay) {
     return LvrPlayer::open(options.data, replay, options.gpu ? Draw{draw_on_gpu} : Draw{draw})
         .transform([&options](auto player) {
+            player->saves = options.saves;
             player->copies = options.copies;
             return player;
         })
@@ -195,9 +199,10 @@ bool run(const Options& options, const fs::path& path) {
 }
 
 void print_usage() {
-    std::println(stderr,
-                 "usage: lv-replay [--check | --record | --shot FILE.png] [--gpu] [--copies] [--data DIR] [--out DIR] "
-                 "REPLAY...");
+    std::println(
+        stderr,
+        "usage: lv-replay [--check | --record | --shot FILE.png] [--gpu] [--copies] [--saves] [--data DIR] [--out DIR] "
+        "REPLAY...");
 }
 
 int run_all(int argc, char** argv) {
@@ -213,6 +218,8 @@ int run_all(int argc, char** argv) {
             options.gpu = true;
         } else if (arg == "--copies") {
             options.copies = true;
+        } else if (arg == "--saves") {
+            options.saves = true;
         } else if (arg == "--shot" && i + 1 < args.size()) {
             options.mode = Mode::kShot;
             options.shot = args[++i];

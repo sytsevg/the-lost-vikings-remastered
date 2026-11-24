@@ -54,7 +54,7 @@ class Magnet : public Entity {
     void update(World& world) override {
         const std::uint16_t asked = controls(world, argument);
         const bool on = (asked & kMagnetOn) != 0;
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kMagnetAppears);
                 world.animate(*this);
@@ -85,33 +85,33 @@ class Magnet : public Entity {
                 }
                 return stand_on(world);
             case State::kGoingOff:
-                if ((saw.wall && going_ == kGoRight) || (asked & going_) == 0) {
+                if ((saw.wall && s.going == kGoRight) || (asked & s.going) == 0) {
                     speed_x = 0;
                     world.stop_sound(*this, effect::kMotor);
-                    state_ = State::kOff;
+                    s.state = State::kOff;
                     return;
                 }
                 if (on) {
                     world.play(*this, anim::kMagnetIsOn);
                     hum(world, true);
                     world.sound(*this, effect::kMotor);
-                    return carry(world, going_);
+                    return carry(world, s.going);
                 }
-                return go(world, going_);
+                return go(world, s.going);
             case State::kGoingOn:
-                if ((asked & going_) == 0) {
+                if ((asked & s.going) == 0) {
                     speed_x = 0;
                     world.stop_sound(*this, effect::kMotor);
                     return stand_on(world);
                 }
                 if (!on) {
-                    return set_off(world, going_);
+                    return set_off(world, s.going);
                 }
-                return carry(world, going_);
+                return carry(world, s.going);
         }
     }
     Looks looks_for() const override {
-        return state_ == State::kGoingOff && going_ == kGoRight ? Looks{stopped_by(rail_ends())} : Looks{};
+        return s.state == State::kGoingOff && s.going == kGoRight ? Looks{stopped_by(rail_ends())} : Looks{};
     }
     void outside_active_area(World& world) override {
         world.stop_sound(*this, effect::kMotor);
@@ -150,7 +150,7 @@ class Magnet : public Entity {
         world.animate(*this);
         let_go(world);
         stay_active(false);
-        state_ = State::kOff;
+        s.state = State::kOff;
     }
 
     void stand_on(World& world) {
@@ -159,7 +159,7 @@ class Magnet : public Entity {
         pull_crates(world);
         controls(world, argument) &= kMagnetOn;
         world.animate(*this);
-        state_ = State::kOn;
+        s.state = State::kOn;
     }
 
     // On its way with the magnet off.
@@ -172,23 +172,23 @@ class Magnet : public Entity {
         go(world, way);
     }
     void go(World& world, std::uint16_t way) {
-        going_ = way;
+        s.going = way;
         speed_x = static_cast<std::int16_t>(way == kGoLeft ? -kSpeed : kSpeed);
         if (at_the_end(world, way)) {
             speed_x = 0;
         }
         controls(world, argument) &= kMagnetOn;
         world.animate(*this);
-        state_ = State::kGoingOff;
+        s.state = State::kGoingOff;
     }
 
     // On its way with the magnet on: what it holds goes with it, unless it is at the end of its rail.
     void carry(World& world, std::uint16_t way) {
-        going_ = way;
-        blocked_ = false;
+        s.going = way;
+        s.blocked = false;
         speed_x = static_cast<std::int16_t>(way == kGoLeft ? -kSpeed : kSpeed);
         if (at_the_end(world, way)) {
-            blocked_ = true;
+            s.blocked = true;
             speed_x = 0;
         }
         stay_active(false);
@@ -196,7 +196,7 @@ class Magnet : public Entity {
         pull_crates(world);
         controls(world, argument) &= kMagnetOn;
         world.animate(*this);
-        state_ = State::kGoingOn;
+        s.state = State::kGoingOn;
     }
 
     void let_go(World& world) {
@@ -213,10 +213,10 @@ class Magnet : public Entity {
     }
 
     void let_go_of_olaf(World& world) {
-        if (!holds_olaf_) {
+        if (!s.holds_olaf) {
             return;
         }
-        holds_olaf_ = false;
+        s.holds_olaf = false;
         target = slot::kOlaf;
         if (Entity* olaf = world.at(slot::kOlaf)) {
             olaf->message = message::kLetGo;
@@ -232,7 +232,7 @@ class Magnet : public Entity {
             return;
         }
         const bool under = olaf->x < box.right && box.left < olaf->x;
-        if (!holds_olaf_) {
+        if (!s.holds_olaf) {
             if (!olaf_holds_shield_up(world) || olaf_shield_away(world)) {
                 return;
             }
@@ -250,7 +250,7 @@ class Magnet : public Entity {
             if (box.bottom + 11 >= olaf->y) {
                 return;
             }
-            holds_olaf_ = true;
+            s.holds_olaf = true;
             olaf->clear_flag(entity_flag::kFalls);
             olaf->message = message::kHeldInTheAir;
             olaf->speed_y = 0;
@@ -263,7 +263,7 @@ class Magnet : public Entity {
         if (off != 0) {
             olaf->push_y += static_cast<std::int16_t>(off * 256);
         }
-        if (!blocked_) {
+        if (!s.blocked) {
             olaf->push_x += (facing_left() ? -speed_x : speed_x);
             olaf->speed_x = 0;
         }
@@ -309,7 +309,7 @@ class Magnet : public Entity {
             if (off != 0) {
                 crate->push_y += static_cast<std::int16_t>(off * 256);
             }
-            if (!blocked_) {
+            if (!s.blocked) {
                 crate->push_x += (facing_left() ? -speed_x : speed_x);
                 crate->kind_value = static_cast<std::uint16_t>(speed_x);
                 crate->speed_y = 0;
@@ -319,10 +319,13 @@ class Magnet : public Entity {
 
     enum class State : std::uint8_t { kStart, kOff, kOn, kGoingOff, kGoingOn };
 
-    State state_ = State::kStart;
-    std::uint16_t going_ = 0;  // kGoLeft or kGoRight
-    bool blocked_ = false;     // at the end of its rail
-    bool holds_olaf_ = false;
+    struct Saved {
+        State state = State::kStart;
+        std::uint16_t going = 0;  // kGoLeft or kGoRight
+        bool blocked = false;     // at the end of its rail
+        bool holds_olaf = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A crate: the Vikings push it (off an edge it falls, squashing a Viking under it), and a magnet pulls it up
@@ -330,7 +333,7 @@ class Magnet : public Entity {
 class Crate : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return at_start(world);
             case State::kResting:
@@ -346,7 +349,7 @@ class Crate : public Entity {
         }
     }
     void at_start(World& world) {
-        stays_active_ = stays_active();
+        s.stays_active = stays_active();
         if (facing_left()) {
             world.flip_across(*this);
         }
@@ -354,7 +357,7 @@ class Crate : public Entity {
         world.animate(*this);
         acts_as = tile::kGround;
         if (argument != 0) {
-            stays_when_done_ = (argument & kTopBit) != 0;
+            s.stays_when_done = (argument & kTopBit) != 0;
             argument &= ~kTopBit;
             if (switches_on(world, argument)) {
                 return done(world);
@@ -369,7 +372,7 @@ class Crate : public Entity {
         if (saw.wall) {
             speed_x = 0;
         }
-        pushed_ = false;
+        s.pushed = false;
         if (message == message::kDropped) {
             message = 0;
             start_falling();
@@ -381,7 +384,7 @@ class Crate : public Entity {
             push(world);
         }
         message = 0;
-        scrape_while_pushed(world, *this, pushed_);
+        scrape_while_pushed(world, *this, s.pushed);
         if (!find_beside(world, *this, Side::kBelow, ground())) {
             return fall(world);
         }
@@ -395,7 +398,7 @@ class Crate : public Entity {
             speed_x = 0;
         }
         if (saw.landed) {
-            stay_active(stays_active_);
+            stay_active(s.stays_active);
             stop_falling();
             world.sound(*this, effect::kBlockLands);
             return rest(world);
@@ -437,7 +440,7 @@ class Crate : public Entity {
         return types;
     }
     Looks looks_for() const override {
-        switch (state_) {
+        switch (s.state) {
             case State::kResting:
             case State::kHeld:
                 return {stopped_by(solid())};
@@ -455,9 +458,9 @@ class Crate : public Entity {
     enum class State : std::uint8_t { kStart, kResting, kFalling, kRising, kHeld, kDone };
 
     void rest(World& world) {
-        stay_active_under_a_viking(world, *this, stays_active_);
+        stay_active_under_a_viking(world, *this, s.stays_active);
         world.animate(*this);
-        state_ = State::kResting;
+        s.state = State::kResting;
     }
     void fall(World& world) {
         start_falling();
@@ -467,20 +470,20 @@ class Crate : public Entity {
     }
     void in_the_air(World& world, State state) {
         world.animate(*this);
-        state_ = state;
+        s.state = state;
     }
     // Out of a magnet's hold, or past the top of its way up.
     void let_go(World& world) {
         world.animate(*this);
-        state_ = speed_y <= 0 ? State::kRising : State::kFalling;
+        s.state = speed_y <= 0 ? State::kRising : State::kFalling;
     }
     void done(World& world) {
-        if (!stays_when_done_) {
+        if (!s.stays_when_done) {
             return gone_for_good(world, *this);
         }
         hit_mask = 0;
         stay_active();
-        state_ = State::kDone;
+        s.state = State::kDone;
     }
 
     void push(World& world) {
@@ -490,14 +493,17 @@ class Crate : public Entity {
             return;
         }
         push_x += by;
-        pushed_ = true;
+        s.pushed = true;
         crush_beside(world, *this, side);
     }
 
-    State state_ = State::kStart;
-    bool stays_active_ = false;
-    bool stays_when_done_ = false;
-    bool pushed_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool stays_active = false;
+        bool stays_when_done = false;
+        bool pushed = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A block only a magnet moves (one kind becomes magnetic, and falls, when its switches come on). It falls where
@@ -505,7 +511,7 @@ class Crate : public Entity {
 class MagneticBlock : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return at_start(world);
             case State::kWaiting:
@@ -529,7 +535,7 @@ class MagneticBlock : public Entity {
         }
     }
     void at_start(World& world) {
-        stays_active_ = stays_active();
+        s.stays_active = stays_active();
         acts_as = tile::kGround;
         if (kind == factory_kind::kMagneticBlockWaitingForSwitch) {
             world.play(*this, anim::kMagneticBlockWaitingLooks);
@@ -537,7 +543,7 @@ class MagneticBlock : public Entity {
             if (is_falling()) {
                 return fall(world);
             }
-            state_ = State::kWaiting;
+            s.state = State::kWaiting;
             return;
         }
         world.play(*this, anim::kMagneticBlockLooks);
@@ -562,7 +568,7 @@ class MagneticBlock : public Entity {
         }
         if (saw.landed) {
             clear_flag(entity_flag::kFalls);
-            stay_active(stays_active_);
+            stay_active(s.stays_active);
             speed_y = 0;
             world.sound(*this, effect::kThud);
             return rest(world);
@@ -584,7 +590,7 @@ class MagneticBlock : public Entity {
             return in_the_air(world, State::kHeld);
         }
         if (speed_y > 0) {
-            state_ = State::kOverShield;
+            s.state = State::kOverShield;
             return;
         }
         return in_the_air(world, State::kRising);
@@ -598,7 +604,7 @@ class MagneticBlock : public Entity {
         if (held) {
             return in_the_air(world, State::kHeld);
         }
-        state_ = State::kOverShield;
+        s.state = State::kOverShield;
     }
     void when_over_shield(World& world) {
         if (saw.shield != kNobody) {
@@ -612,7 +618,7 @@ class MagneticBlock : public Entity {
             return;
         }
         world.animate(*this);
-        state_ = speed_y < 0 ? State::kRising : State::kFalling;
+        s.state = speed_y < 0 ? State::kRising : State::kFalling;
     }
     static const TileTypes& viking_above() {
         static const TileTypes types = tile_types({tile::kViking});
@@ -623,7 +629,7 @@ class MagneticBlock : public Entity {
         return types;
     }
     Looks looks_for() const override {
-        switch (state_) {
+        switch (s.state) {
             case State::kResting:
             case State::kHeld:
                 return {stopped_by(solid())};
@@ -648,11 +654,11 @@ class MagneticBlock : public Entity {
             return fall(world);
         }
         if (find_at(world, *this, x, box.top, electric)) {
-            state_ = State::kDead;
+            s.state = State::kDead;
             return;
         }
         world.animate(*this);
-        state_ = State::kResting;
+        s.state = State::kResting;
     }
     void fall(World& world) {
         start_falling();
@@ -661,11 +667,14 @@ class MagneticBlock : public Entity {
     }
     void in_the_air(World& world, State state) {
         world.animate(*this);
-        state_ = state;
+        s.state = state;
     }
 
-    State state_ = State::kStart;
-    bool stays_active_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool stays_active = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A trolley on a rail: it runs left and right with a crane's controls, carrying the Vikings on it.
@@ -673,32 +682,32 @@ class Trolley : public Entity {
   public:
     void update(World& world) override {
         if (first_turn()) {
-            stays_active_ = stays_active();
+            s.stays_active = stays_active();
             acts_as = tile::kGround;
             world.play(*this, anim::kTrolleyLooks);
             world.animate(*this);
-            stay_active_under_a_viking(world, *this, stays_active_);
+            stay_active_under_a_viking(world, *this, s.stays_active);
             return;
         }
         const std::uint16_t asked = controls(world, argument);
-        if (going_ == 0) {
-            going_ = (asked & kGoLeft) != 0 ? kGoLeft : ((asked & kGoRight) != 0 ? kGoRight : 0);
-            if (going_ == 0) {
-                stay_active_under_a_viking(world, *this, stays_active_);
+        if (s.going == 0) {
+            s.going = (asked & kGoLeft) != 0 ? kGoLeft : ((asked & kGoRight) != 0 ? kGoRight : 0);
+            if (s.going == 0) {
+                stay_active_under_a_viking(world, *this, s.stays_active);
                 return;
             }
-            speed_x = static_cast<std::int16_t>(going_ == kGoLeft ? -kSpeed : kSpeed);
+            speed_x = static_cast<std::int16_t>(s.going == kGoLeft ? -kSpeed : kSpeed);
             world.sound(*this, effect::kMotor);
-        } else if (saw.wall || (asked & going_) == 0) {
+        } else if (saw.wall || (asked & s.going) == 0) {
             speed_x = 0;
             world.stop_sound(*this, effect::kMotor);
-            going_ = 0;
-            stay_active_under_a_viking(world, *this, stays_active_);
+            s.going = 0;
+            stay_active_under_a_viking(world, *this, s.stays_active);
             return;
         }
         static const TileTypes rail_ends = tile_types({tile::kGround, tile::kPlatformStop});
         const bool at_the_end =
-            find_at(world, *this, going_ == kGoLeft ? box.left - 4 : box.right + 4, y, rail_ends).has_value();
+            find_at(world, *this, s.going == kGoLeft ? box.left - 4 : box.right + 4, y, rail_ends).has_value();
         for (int from = 0; from < kVikingSlots && !at_the_end;) {
             const int rider = find_in_row(world, *this, Row::kAbove, vikings(), true, from);
             if (rider == kNobody) {
@@ -712,21 +721,24 @@ class Trolley : public Entity {
             }
         }
         controls(world, argument) &= kMagnetOn;
-        stay_active_under_a_viking(world, *this, stays_active_);
+        stay_active_under_a_viking(world, *this, s.stays_active);
         world.animate(*this);
     }
     static const TileTypes& rail_ends() {
         static const TileTypes types = tile_types({tile::kGround, tile::kPlatformStop});
         return types;
     }
-    Looks looks_for() const override { return going_ != 0 ? Looks{stopped_by(rail_ends())} : Looks{}; }
+    Looks looks_for() const override { return s.going != 0 ? Looks{stopped_by(rail_ends())} : Looks{}; }
     void outside_active_area(World& world) override { leave(world, *this); }
 
   private:
     static constexpr std::int16_t kSpeed = px(4);
 
-    bool stays_active_ = false;
-    std::uint16_t going_ = 0;
+    struct Saved {
+        bool stays_active = false;
+        std::uint16_t going = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 }  // namespace

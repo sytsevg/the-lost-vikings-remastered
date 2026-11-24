@@ -74,14 +74,14 @@ class Sword : public Entity {
 // One kind of enemy sends a plain arrow back, and then it hits a Viking.
 class Arrow : public Entity {
   public:
-    explicit Arrow(bool burning) : burning_{burning} {}
+    explicit Arrow(bool burning) { s.burning = burning; }
 
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 speed_x = kSpeed;
-                world.play(*this, burning_ ? anim::kFireArrowFlies : anim::kArrowFlies);
-                state_ = State::kFlying;
+                world.play(*this, s.burning ? anim::kFireArrowFlies : anim::kArrowFlies);
+                s.state = State::kFlying;
                 break;
             case State::kFlying:
                 if (saw.other != kNobody) {
@@ -124,10 +124,11 @@ class Arrow : public Entity {
     }
     // Flying: what it hurts, and what stops it. Sent back by a shield: what stops it then, and a Viking.
     Looks looks_for() const override {
-        switch (state_) {
+        switch (s.state) {
             case State::kFlying:
-                return {stopped_by(solid()), touching_any(burning_ ? hit::kHurtByFire : hit::kHurtByArrow, &Saw::other),
-                        touching_any(burning_ ? hit::kStopsFire : hit::kStopsArrow, &Saw::another)};
+                return {stopped_by(solid()),
+                        touching_any(s.burning ? hit::kHurtByFire : hit::kHurtByArrow, &Saw::other),
+                        touching_any(s.burning ? hit::kStopsFire : hit::kStopsArrow, &Saw::another)};
             case State::kSentBack:
                 return {stopped_by(solid()), touching_any(hit::kShield, &Saw::other),
                         touching_any(hit::kViking, &Saw::another)};
@@ -147,34 +148,37 @@ class Arrow : public Entity {
 
     void hits(World& world) {
         const Entity* enemy = world.at(target);
-        if (!burning_ && enemy != nullptr) {
+        if (!s.burning && enemy != nullptr) {
             // On the spitter's back a plain arrow breaks.
             if (enemy->kind == prehistoric_kind::kSpitter && enemy->facing_left() == facing_left()) {
                 return breaks(world);
             }
             if (enemy->kind == kSendsBack) {
                 world.flip_across(*this);
-                state_ = State::kSentBack;
+                s.state = State::kSentBack;
                 world.animate(*this);
                 return;
             }
         }
-        strike(world, *this, target, message::kArrowBlow, burning_ ? 8 : 2);
+        strike(world, *this, target, message::kArrowBlow, s.burning ? 8 : 2);
         world.spawn(*this, kind::kSpark, x + (facing_left() ? -kAhead : kAhead), y, 1, entity_flag::kLargePieces);
         world.remove(slot);
     }
 
     void breaks(World& world) {
         world.sound(*this, effect::kArrowBreaks);
-        world.play(*this, burning_ ? anim::kFireArrowBroken : anim::kArrowBroken);
+        world.play(*this, s.burning ? anim::kFireArrowBroken : anim::kArrowBroken);
         speed_x = 0;
         message = 0;
-        state_ = State::kBroken;
+        s.state = State::kBroken;
         world.animate(*this);
     }
 
-    bool burning_;
-    State state_ = State::kStart;
+    struct Saved {
+        bool burning;
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A gun's shot: it flies until it hits a Viking, a wall, or Olaf's shield held against it.

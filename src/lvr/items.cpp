@@ -17,7 +17,7 @@ namespace {
 class Item : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return at_start(world);
             case State::kLying:
@@ -29,7 +29,7 @@ class Item : public Entity {
         }
     }
     void at_start(World& world) {
-        falls_ = (argument & item::kFalling) != 0;
+        s.falls = (argument & item::kFalling) != 0;
         argument &= static_cast<std::uint16_t>(~item::kFalling);
         world.play(*this, kind == kind::kOtherItem ? anim::kOtherItemSetUp : anim::kItemSetUp);
         world.animate(*this);
@@ -39,22 +39,22 @@ class Item : public Entity {
         }
         world.play(*this, anim::kItemPictures.at(argument - 1U));
         world.animate(*this);
-        state_ = State::kLying;
+        s.state = State::kLying;
     }
     void when_lying(World& world) {
         if (saw.viking != kNobody && take(world)) {
             return;
         }
-        if (falls_ && !find_beside(world, *this, Side::kBelow, ground())) {
+        if (s.falls && !find_beside(world, *this, Side::kBelow, ground())) {
             start_falling();
-            state_ = State::kFalling;
+            s.state = State::kFalling;
             world.animate(*this);
         }
     }
     void when_falling(World& world) {
         if (saw.landed) {
             stop_falling();
-            state_ = State::kLying;
+            s.state = State::kLying;
             return;
         }
         if (saw.viking != kNobody && take(world)) {
@@ -64,14 +64,14 @@ class Item : public Entity {
     }
     void when_taken(World& world) {
         // If the square he has chosen is empty, the one with the new item is chosen instead.
-        const auto who = static_cast<std::size_t>(owner_);
+        const auto who = static_cast<std::size_t>(s.owner);
         if (world.items.at(who).at(static_cast<std::size_t>(world.chosen_square.at(who))) == 0) {
-            world.chosen_square.at(who) = square_;
+            world.chosen_square.at(who) = s.square;
         }
         gone_for_good(world, *this);
     }
     Looks looks_for() const override {
-        switch (state_) {
+        switch (s.state) {
             case State::kLying:
                 return {touching_a_viking()};
             case State::kFalling:
@@ -114,10 +114,10 @@ class Item : public Entity {
             for (std::size_t square = 0; square < squares.size(); ++square) {
                 if (squares.at(square) == 0) {
                     squares.at(square) = argument;
-                    owner_ = who;
-                    square_ = static_cast<int>(square);
+                    s.owner = who;
+                    s.square = static_cast<int>(square);
                     world.sound(*this, effect::kTaken);
-                    state_ = State::kTaken;
+                    s.state = State::kTaken;
                     return true;
                 }
             }
@@ -125,10 +125,13 @@ class Item : public Entity {
         return false;
     }
 
-    State state_ = State::kStart;
-    bool falls_ = false;
-    int owner_ = 0;   // the Viking that took it
-    int square_ = 0;  // into this square of his
+    struct Saved {
+        State state = State::kStart;
+        bool falls = false;
+        int owner = 0;   // the Viking that took it
+        int square = 0;  // into this square of his
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A bomb a Viking has put down: after 60 ticks it blows up. The blast hurts the Vikings near it and everything
@@ -136,7 +139,7 @@ class Item : public Entity {
 class PlacedBomb : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kPlacedBombTicks);
                 stay_active();
@@ -144,13 +147,13 @@ class PlacedBomb : public Entity {
                 if (facing_left()) {
                     world.flip_across(*this);
                 }
-                state_ = State::kTicking;
+                s.state = State::kTicking;
                 break;
             case State::kTicking:
                 if (saw.other != kNobody) {  // what it lies against stays active until it has gone off
                     target = saw.other;
-                    if (held_active_ == kNobody) {
-                        held_active_ = saw.other;
+                    if (s.held_active == kNobody) {
+                        s.held_active = saw.other;
                         if (Entity* other = world.at(saw.other)) {
                             other->stay_active();
                         }
@@ -158,7 +161,7 @@ class PlacedBomb : public Entity {
                 }
                 if (!find_beside(world, *this, Side::kBelow, ground())) {
                     start_falling();
-                    state_ = State::kFalling;
+                    s.state = State::kFalling;
                     break;
                 }
                 if (countdown == 0) {
@@ -168,13 +171,13 @@ class PlacedBomb : public Entity {
                     box = box_of(box.left - kReach, box.top - kReach, box.right + kReach, box.bottom + kReach);
                     world.shake_y = {.amount = 3, .offset = 0, .ticks = 24};
                     world.sound(*this, effect::kLandedInScene);
-                    state_ = State::kBlast;
+                    s.state = State::kBlast;
                 }
                 break;
             case State::kFalling:
                 if (saw.landed) {
                     stop_falling();
-                    state_ = State::kTicking;
+                    s.state = State::kTicking;
                 }
                 break;
             case State::kBlast:
@@ -185,9 +188,9 @@ class PlacedBomb : public Entity {
                 world.tint2 =
                     (countdown & 2U) == 0 ? std::array<std::uint8_t, 3>{0, 112, 112} : std::array<std::uint8_t, 3>{};
                 if (animation_over()) {
-                    if (held_active_ != kNobody) {
-                        target = held_active_;
-                        Entity* other = world.at(held_active_);
+                    if (s.held_active != kNobody) {
+                        target = s.held_active;
+                        Entity* other = world.at(s.held_active);
                         if (other != nullptr && other->hit_class == hit_class::kEnemy) {
                             other->stay_active(false);
                         }
@@ -196,8 +199,8 @@ class PlacedBomb : public Entity {
                     world.remove(slot);
                     return;
                 }
-                if (!struck_) {
-                    struck_ = true;
+                if (!s.struck) {
+                    s.struck = true;
                     for (const int viking : {1, 0, 2}) {
                         target = viking;
                         const Entity* other = world.at(viking);
@@ -216,7 +219,7 @@ class PlacedBomb : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        switch (state_) {
+        switch (s.state) {
             case State::kTicking:
             case State::kBlast:
                 return {touching_any(hit::kBombable, &Saw::other)};
@@ -258,9 +261,12 @@ class PlacedBomb : public Entity {
         }
     }
 
-    State state_ = State::kStart;
-    bool struck_ = false;
-    int held_active_ = kNobody;
+    struct Saved {
+        State state = State::kStart;
+        bool struck = false;
+        int held_active = kNobody;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // The bomb that strikes every enemy at once: the screen goes dark in five steps and black with a jolt, every
@@ -269,17 +275,17 @@ class FlashBomb : public Entity {
   public:
     void update(World& world) override {
         static constexpr std::array<std::uint8_t, 6> kSteps{2, 4, 6, 8, 10, 239};
-        if (step_ == 0) {
+        if (s.step == 0) {
             stay_active();
             world.sound(*this, effect::kFlashBomb);
         }
-        if (step_ < kSteps.size()) {
-            const auto by = static_cast<std::uint8_t>(kSteps.at(step_) * 2U);
+        if (s.step < kSteps.size()) {
+            const auto by = static_cast<std::uint8_t>(kSteps.at(s.step) * 2U);
             world.tint = {by, by, by};
-            if (step_ + 1 == kSteps.size()) {
+            if (s.step + 1 == kSteps.size()) {
                 world.shake_y = {.amount = 2, .offset = 0, .ticks = 8};
             }
-        } else if (step_ == kSteps.size() + 1) {
+        } else if (s.step == kSteps.size() + 1) {
             for (int other = kVikingSlots; other < world.slots(); ++other) {
                 target = other;
                 Entity* enemy = world.at(other);
@@ -287,16 +293,19 @@ class FlashBomb : public Entity {
                     tell(*enemy, message::kBlast, 50);
                 }
             }
-        } else if (step_ == kSteps.size() + 3) {
+        } else if (s.step == kSteps.size() + 3) {
             world.tint = {};
             world.remove(slot);
             return;
         }
-        ++step_;
+        ++s.step;
     }
 
   private:
-    std::size_t step_ = 0;
+    struct Saved {
+        std::size_t step = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 }  // namespace

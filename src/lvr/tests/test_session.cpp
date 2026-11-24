@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <string>
 
 #include "lvr/play.hpp"
 #include "lvr/render.hpp"
@@ -380,6 +382,69 @@ TEST_CASE("real data: what the minimap has seen is kept in the profile from one 
         REQUIRE((*vanilla)->use_profile(folder));
         REQUIRE((*vanilla)->save_profile());
         CHECK_FALSE(std::filesystem::exists(folder));
+    }
+    std::filesystem::remove_all(folder);
+}
+
+TEST_CASE("real data: the quicksave is kept in the profile and brought back in another run", "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    const std::filesystem::path folder = std::filesystem::temp_directory_path() / "lvr-test-session-quicksave";
+    std::filesystem::remove_all(folder);
+    const auto keys_of = [](int step) {
+        return static_cast<std::uint16_t>(step < 6 ? (step % 2 != 0 ? key::kF : 0) : key::kRight);
+    };
+    std::vector<std::vector<std::uint8_t>> ends;
+    {
+        auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+        REQUIRE(opened);
+        Session& session = **opened;
+        REQUIRE(session.use_profile(folder));
+        session.cheat();
+        for (int step = 0; step < 40; ++step) {
+            if (step == 25) {
+                session.quicksave();  // the play before step 25
+            }
+            ends.push_back(session.step(keys_of(step)).back().pixels);
+        }
+        CHECK(session.has_quicksave());
+    }
+    CHECK(std::filesystem::exists(folder / "quicksave.bin"));
+    {
+        // Another run, in another level: the quicksave is there, and brings back the level and the play.
+        auto opened = Session::open(LVR_ORIGINAL_DIR, 4, {}, Rules::kRemaster);
+        REQUIRE(opened);
+        Session& session = **opened;
+        CHECK_FALSE(session.has_quicksave());
+        REQUIRE(session.use_profile(folder));
+        REQUIRE(session.has_quicksave());
+        session.step(0);
+        session.quickload();  // without the cheat: nothing
+        session.step(0);
+        CHECK(session.scene() == 4);
+        session.cheat();
+        session.quickload();
+        CHECK(session.step(keys_of(25)).back().pixels == ends.at(25));
+        CHECK(session.scene() == 1);
+        for (int step = 26; step < 40; ++step) {
+            CHECK(session.step(keys_of(step)).back().pixels == ends.at(static_cast<std::size_t>(step)));
+        }
+    }
+    {
+        // A file that was damaged: said, and there is no quicksave.
+        std::string bytes;
+        {
+            std::ifstream file{folder / "quicksave.bin", std::ios::binary};
+            bytes.assign(std::istreambuf_iterator<char>{file}, {});
+        }
+        REQUIRE(bytes.size() > 2000);
+        bytes[bytes.size() / 2] = static_cast<char>(bytes[bytes.size() / 2] ^ 0x55);
+        std::ofstream{folder / "quicksave.bin", std::ios::binary} << bytes;
+        auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+        REQUIRE(opened);
+        CHECK_FALSE((*opened)->use_profile(folder));
+        CHECK_FALSE((*opened)->has_quicksave());
     }
     std::filesystem::remove_all(folder);
 }

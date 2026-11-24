@@ -39,10 +39,10 @@ void become_map(World& world, Entity& entity) {
 class SettlingBlock : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kEgyptPushedBlockLooks);
-                stays_active_ = stays_active();
+                s.stays_active = stays_active();
                 acts_as = tile::kGround;
                 return rest(world);
             case State::kResting:
@@ -55,15 +55,15 @@ class SettlingBlock : public Entity {
         if (saw.wall) {
             speed_x = 0;
         }
-        pushed_ = message == message::kPushed && take_push(world, *this);
+        s.pushed = message == message::kPushed && take_push(world, *this);
         message = 0;
-        scrape_while_pushed(world, *this, pushed_);
+        scrape_while_pushed(world, *this, s.pushed);
         if (!find_beside(world, *this, Side::kBelow, ground())) {
             speed_x = 0;
             start_falling();
             stay_active();
             stop_scraping(world, *this);
-            state_ = State::kFalling;
+            s.state = State::kFalling;
             world.animate(*this);
             return;
         }
@@ -83,7 +83,7 @@ class SettlingBlock : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        switch (state_) {
+        switch (s.state) {
             case State::kResting:
                 return {stopped_by(solid())};
             case State::kFalling:
@@ -98,14 +98,17 @@ class SettlingBlock : public Entity {
     enum class State : std::uint8_t { kStart, kResting, kFalling };
 
     void rest(World& world) {
-        stay_active_under_a_viking(world, *this, stays_active_);
+        stay_active_under_a_viking(world, *this, s.stays_active);
         world.animate(*this);
-        state_ = State::kResting;
+        s.state = State::kResting;
     }
 
-    State state_ = State::kStart;
-    bool stays_active_ = false;
-    bool pushed_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool stays_active = false;
+        bool pushed = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A block the Vikings push. Off an edge it falls (a Viking under it is squashed) and lands, to be pushed on.
@@ -113,7 +116,7 @@ class SettlingBlock : public Entity {
 class PushedBlock : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return at_start(world);
             case State::kFixed:
@@ -129,7 +132,7 @@ class PushedBlock : public Entity {
         }
     }
     void at_start(World& world) {
-        stays_active_ = stays_active();
+        s.stays_active = stays_active();
         world.play(*this, kind == wacky_kind::kPushedBlockWaitingForSwitch ? anim::kPushedBlockFixedLooks
                                                                            : anim::kWackyPushedBlockLooks);
         acts_as = tile::kGround;
@@ -137,7 +140,7 @@ class PushedBlock : public Entity {
             return fall(world);
         }
         if (kind == wacky_kind::kPushedBlockWaitingForSwitch) {
-            state_ = State::kFixed;
+            s.state = State::kFixed;
             world.animate(*this);
             return;
         }
@@ -147,9 +150,9 @@ class PushedBlock : public Entity {
         if (saw.wall) {
             speed_x = 0;
         }
-        pushed_ = message == message::kPushed && take_push(world, *this);
+        s.pushed = message == message::kPushed && take_push(world, *this);
         message = 0;
-        scrape_while_pushed(world, *this, pushed_);
+        scrape_while_pushed(world, *this, s.pushed);
         if (!find_beside(world, *this, Side::kBelow, ground())) {
             return fall(world);
         }
@@ -160,7 +163,7 @@ class PushedBlock : public Entity {
             speed_x = 0;
         }
         if (saw.landed) {
-            stay_active(stays_active_);
+            stay_active(s.stays_active);
             stop_falling();
             world.sound(*this, effect::kBlockLands);
             return rest(world);
@@ -169,7 +172,7 @@ class PushedBlock : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        switch (state_) {
+        switch (s.state) {
             case State::kResting:
                 return {stopped_by(solid())};
             case State::kFalling:
@@ -185,21 +188,24 @@ class PushedBlock : public Entity {
 
     void rest(World& world) {
         world.animate(*this);
-        stay_active_under_a_viking(world, *this, stays_active_);
-        state_ = State::kResting;
+        stay_active_under_a_viking(world, *this, s.stays_active);
+        s.state = State::kResting;
     }
 
     void fall(World& world) {
         start_falling();
         stay_active();
         stop_scraping(world, *this);
-        state_ = State::kFalling;
+        s.state = State::kFalling;
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
-    bool stays_active_ = false;
-    bool pushed_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool stays_active = false;
+        bool pushed = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A block that is solid and falls when nothing is under it. A Viking it comes down on is squashed; not Olaf
@@ -207,14 +213,14 @@ class PushedBlock : public Entity {
 class FallingBlock : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, kind == prehistoric_kind::kOtherFallingBlock ? anim::kFallingBlockOtherLooks
                                                                                : anim::kFallingBlockLooks);
                 world.animate(*this);
                 acts_as = tile::kGround;
                 if (!is_falling()) {
-                    state_ = State::kResting;
+                    s.state = State::kResting;
                     return;
                 }
                 break;
@@ -227,7 +233,7 @@ class FallingBlock : public Entity {
                 if (saw.landed) {
                     stop_falling();
                     world.sound(*this, effect::kThud);
-                    state_ = State::kResting;
+                    s.state = State::kResting;
                     return;
                 }
                 squash(world);
@@ -235,10 +241,10 @@ class FallingBlock : public Entity {
                 return;
         }
         start_falling();
-        state_ = State::kFalling;
+        s.state = State::kFalling;
         world.animate(*this);
     }
-    Looks looks_for() const override { return state_ == State::kFalling ? Looks{lands_on(ground())} : Looks{}; }
+    Looks looks_for() const override { return s.state == State::kFalling ? Looks{lands_on(ground())} : Looks{}; }
     void outside_active_area(World& world) override { leave(world, *this); }
 
   private:
@@ -258,7 +264,10 @@ class FallingBlock : public Entity {
         }
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A block that falls when its switches come on, taking the Vikings on it along and squashing one under it;
@@ -266,14 +275,14 @@ class FallingBlock : public Entity {
 class DroppedBlock : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kDroppedBlockLooks);
                 acts_as = tile::kGround;
                 if (is_falling()) {
                     return fall(world);
                 }
-                state_ = State::kWaiting;
+                s.state = State::kWaiting;
                 break;
             case State::kWaiting:
                 if (switches_on(world, argument)) {
@@ -286,7 +295,7 @@ class DroppedBlock : public Entity {
                     stay_active(false);
                     world.sound(*this, effect::kThud);
                     count_down_from(4);
-                    state_ = State::kSettling;
+                    s.state = State::kSettling;
                     return;
                 }
                 if (saw.held) {
@@ -307,7 +316,7 @@ class DroppedBlock : public Entity {
                     }
                 }
                 stay_active();
-                state_ = State::kSettled;
+                s.state = State::kSettled;
                 return;
             }
             case State::kSettled:
@@ -317,7 +326,7 @@ class DroppedBlock : public Entity {
     }
     // Falling: solid ground ends the fall; anything else that can be stood on only holds it.
     Looks looks_for() const override {
-        return state_ == State::kFalling ? Looks{lands_on(solid()), lands_on(ground(), &Saw::held)} : Looks{};
+        return s.state == State::kFalling ? Looks{lands_on(solid()), lands_on(ground(), &Saw::held)} : Looks{};
     }
     void outside_active_area(World& world) override { leave(world, *this); }
 
@@ -327,12 +336,15 @@ class DroppedBlock : public Entity {
     void fall(World& world) {
         start_falling();
         stay_active();
-        state_ = State::kFalling;
+        s.state = State::kFalling;
         take_riders_down(world, *this);
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A block that drops again and again while its switches are on: it crumbles away from the top for 60 ticks, is
@@ -341,18 +353,18 @@ class DroppedBlock : public Entity {
 class DroppingBlock : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kDroppingBlockLooks);
                 acts_as = tile::kGround;
-                state_ = State::kResting;
+                s.state = State::kResting;
                 break;
             case State::kResting:
                 if (switches_on(world, argument)) {
                     world.play(*this, anim::kDroppingBlockCrumbles);
                     count_down_from(60);
                     stay_active();
-                    state_ = State::kCrumbling;
+                    s.state = State::kCrumbling;
                 } else if (!find_beside(world, *this, Side::kBelow, floors())) {
                     drop(world);
                 }
@@ -362,7 +374,7 @@ class DroppingBlock : public Entity {
                     count_down(false);
                     acts_as = tile::kFree;
                     speed_y = px(-64);
-                    state_ = State::kBack;
+                    s.state = State::kBack;
                 } else if (static_cast<std::uint16_t>(box.top) < static_cast<std::uint16_t>(box.bottom)) {
                     box.top += 4;
                 }
@@ -377,7 +389,7 @@ class DroppingBlock : public Entity {
                     world.sound(*this, effect::kThud);
                     stay_active(false);
                     speed_y = 0;
-                    state_ = State::kResting;
+                    s.state = State::kResting;
                 } else {
                     squash_below(world, *this);
                 }
@@ -385,7 +397,7 @@ class DroppingBlock : public Entity {
         }
         world.animate(*this);
     }
-    Looks looks_for() const override { return state_ == State::kFalling ? Looks{lands_on(floors())} : Looks{}; }
+    Looks looks_for() const override { return s.state == State::kFalling ? Looks{lands_on(floors())} : Looks{}; }
 
   private:
     enum class State : std::uint8_t { kStart, kResting, kCrumbling, kBack, kFalling };
@@ -397,10 +409,13 @@ class DroppingBlock : public Entity {
     void drop(World& world) {
         speed_y = px(2);
         world.play(*this, anim::kDroppingBlockFalls);
-        state_ = State::kFalling;
+        s.state = State::kFalling;
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A block that sinks under a Viking who stands on it, down to the next floor, and stays there until its
@@ -408,19 +423,19 @@ class DroppingBlock : public Entity {
 class SinkingBlock : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kSinkingBlockLooks);
                 acts_as = tile::kGround;
                 if (is_falling()) {
                     return fall(world);
                 }
-                state_ = State::kWaiting;
+                s.state = State::kWaiting;
                 break;
             case State::kWaiting:
                 if (find_viking_beside(world, *this, Side::kAbove, vikings())) {
                     speed_y = kSpeed;
-                    state_ = State::kSinking;
+                    s.state = State::kSinking;
                     take_riders_down(world, *this);
                 }
                 break;
@@ -428,7 +443,7 @@ class SinkingBlock : public Entity {
                 static const TileTypes floors = tile_types({tile::kGround, tile::kPlatformStop, tile::kSpikes});
                 if (find_beside(world, *this, Side::kBelow, floors)) {
                     speed_y = 0;
-                    state_ = State::kSunk;
+                    s.state = State::kSunk;
                     break;
                 }
                 take_riders_down(world, *this);
@@ -442,13 +457,13 @@ class SinkingBlock : public Entity {
             case State::kFalling:
             case State::kFallingOn:
                 if (saw.landed) {
-                    if (state_ == State::kFallingOn) {
+                    if (s.state == State::kFallingOn) {
                         stop_falling();
                         world.sound(*this, effect::kThud);
-                        state_ = State::kLanded;
+                        s.state = State::kLanded;
                         break;
                     }
-                    state_ = State::kFallingOn;
+                    s.state = State::kFallingOn;
                 } else {
                     squash_below(world, *this);
                 }
@@ -463,7 +478,7 @@ class SinkingBlock : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        switch (state_) {
+        switch (s.state) {
             case State::kFalling:
                 return {lands_on(ground())};
             case State::kFallingOn:
@@ -481,12 +496,15 @@ class SinkingBlock : public Entity {
     void fall(World& world) {
         speed_y = kSpeed;
         start_falling();
-        state_ = State::kFalling;
+        s.state = State::kFalling;
         take_riders_down(world, *this);
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A platform that drops when its switches come on, down to the next floor. There it rests until a Viking stands
@@ -494,32 +512,32 @@ class SinkingBlock : public Entity {
 class DroppingPlatform : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
-                stays_active_ = stays_active();
+                s.stays_active = stays_active();
                 world.play(*this, anim::kDroppingPlatformLooks);
                 acts_as = tile::kPlatform;
                 if (is_falling()) {
                     return drop_again(world);
                 }
-                state_ = world.values.at(0) != 0 ? State::kResting : State::kWaiting;
+                s.state = world.values.at(0) != 0 ? State::kResting : State::kWaiting;
                 break;
             case State::kWaiting:
                 if (switches_on(world, argument)) {
                     start_falling();
                     stay_active();
                     world.values.at(0) = 1;
-                    state_ = State::kDropping;
+                    s.state = State::kDropping;
                     world.animate(*this);
                     return;
                 }
                 break;
             case State::kDropping:
                 if (saw.landed) {
-                    stay_active(stays_active_);
+                    stay_active(s.stays_active);
                     stop_falling();
                     world.sound(*this, effect::kThud);
-                    state_ = State::kResting;
+                    s.state = State::kResting;
                     break;
                 }
                 take_riders_down(world, *this);
@@ -546,7 +564,7 @@ class DroppingPlatform : public Entity {
                     stop_falling();
                     never_again(world, *this);
                     world.play(*this, anim::kDroppingPlatformBreaks);
-                    state_ = State::kBreaking;
+                    s.state = State::kBreaking;
                     world.animate(*this);
                     return;
                 }
@@ -561,11 +579,11 @@ class DroppingPlatform : public Entity {
                 world.animate(*this);
                 return;
         }
-        stay_active_under_a_viking(world, *this, stays_active_);
+        stay_active_under_a_viking(world, *this, s.stays_active);
         world.animate(*this);
     }
     Looks looks_for() const override {
-        switch (state_) {
+        switch (s.state) {
             case State::kDropping:
                 return {lands_on(end_of_its_way())};
             case State::kDroppingAgain:
@@ -583,12 +601,15 @@ class DroppingPlatform : public Entity {
         world.sound(*this, effect::kSwitch);
         start_falling();
         stay_active();
-        state_ = State::kDroppingAgain;
+        s.state = State::kDroppingAgain;
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
-    bool stays_active_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool stays_active = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A plate that gives way under a weight (Egypt, the factory, the wacky world): a platform until a block comes to
@@ -597,23 +618,23 @@ class DroppingPlatform : public Entity {
 class SinkingPlate : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
-                stays_active_ = stays_active();
-                needs_ = argument & kNeedsSwitch;
+                s.stays_active = stays_active();
+                s.needs = argument & kNeedsSwitch;
                 argument &= static_cast<std::uint16_t>(~kNeedsSwitch);
                 world.play(*this, anim::kSinkingPlateRests);
                 world.animate(*this);
                 acts_as = tile::kPlatform;
-                state_ = State::kWaiting;
+                s.state = State::kWaiting;
                 stay_active_under_a_viking(world);
                 return;
             case State::kWaiting:
-                if ((world.switches & needs_) != needs_) {
+                if ((world.switches & s.needs) != s.needs) {
                     stay_active_under_a_viking(world);
                     return;
                 }
-                state_ = State::kArmed;
+                s.state = State::kArmed;
                 stay_active_under_a_viking(world);
                 return;
             case State::kArmed: {
@@ -630,7 +651,7 @@ class SinkingPlate : public Entity {
                 world.play(*this, anim::kSinkingPlateSinks);
                 world.sound(*this, effect::kScrape);
                 speed_y = kSinkingSpeed;
-                state_ = State::kSinking;
+                s.state = State::kSinking;
                 break;
             }
             case State::kSinking:
@@ -651,7 +672,7 @@ class SinkingPlate : public Entity {
     static constexpr std::int16_t kSinkingSpeed = px(2);
 
     void stay_active_under_a_viking(const World& world) {
-        if (stays_active_) {
+        if (s.stays_active) {
             return;
         }
         static const TileTypes vikings = tile_types({tile::kViking});
@@ -659,45 +680,48 @@ class SinkingPlate : public Entity {
         stay_active(ridden);
     }
 
-    State state_ = State::kStart;
-    bool stays_active_ = false;
-    std::uint16_t needs_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        bool stays_active = false;
+        std::uint16_t needs = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A tile that gives way ten ticks after a Viking has stepped on it.
 class CrumblingTile : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kCrumblingTileLooks);
                 world.animate(*this);
-                shot_away_ = kind == factory_kind::kShotAwayTile || kind == factory_kind::kShotAwayTileB8;
-                acts_as = shot_away_ ? tile::kPlatform : tile::kGround;
-                state_ = State::kWhole;
+                s.shot_away = kind == factory_kind::kShotAwayTile || kind == factory_kind::kShotAwayTileB8;
+                acts_as = s.shot_away ? tile::kPlatform : tile::kGround;
+                s.state = State::kWhole;
                 return;
             case State::kWhole:
-                if (shot_away_) {  // a platform that an arrow breaks
+                if (s.shot_away) {  // a platform that an arrow breaks
                     const bool shot = message == message::kArrowBlow;
                     message = 0;
                     if (!shot) {
                         return;
                     }
                     countdown = 0;
-                    state_ = State::kStepped;
+                    s.state = State::kStepped;
                     return update(world);
                 }
                 if (find_viking_beside(world, *this, Side::kAbove, vikings())) {
                     stay_active();
                     count_down_from(10);
-                    state_ = State::kStepped;
+                    s.state = State::kStepped;
                 }
                 return;
             case State::kStepped:
                 if (countdown != 0) {
                     return;
                 }
-                if (!shot_away_) {
+                if (!s.shot_away) {
                     start_falling();
                     speed_y = px(1.5);
                 }
@@ -707,7 +731,7 @@ class CrumblingTile : public Entity {
                 if (Cell* cell = cell_at(world, x, y)) {
                     cell->tile_type = tile::kFree;
                 }
-                state_ = State::kCrumbling;
+                s.state = State::kCrumbling;
                 break;
             case State::kCrumbling:
                 if (animation_over()) {
@@ -722,8 +746,11 @@ class CrumblingTile : public Entity {
   private:
     enum class State : std::uint8_t { kStart, kWhole, kStepped, kCrumbling };
 
-    State state_ = State::kStart;
-    bool shot_away_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool shot_away = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A block of the rain of blocks (kind 6C): it falls, squashing a Viking under it, and where it lands it becomes a
@@ -731,17 +758,17 @@ class CrumblingTile : public Entity {
 class RainedBlock : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 stay_active();
                 world.play(*this, anim::kRainedBlockLooks);
                 acts_as = tile::kPlatform;
-                state_ = State::kResting;
+                s.state = State::kResting;
                 break;
             case State::kResting:
                 if (!find_beside(world, *this, Side::kBelow, ground())) {
                     start_falling();
-                    state_ = State::kFalling;
+                    s.state = State::kFalling;
                 }
                 break;
             case State::kFalling:
@@ -749,7 +776,7 @@ class RainedBlock : public Entity {
                     stop_falling();
                     world.sound(*this, effect::kBlockLands);
                     block_into_map(world, *this);
-                    state_ = State::kLanded;
+                    s.state = State::kLanded;
                     return;
                 }
                 squash_below(world, *this);
@@ -770,7 +797,7 @@ class RainedBlock : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        switch (state_) {
+        switch (s.state) {
             case State::kFalling:
                 return {lands_on(solid())};
             case State::kLanded:
@@ -783,7 +810,10 @@ class RainedBlock : public Entity {
   private:
     enum class State : std::uint8_t { kStart, kResting, kFalling, kLanded };
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // The rain of blocks (kind 6B): once a Viking has been in its part of the level, blocks come down from the top, one
@@ -791,30 +821,30 @@ class RainedBlock : public Entity {
 class BlockRain : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 box = {.left = 256, .top = 64, .right = 608, .bottom = 192};
                 stay_active();
                 never_again(world, *this);
-                state_ = State::kWaiting;
+                s.state = State::kWaiting;
                 return;
             case State::kWaiting:
                 if (saw.viking != kNobody) {
                     target = saw.viking;
                     count_down();
-                    state_ = State::kRaining;
+                    s.state = State::kRaining;
                 }
                 return;
             case State::kRaining:
                 if (countdown != 0) {
                     return;
                 }
-                for (const int column : kRain.at(wave_)) {
+                for (const int column : kRain.at(s.wave)) {
                     if (column != 0) {
                         world.spawn(*this, egypt_kind::kRainedBlock, column, 16, 0, entity_flag::kLargePieces);
                     }
                 }
-                if (++wave_ == kRain.size()) {
+                if (++s.wave == kRain.size()) {
                     world.remove(slot);
                     return;
                 }
@@ -822,7 +852,7 @@ class BlockRain : public Entity {
                 return;
         }
     }
-    Looks looks_for() const override { return state_ == State::kWaiting ? Looks{touching_a_viking()} : Looks{}; }
+    Looks looks_for() const override { return s.state == State::kWaiting ? Looks{touching_a_viking()} : Looks{}; }
 
   private:
     enum class State : std::uint8_t { kStart, kWaiting, kRaining };
@@ -861,8 +891,11 @@ class BlockRain : public Entity {
         {272},
     }};
 
-    State state_ = State::kStart;
-    std::size_t wave_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        std::size_t wave = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A ledge that hangs until it has been hit twice (sword or arrow); then it falls, and where it lands its two
@@ -870,26 +903,26 @@ class BlockRain : public Entity {
 class HangingLedge : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 acts_as = tile::kPlatform;
                 world.play(*this, anim::kHangingLedgeHangs);
                 box.bottom = y;
-                state_ = State::kHanging;
+                s.state = State::kHanging;
                 break;
             case State::kHanging:
                 if (message == message::kSwordBlow || message == message::kArrowBlow) {
                     world.sound(*this, effect::kBurst);
                     world.play(*this, anim::kHangingLedgeIsHit);
-                    if (hit_before_) {
+                    if (s.hit_before) {
                         message = 0;
                         message_value = 0;
                         start_falling();
                         stay_active();
-                        state_ = State::kFalling;
+                        s.state = State::kFalling;
                         break;
                     }
-                    hit_before_ = true;
+                    s.hit_before = true;
                 }
                 message = 0;
                 message_value = 0;
@@ -909,7 +942,7 @@ class HangingLedge : public Entity {
                         cell->tile_type = tile::kPlatform;
                     }
                 }
-                state_ = State::kHanging;
+                s.state = State::kHanging;
                 break;
             }
         }
@@ -922,15 +955,18 @@ class HangingLedge : public Entity {
         return types;
     }
     Looks looks_for() const override {
-        return state_ == State::kFalling ? Looks{lands_on(solid()), lands_on(deadly())} : Looks{};
+        return s.state == State::kFalling ? Looks{lands_on(solid()), lands_on(deadly())} : Looks{};
     }
     void outside_active_area(World& world) override { leave(world, *this); }
 
   private:
     enum class State : std::uint8_t { kStart, kHanging, kFalling };
 
-    State state_ = State::kStart;
-    bool hit_before_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool hit_before = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A ball that hangs until it has been hit twice (sword or arrow); then it falls, rolls on where it lands, and
@@ -938,21 +974,21 @@ class HangingLedge : public Entity {
 class Ball : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kBallHangs);
-                state_ = State::kHanging;
+                s.state = State::kHanging;
                 break;
             case State::kHanging:
                 if (message == message::kSwordBlow || message == message::kArrowBlow) {
                     world.play(*this, anim::kBallIsHit);
                     message = 0;
                     world.sound(*this, effect::kBallIsHit);
-                    if (hit_before_) {
+                    if (s.hit_before) {
                         return drop(world);
                     }
                     world.sound(*this, effect::kBurst);
-                    hit_before_ = true;
+                    s.hit_before = true;
                 }
                 message = 0;
                 break;
@@ -970,7 +1006,7 @@ class Ball : public Entity {
                     return gone_for_good(world, *this);
                 }
                 world.sound(*this, effect::kThud);
-                state_ = State::kRolling;
+                s.state = State::kRolling;
                 set_flag(entity_flag::kPutOnGround);
                 break;
             case State::kRolling:
@@ -989,7 +1025,7 @@ class Ball : public Entity {
         return types;
     }
     Looks looks_for() const override {
-        return state_ == State::kFalling
+        return s.state == State::kFalling
                    ? Looks{lands_on(solid()), lands_on(deadly()), touching_any(hit::kShieldOverhead, &Saw::shield)}
                    : Looks{};
     }
@@ -1008,12 +1044,15 @@ class Ball : public Entity {
         speed_x = 0;
         speed_y = px(1.5);
         world.play(*this, anim::kBallFalls);
-        state_ = State::kFalling;
+        s.state = State::kFalling;
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
-    bool hit_before_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool hit_before = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A boulder: it waits behind what holds it; once that is gone it rolls on, squashing a Viking it touches, falls
@@ -1021,14 +1060,14 @@ class Ball : public Entity {
 class Boulder : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kBoulderLooks);
                 if (is_falling()) {
-                    state_ = State::kFalling;
+                    s.state = State::kFalling;
                     break;
                 }
-                state_ = State::kHeld;
+                s.state = State::kHeld;
                 break;
             case State::kHeld:
                 if (!find_beside(world, *this, Side::kAhead, solid())) {
@@ -1036,7 +1075,7 @@ class Boulder : public Entity {
                     never_again(world, *this);
                     speed_x = px(3);
                     set_flag(entity_flag::kPutOnGround);
-                    state_ = State::kRolling;
+                    s.state = State::kRolling;
                 }
                 break;
             case State::kRolling:
@@ -1055,7 +1094,7 @@ class Boulder : public Entity {
                 }
                 if (!find_beside(world, *this, Side::kBelow, ground())) {
                     start_falling();
-                    state_ = State::kFalling;
+                    s.state = State::kFalling;
                     break;
                 }
                 set_flag(entity_flag::kPutOnGround);
@@ -1077,7 +1116,7 @@ class Boulder : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        switch (state_) {
+        switch (s.state) {
             case State::kRolling:
                 return {stopped_by(solid()), touching_a_viking()};
             case State::kFalling:
@@ -1100,18 +1139,21 @@ class Boulder : public Entity {
         world.play(*this, anim::kBoulderShatters);
         speed_x = 0;
         stop_falling();
-        state_ = State::kShattering;
+        s.state = State::kShattering;
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A wall a bomb blows up. Once the blast no longer touches it, it crumbles: rubble starts at its place.
 class BombableWall : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 if ((argument & kLeavesBit) == 0) {
                     stay_active();
@@ -1121,17 +1163,17 @@ class BombableWall : public Entity {
                     box.left -= 8;
                     box.right += 8;
                 }
-                state_ = State::kStanding;
+                s.state = State::kStanding;
                 break;
             case State::kStanding:
                 if (message == message::kBlast) {
                     message = 0;
-                    state_ = State::kHit;
+                    s.state = State::kHit;
                     return;
                 }
                 break;
             case State::kHit:
-                state_ = State::kInTheBlast;
+                s.state = State::kInTheBlast;
                 return;
             case State::kInTheBlast:
                 if ((saw.other != kNobody)) {
@@ -1146,14 +1188,17 @@ class BombableWall : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        return state_ == State::kInTheBlast ? Looks{touching(hit_class::kBlast, &Saw::other)} : Looks{};
+        return s.state == State::kInTheBlast ? Looks{touching(hit_class::kBlast, &Saw::other)} : Looks{};
     }
 
   private:
     enum class State : std::uint8_t { kStart, kStanding, kHit, kInTheBlast };
     static constexpr std::uint16_t kLeavesBit = 0x8000;  // in its argument: it isn't kept active out of view
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // Rubble: where a wall breaks. It clears the cell it is in; in a wall made to crumble it then goes on to the next
@@ -1161,13 +1206,13 @@ class BombableWall : public Entity {
 class Rubble : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 stay_active();
-                column_ = cell_of(x);
-                row_ = cell_of(y);
-                wall_ = type_at(world, column_, row_);
-                if (wall_ != kCrumbles && wall_ != kBreaks) {
+                s.column = cell_of(x);
+                s.row = cell_of(y);
+                s.wall = type_at(world, s.column, s.row);
+                if (s.wall != kCrumbles && s.wall != kBreaks) {
                     world.remove(slot);
                     return;
                 }
@@ -1175,29 +1220,29 @@ class Rubble : public Entity {
                 world.animate(*this);
                 return clear(world);
             case State::kFirstTick:
-                state_ = State::kCrumbling;
+                s.state = State::kCrumbling;
                 break;
             case State::kCrumbling: {
                 if (!animation_over()) {
                     break;
                 }
-                if (wall_ != kCrumbles) {
+                if (s.wall != kCrumbles) {
                     world.remove(slot);
                     return;
                 }
                 const int ahead = facing_left() ? -1 : 1;
                 const std::array<std::array<int, 2>, 4> next{{{0, -1}, {0, 1}, {ahead, 0}, {-ahead, 0}}};
                 for (const auto& [across, down] : next) {
-                    const int type = type_at(world, column_ + across, row_ + down);
-                    wall_ = type;
+                    const int type = type_at(world, s.column + across, s.row + down);
+                    s.wall = type;
                     if (type == kCrumbles || type == kBreaks) {
-                        column_ += across;
-                        row_ += down;
+                        s.column += across;
+                        s.row += down;
                         // A whole cell on; across, the push counts the way it faces.
                         push_x += (across * ahead * kCell);
                         push_y += (down * kCell);
                         world.animate(*this);
-                        state_ = State::kMoving;
+                        s.state = State::kMoving;
                         return;
                     }
                 }
@@ -1221,19 +1266,22 @@ class Rubble : public Entity {
     }
 
     void clear(World& world) {
-        if (column_ >= 0 && column_ < world.map.width && row_ >= 0 && row_ < world.map.height) {
-            world.map.cells.at((static_cast<std::size_t>(row_) * static_cast<std::size_t>(world.map.width)) +
-                               static_cast<std::size_t>(column_)) = world.cleared_cell;
+        if (s.column >= 0 && s.column < world.map.width && s.row >= 0 && s.row < world.map.height) {
+            world.map.cells.at((static_cast<std::size_t>(s.row) * static_cast<std::size_t>(world.map.width)) +
+                               static_cast<std::size_t>(s.column)) = world.cleared_cell;
         }
         world.play(*this, anim::kRubbleFalls);
         world.animate(*this);
-        state_ = State::kFirstTick;
+        s.state = State::kFirstTick;
     }
 
-    State state_ = State::kStart;
-    int column_ = 0;
-    int row_ = 0;
-    int wall_ = 0;  // the tile type of the cell it is clearing
+    struct Saved {
+        State state = State::kStart;
+        int column = 0;
+        int row = 0;
+        int wall = 0;  // the tile type of the cell it is clearing
+    } s;
+    LVR_SAVES(Entity)
 };
 
 }  // namespace

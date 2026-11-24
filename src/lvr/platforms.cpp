@@ -99,10 +99,10 @@ void carry_vikings(World& world, Entity& platform, bool whole_pixels = true) {
 class MovingPlatform : public Entity {
   public:
     void update(World& world) override {
-        if (state_ == State::kStart) {
+        if (s.state == State::kStart) {
             start(world);
         }
-        if (state_ == State::kWaiting) {
+        if (s.state == State::kWaiting) {
             if (saw.viking != kNobody) {
                 if (Entity* viking = world.at(saw.viking)) {
                     target = saw.viking;
@@ -121,31 +121,31 @@ class MovingPlatform : public Entity {
         // On its way.
         if (!switches_on(world, argument)) {
             speed_y = 0;
-            state_ = State::kWaiting;
+            s.state = State::kWaiting;
             stay_active_under_a_viking(world);
             return;
         }
         static const TileTypes walls = tile_types({tile::kGround, tile::kPlatformStop, tile::kSpikes});
         static const TileTypes ceilings = tile_types({tile::kGround, tile::kPlatformStop});
-        if (across_) {
-            if (find_beside(world, *this, forwards_ ? Side::kAhead : Side::kBehind, walls)) {
-                forwards_ = !forwards_;
+        if (s.across) {
+            if (find_beside(world, *this, s.forwards ? Side::kAhead : Side::kBehind, walls)) {
+                s.forwards = !s.forwards;
                 set_off();
             }
-        } else if (down_) {
+        } else if (s.down) {
             if (find_beside(world, *this, Side::kBelow, walls)) {
-                down_ = false;
+                s.down = false;
                 set_off();
-            } else if (squashes_) {
+            } else if (s.squashes) {
                 squash_below(world, *this);
             }
         } else if (find_beside(world, *this, Side::kAbove, ceilings)) {
-            down_ = true;
+            s.down = true;
             set_off();
         }
         go(world);
     }
-    Looks looks_for() const override { return state_ == State::kWaiting ? Looks{touching_a_viking()} : Looks{}; }
+    Looks looks_for() const override { return s.state == State::kWaiting ? Looks{touching_a_viking()} : Looks{}; }
     void outside_active_area(World& world) override { leave(world, *this); }
 
   private:
@@ -154,28 +154,28 @@ class MovingPlatform : public Entity {
     void start(World& world) {
         const PlatformKind& mine = *platform_kind(kind);
         world.play(*this, mine.looks);
-        stays_active_ = stays_active();
-        across_ = mine.way == Way::kAcross;
-        if (across_) {
-            crushes_ = mine.crushes;
-            acts_as = crushes_ ? tile::kGround : tile::kPlatform;
-            speed_ = static_cast<std::int16_t>(argument & kHighByte);
+        s.stays_active = stays_active();
+        s.across = mine.way == Way::kAcross;
+        if (s.across) {
+            s.crushes = mine.crushes;
+            acts_as = s.crushes ? tile::kGround : tile::kPlatform;
+            s.speed = static_cast<std::int16_t>(argument & kHighByte);
         } else {
-            squashes_ = (argument & kTopBit) != 0;
+            s.squashes = (argument & kTopBit) != 0;
             acts_as = (argument & kSolidBit) != 0 ? tile::kGround : tile::kPlatform;
-            speed_ = static_cast<std::int16_t>(argument & kSpeedBits);
+            s.speed = static_cast<std::int16_t>(argument & kSpeedBits);
         }
         argument &= kLowByte;
         world.animate(*this);
-        state_ = State::kWaiting;
+        s.state = State::kWaiting;
     }
 
     void set_off() {
-        state_ = State::kMoving;
-        if (across_) {
-            speed_x = static_cast<std::int16_t>(forwards_ ? speed_ : -speed_);
+        s.state = State::kMoving;
+        if (s.across) {
+            speed_x = static_cast<std::int16_t>(s.forwards ? s.speed : -s.speed);
         } else {
-            speed_y = static_cast<std::int16_t>(down_ ? speed_ : -speed_);
+            speed_y = static_cast<std::int16_t>(s.down ? s.speed : -s.speed);
         }
     }
 
@@ -184,10 +184,10 @@ class MovingPlatform : public Entity {
         carry_vikings(world, *this);
         stay_active_under_a_viking(world);
         world.animate(*this);
-        if (!crushes_) {
+        if (!s.crushes) {
             return;
         }
-        const auto in_the_way = find_viking_beside(world, *this, forwards_ ? Side::kAhead : Side::kBehind, vikings());
+        const auto in_the_way = find_viking_beside(world, *this, s.forwards ? Side::kAhead : Side::kBehind, vikings());
         if (!in_the_way || in_the_way->entity < 0) {
             return;
         }
@@ -200,21 +200,24 @@ class MovingPlatform : public Entity {
 
     // Coming down on a Viking that stands under it.
     void stay_active_under_a_viking(const World& world) {
-        if (stays_active_) {
+        if (s.stays_active) {
             return;
         }
         const bool ridden = find_viking_beside(world, *this, Side::kAbove, vikings()).has_value();
         stay_active(ridden);
     }
 
-    State state_ = State::kStart;
-    bool stays_active_ = false;
-    bool across_ = false;
-    bool crushes_ = false;   // one that goes across: a Viking in its way is crushed
-    bool squashes_ = false;  // one that goes up and down: a Viking under it
-    bool forwards_ = true;
-    bool down_ = true;
-    std::int16_t speed_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        bool stays_active = false;
+        bool across = false;
+        bool crushes = false;   // one that goes across: a Viking in its way is crushed
+        bool squashes = false;  // one that goes up and down: a Viking under it
+        bool forwards = true;
+        bool down = true;
+        std::int16_t speed = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A platform that goes round in a circle, always: twenty stretches of three ticks, each with its own speed across
@@ -271,22 +274,22 @@ class Lift : public Entity {
             set_cells(world, tile::kFree);
             acts_as = tile::kPlatform;
             // Its argument: which lift of the level it is, the switches it needs, and where it was left.
-            switches_ = argument & kSwitchBits;
+            s.switches = argument & kSwitchBits;
             const std::uint16_t left_at = argument & kLeftAtBits;
             argument &= kNumberBits;
             if (left_at == 0) {  // new: each lift starts at its top or its bottom, or between
-                at_top_ = argument == 1 || argument == 2 || argument == 3 || argument == 5 || argument == 9 ||
-                          argument == 12 || argument == 14;
-                at_bottom_ = argument == 4 || argument == 6 || argument == 8 || argument == 11 || argument == 13 ||
-                             argument == 15;
+                s.at_top = argument == 1 || argument == 2 || argument == 3 || argument == 5 || argument == 9 ||
+                           argument == 12 || argument == 14;
+                s.at_bottom = argument == 4 || argument == 6 || argument == 8 || argument == 11 || argument == 13 ||
+                              argument == 15;
             } else {
-                at_top_ = left_at == kLeftAtTop;
-                at_bottom_ = left_at == kLeftAtBottom;
+                s.at_top = left_at == kLeftAtTop;
+                s.at_bottom = left_at == kLeftAtBottom;
             }
             world.animate(*this);
             return;
         }
-        if ((world.switches & switches_) != switches_) {
+        if ((world.switches & s.switches) != s.switches) {
             speed_y = 0;
             world.animate(*this);
             return;
@@ -308,8 +311,8 @@ class Lift : public Entity {
             mine.x = x;
             mine.y = y;
             mine.flags = flags & entity_flag::kKeptInPlacement;
-            const std::uint16_t left_at = at_bottom_ ? kLeftAtBottom : (at_top_ ? kLeftAtTop : kLeftBetween);
-            mine.argument = static_cast<std::uint16_t>(unsigned{argument} | switches_ | left_at);
+            const std::uint16_t left_at = s.at_bottom ? kLeftAtBottom : (s.at_top ? kLeftAtTop : kLeftBetween);
+            mine.argument = static_cast<std::uint16_t>(unsigned{argument} | s.switches | left_at);
         }
         world.remove(slot);
     }
@@ -366,7 +369,7 @@ class Lift : public Entity {
     }
 
     void go(World& world, bool up) {
-        if (up ? at_top_ : at_bottom_) {
+        if (up ? s.at_top : s.at_bottom) {
             return;
         }
         if (speed_y == (up ? -kSpeed : kSpeed)) {
@@ -374,26 +377,26 @@ class Lift : public Entity {
         }
         stop_sound(world, up ? effect::kGoingDown : effect::kGoingUp);
         sound(world, up ? effect::kGoingUp : effect::kGoingDown);
-        going_up_ = up;
-        going_down_ = !up;
-        just_set_off_ = true;
+        s.going_up = up;
+        s.going_down = !up;
+        s.just_set_off = true;
     }
 
     // On its way it is active wherever the view is; at a stop it halts.
     void steer(World& world) {
         stay_active();
-        if (going_up_) {
+        if (s.going_up) {
             speed_y = -kSpeed;
-            at_bottom_ = false;
-        } else if (going_down_) {
+            s.at_bottom = false;
+        } else if (s.going_down) {
             speed_y = kSpeed;
-            at_top_ = false;
+            s.at_top = false;
         } else {
             stay_active(false);
             return;
         }
-        if (just_set_off_) {
-            just_set_off_ = false;
+        if (s.just_set_off) {
+            s.just_set_off = false;
             return;
         }
         if (argument >= kStops.size()) {
@@ -401,15 +404,15 @@ class Lift : public Entity {
         }
         const Stops& stops = kStops.at(argument);
         if (y == stops.top) {
-            at_top_ = true;
-            going_up_ = false;
+            s.at_top = true;
+            s.going_up = false;
             stop_sound(world, effect::kGoingUp);
         } else if (y == stops.bottom) {
-            at_bottom_ = true;
-            going_down_ = false;
+            s.at_bottom = true;
+            s.going_down = false;
             stop_sound(world, effect::kGoingDown);
         } else if (stops.between != 0 && y == stops.between) {
-            going_up_ = going_down_ = false;
+            s.going_up = s.going_down = false;
             stop_sound(world, effect::kGoingUp);
             stop_sound(world, effect::kGoingDown);
         } else {
@@ -448,12 +451,15 @@ class Lift : public Entity {
         }
     }
 
-    std::uint16_t switches_ = 0;  // it runs while these are on
-    bool at_top_ = false;
-    bool at_bottom_ = false;
-    bool going_up_ = false;
-    bool going_down_ = false;
-    bool just_set_off_ = false;
+    struct Saved {
+        std::uint16_t switches = 0;  // it runs while these are on
+        bool at_top = false;
+        bool at_bottom = false;
+        bool going_up = false;
+        bool going_down = false;
+        bool just_set_off = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A spring: a Viking that comes down on it is thrown back up as fast as he came, and never slowly. While it is
@@ -461,7 +467,7 @@ class Lift : public Entity {
 class Spring : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 set_cells(world, tile::kGround);
                 // A Viking already in it is put on top.
@@ -473,7 +479,7 @@ class Spring : public Entity {
                 });
                 world.play(*this, anim::kSpringRests);
                 acts_as = tile::kSpring;
-                state_ = State::kResting;
+                s.state = State::kResting;
                 break;
             case State::kResting: {
                 bool landed = false;
@@ -490,7 +496,7 @@ class Spring : public Entity {
                     }
                 });
                 box.top += kGive;
-                state_ = State::kPressed;
+                s.state = State::kPressed;
                 break;
             }
             case State::kPressed:
@@ -504,11 +510,11 @@ class Spring : public Entity {
                     const int back = -viking.speed_y;
                     viking.speed_y = static_cast<std::int16_t>(back < kLeastThrow ? back : kLeastThrow);
                 });
-                state_ = State::kSprung;
+                s.state = State::kSprung;
                 return;
             case State::kSprung:
                 box.top -= kGive;
-                state_ = State::kResting;
+                s.state = State::kResting;
                 break;
         }
         world.animate(*this);
@@ -546,7 +552,10 @@ class Spring : public Entity {
         }
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 }  // namespace
@@ -557,7 +566,7 @@ class Spring : public Entity {
 class OneWayPlatform : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return at_start(world);
             case State::kWaiting:
@@ -574,17 +583,17 @@ class OneWayPlatform : public Entity {
         world.play(*this, switched ? anim::kOneWayPlatformSwitchedLooks : anim::kOneWayPlatformLooks);
         world.animate(*this);
         acts_as = tile::kPlatform;
-        stays_active_ = stays_active();
+        s.stays_active = stays_active();
         if (switched) {
-            squashes_ = (argument & kTopBit) != 0;
-            pace_ = static_cast<std::int16_t>(argument & kPaceBits);
+            s.squashes = (argument & kTopBit) != 0;
+            s.pace = static_cast<std::int16_t>(argument & kPaceBits);
             argument &= kLowByte;
             if (!switches_on(world, argument)) {
-                state_ = State::kWaiting;
+                s.state = State::kWaiting;
                 return;
             }
         } else {
-            pace_ = static_cast<std::int16_t>(argument & kHighByte);
+            s.pace = static_cast<std::int16_t>(argument & kHighByte);
         }
         return go(world);
     }
@@ -594,7 +603,7 @@ class OneWayPlatform : public Entity {
             world.remove(slot);
             return;
         }
-        if (squashes_) {
+        if (s.squashes) {
             squash_below(world, *this);
         }
         return going(world);
@@ -604,22 +613,25 @@ class OneWayPlatform : public Entity {
     enum class State : std::uint8_t { kStart, kWaiting, kGoing };
 
     void go(World& world) {
-        speed_y = pace_;
+        speed_y = s.pace;
         going(world);
     }
     void going(World& world) {
         carry_vikings(world, *this, false);
-        if (!stays_active_) {
+        if (!s.stays_active) {
             const bool ridden = find_viking_beside(world, *this, Side::kAbove, vikings()).has_value();
             stay_active(ridden);
         }
         world.animate(*this);
-        state_ = State::kGoing;
+        s.state = State::kGoing;
     }
-    State state_ = State::kStart;
-    bool stays_active_ = false;
-    bool squashes_ = false;
-    std::int16_t pace_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        bool stays_active = false;
+        bool squashes = false;
+        std::int16_t pace = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 std::unique_ptr<Entity> make_one_way_platform() {

@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "lvr/animations.hpp"
+#include "lvr/archive.hpp"
 #include "lvr/looks.hpp"
 #include "lvr/names.hpp"
 #include "lvr/sprites.hpp"
@@ -61,32 +62,11 @@ inline constexpr int kMovesItself = -1;     // its own speed
 inline constexpr int kMovedFreely = 0x100;  // by exactly its push, without the speed limit
 // Otherwise: the slot of the entity it is attached to.
 
-class Entity {
-  public:
-    Entity() = default;
-    Entity(const Entity&) = default;
-    Entity& operator=(const Entity&) = default;
-    Entity(Entity&&) = default;
-    Entity& operator=(Entity&&) = default;
-    virtual ~Entity() = default;
-
-    // One tick of its behaviour.
-    virtual void update(World& world) = 0;
-    // What it looks for after this tick's move, for what it is doing now (lvr/looks.hpp); the answers are in
-    // `saw` at its next update.
-    virtual Looks looks_for() const { return {}; }
-    // After the tick's moves, for an entity that moved itself: where the map and the others stop it. As it is:
-    // the looks of looks_for() that stop it. (A kind written before looks_for() does its own looking here.)
-    virtual void after_move(World& world);
-    // Later in the tick, for every entity: which others touch it. As it is: the touching looks.
-    virtual void check_hits(World& world);
+// What every entity is and remembers, as plain data: what the engine reads and moves of it, and what is written when
+// an entity is (lvr/archive.hpp). Its kind's own state is beside it, in the kind's `Saved`.
+struct EntityState {
+    // What it saw after its last move and in the last tick's hit tests (looks_for).
     Saw saw;
-    // Its turn when it has left the active area (entity_flag::kLeftTheActiveArea), instead of update: most kinds
-    // are removed; some first note where they were in their placement; a few carry on.
-    virtual void outside_active_area(World& world);
-    // A copy, for a snapshot of the world. How its kind is copied was noted when it was made (make_entity).
-    std::unique_ptr<Entity> clone() const { return copy_ != nullptr ? copy_(*this) : nullptr; }
-
     // Entities refer to each other by slot (target, message_value, creator, last_created). As in the original a
     // slot outlives what was in it: when an entity is removed, only its creator's `last_created` and what it
     // created's `creator` are cleared. A `target` (or a slot in `message_value`) can name a slot that is empty by
@@ -139,6 +119,37 @@ class Entity {
     int moved_by = kMovesItself;
 
     Sprite sprite;
+    bool had_first_turn = false;  // its first turn is over (first_turn)
+};
+
+class Entity : public EntityState {
+  public:
+    Entity() = default;
+    Entity(const Entity&) = default;
+    Entity& operator=(const Entity&) = default;
+    Entity(Entity&&) = default;
+    Entity& operator=(Entity&&) = default;
+    virtual ~Entity() = default;
+
+    // One tick of its behaviour.
+    virtual void update(World& world) = 0;
+    // What it looks for after this tick's move, for what it is doing now (lvr/looks.hpp); the answers are in
+    // `saw` at its next update.
+    virtual Looks looks_for() const { return {}; }
+    // After the tick's moves, for an entity that moved itself: where the map and the others stop it. As it is:
+    // the looks of looks_for() that stop it. (A kind written before looks_for() does its own looking here.)
+    virtual void after_move(World& world);
+    // Later in the tick, for every entity: which others touch it. As it is: the touching looks.
+    virtual void check_hits(World& world);
+    // Its turn when it has left the active area (entity_flag::kLeftTheActiveArea), instead of update: most kinds
+    // are removed; some first note where they were in their placement; a few carry on.
+    virtual void outside_active_area(World& world);
+    // A copy, for a snapshot of the world. How its kind is copied was noted when it was made (make_entity).
+    std::unique_ptr<Entity> clone() const { return copy_ != nullptr ? copy_(*this) : nullptr; }
+    // Written out and read back: what every entity has, then (a kind with LVR_SAVES) what its kind remembers. What
+    // is read is of an entity of the same kind.
+    virtual void save(Writer& to) const { to(static_cast<const EntityState&>(*this)); }
+    virtual void load(Reader& from) { from(static_cast<EntityState&>(*this)); }
 
     // Whether its animation has played to its end (or to where it waits to be started again).
     bool animation_over() const noexcept { return sprite.delay == 0; }
@@ -149,8 +160,8 @@ class Entity {
     }
 
     // True once, at its first turn: for what a kind sets up as it starts.
-    bool first_turn() noexcept { return !std::exchange(started_, true); }
-    bool started() const noexcept { return started_; }
+    bool first_turn() noexcept { return !std::exchange(had_first_turn, true); }
+    bool started() const noexcept { return had_first_turn; }
 
     // Its flags, one or several at a time.
     bool has_flag(std::uint16_t flag) const noexcept { return (flags & flag) != 0; }
@@ -183,7 +194,6 @@ class Entity {
     template <class Kind, class... Args>
     friend std::unique_ptr<Kind> make_entity(Args&&... args);
     std::unique_ptr<Entity> (*copy_)(const Entity&) = nullptr;
-    bool started_ = false;
 };
 
 // A new entity of a kind's class. Every entity is made this way: it is what lets a world be copied.
@@ -195,6 +205,27 @@ std::unique_ptr<Kind> make_entity(Args&&... args) {
     };
     return made;
 }
+
+// A kind keeps everything it remembers in one plain struct named `Saved`, as its member `s`, with this line after
+// it: the kind is then written out and read back without its fields being named anywhere, and adding a field is
+// only adding it to the struct. `Base` is the class it is derived from. (A kind others are derived from names its
+// member otherwise, and says so: LVR_SAVES_AS.) That a kind has no state outside its `Saved` is held by
+// tools/kind_state.py in the checks; that it has no other member at all, here, by its size.
+#define LVR_SAVES_AS(Base, member)                                                                             \
+    void save(::lvr::Writer& to) const override {                                                              \
+        static_assert(sizeof(std::remove_cvref_t<decltype(*this)>) == sizeof(::lvr::WithSaved<Base, Saved>),   \
+                      "a kind's state is all in its Saved");                                                   \
+        static_assert(std::is_standard_layout_v<Saved> && std::is_trivially_copyable_v<Saved>,                 \
+                      "a kind's Saved is plain data");                                                         \
+        static_assert(alignof(Saved) <= alignof(std::uint64_t), "nothing in a Saved asks for more alignment"); \
+        Base::save(to);                                                                                        \
+        to(member);                                                                                            \
+    }                                                                                                          \
+    void load(::lvr::Reader& from) override {                                                                  \
+        Base::load(from);                                                                                      \
+        from(member);                                                                                          \
+    }
+#define LVR_SAVES(Base) LVR_SAVES_AS(Base, s)
 
 // An entity a world owns: a slot's. Copying it copies the entity (Entity::clone), which is what makes a world a
 // thing that can be copied: a snapshot for the rewind, a quicksave. Otherwise it is used as the pointer it holds.

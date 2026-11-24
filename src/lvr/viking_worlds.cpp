@@ -10,16 +10,16 @@ void Viking::use_pump(World& world, Entity& pump) {
     if (inflated) {
         return inflated_keys(world, false);
     }
-    if (!on_ground(world) || doing_ == Doing::kDizzy || doing_ == Doing::kDizzyRising ||
-        doing_ == Doing::kDizzyFalling) {
+    if (!on_ground(world) || s.doing == Doing::kDizzy || s.doing == Doing::kDizzyRising ||
+        s.doing == Doing::kDizzyFalling) {
         return after_acting(world);
     }
     speed_x = speed_y = 0;
     set_falling(false);
     sound(world, effect::kPumped);
     pump.message = message::kAsked;
-    if (who_ == kind::kOlaf) {
-        shield_away_ = true;
+    if (s.who == kind::kOlaf) {
+        s.shield_away = true;
     }
     world.play(*this, by_who(anim::kVikingPumps));
     world.animate(*this);
@@ -27,11 +27,11 @@ void Viking::use_pump(World& world, Entity& pump) {
 }
 
 void Viking::inflated_float(World& world) {
-    if ((warned_ || deflating_) && !animation_waits()) {  // the air is out
+    if ((s.warned || s.deflating) && !animation_waits()) {  // the air is out
         count_down(false);
         inflated = false;
-        warned_ = deflating_ = false;
-        doing_ = Doing::kDizzy;
+        s.warned = s.deflating = false;
+        s.doing = Doing::kDizzy;
         return fall(world);
     }
     world.animate(*this);
@@ -39,7 +39,7 @@ void Viking::inflated_float(World& world) {
 }
 
 void Viking::let_air_out(World& world) {
-    deflating_ = true;
+    s.deflating = true;
     world.play(*this, by_who(anim::kVikingLetsAirOut));
     inflated_float(world);
 }
@@ -61,7 +61,7 @@ void Viking::inflated_steer(World& world) {
             speed_x = static_cast<std::int16_t>(-speed_x);
         }
         face(world, left);
-        doing_ = left ? Doing::kWalkingLeft : Doing::kWalkingRight;
+        s.doing = left ? Doing::kWalkingLeft : Doing::kWalkingRight;
         if (speed_x < px(4)) {
             speed_x += (speed_x >= 0 ? px(0.25) : px(0.5));
         }
@@ -153,8 +153,8 @@ void Viking::inflated_turn(World& world) {
     if (message != 0 && told_inflated(world)) {
         return;
     }
-    if (!warned_ && !deflating_ && countdown == 0) {  // the air runs out: a wobble first
-        warned_ = deflating_ = true;
+    if (!s.warned && !s.deflating && countdown == 0) {  // the air runs out: a wobble first
+        s.warned = s.deflating = true;
         world.play(*this, by_who(anim::kVikingWobbles));
         return inflated_float(world);
     }
@@ -165,27 +165,27 @@ void Viking::inflated_turn(World& world) {
         speed_y -= px(0.25);
     }
     if (!played(world)) {
-        if (!warned_ && !deflating_) {
+        if (!s.warned && !s.deflating) {
             inflated_slow_down();
         }
         return inflated_float(world);
     }
-    if ((warned_ || !deflating_) && ((world.pressed & key::kF) != 0 || (world.pressed & key::kD) != 0)) {
-        warned_ = false;
+    if ((s.warned || !s.deflating) && ((world.pressed & key::kF) != 0 || (world.pressed & key::kD) != 0)) {
+        s.warned = false;
         return let_air_out(world);
     }
     inflated_keys(world, true);
 }
 
 void Viking::take_controls(World& world) {
-    if (!on_ground(world) || doing_ == Doing::kDizzy || doing_ == Doing::kDizzyRising ||
-        doing_ == Doing::kDizzyFalling) {
+    if (!on_ground(world) || s.doing == Doing::kDizzy || s.doing == Doing::kDizzyRising ||
+        s.doing == Doing::kDizzyFalling) {
         return after_acting(world);
     }
     speed_x = speed_y = 0;
     set_falling(false);
-    if (who_ == kind::kOlaf) {
-        shield_away_ = true;
+    if (s.who == kind::kOlaf) {
+        s.shield_away = true;
     }
     world.play(*this, by_who(anim::kVikingAtControls));
     wait(At::kTakingControls, {Test::kTouchesThing});
@@ -193,7 +193,7 @@ void Viking::take_controls(World& world) {
 
 void Viking::at_controls(World& world, bool first) {
     if (found(Test::kTouchesThing)) {
-        target = touched_;
+        target = s.touched;
     }
     const Entity* panel = target >= 0 && target < world.slots() ? world.at(target) : nullptr;
     if (first) {
@@ -210,14 +210,14 @@ void Viking::at_controls(World& world, bool first) {
         // Which crane: the argument of what is in the slot of the controls he took. They may be gone from
         // there (he was carried off still holding on): then it is what was there last, as the original reads it.
         if (panel != nullptr) {
-            crane_ = panel->argument;
+            s.crane = panel->argument;
         }
         if (played(world)) {
-            const std::uint16_t crane = crane_;
+            const std::uint16_t crane = s.crane;
             if ((world.pressed & key::kD) != 0 || (world.pressed & key::kS) != 0) {
                 push_x = facing_left() ? px(-8) : px(8);
                 world.factory.cranes.at(crane == 1 || crane == 2 ? crane : 0) &= static_cast<std::uint16_t>(~1U);
-                doing_ = Doing::kOther;
+                s.doing = Doing::kOther;
                 return carry_on(world);  // he falls if the controls weren't on the ground
             }
             std::uint16_t& asked = world.factory.cranes.at(crane < 2 ? crane : 2);
@@ -236,18 +236,18 @@ void Viking::at_controls(World& world, bool first) {
 }
 
 void Viking::step_into(World& world, const Entity& teleporter) {
-    if (!on_ground(world) || doing_ == Doing::kDizzy || doing_ == Doing::kDizzyRising ||
-        doing_ == Doing::kDizzyFalling) {
+    if (!on_ground(world) || s.doing == Doing::kDizzy || s.doing == Doing::kDizzyRising ||
+        s.doing == Doing::kDizzyFalling) {
         return after_acting(world);
     }
     speed_x = speed_y = 0;
     set_falling(false);
-    doing_ = Doing::kTeleporting;
+    s.doing = Doing::kTeleporting;
     hit_class = 0;
     hit_mask &= static_cast<std::uint16_t>(~kVikingMaskBits);
     sound(world, effect::kTeleportedAway);
     world.play(*this, by_who(anim::kVikingBeamedAway));
-    teleports_to_ = teleporter_destination(teleporter.argument).value_or(TeleporterDestination{});
+    s.teleports_to = teleporter_destination(teleporter.argument).value_or(TeleporterDestination{});
     fade_away(world);
 }
 
@@ -267,7 +267,7 @@ void Viking::after_acting(World& world) {
     if (inflated) {
         return inflated_keys(world, false);
     }
-    switch (doing_) {
+    switch (s.doing) {
         case Doing::kHurt:
         case Doing::kHurtFalling:
             return hurt_after_acting(world);
@@ -325,8 +325,8 @@ void Viking::cheer(World& world) {
     hit_class = 0;
     hit_mask = 0;
     acts_as = tile::kBody;
-    world.play(*this, who_ == kind::kOlaf && world.scene == scene::kShip ? anim::kOlafCheersOnTheShip
-                                                                         : by_who(anim::kVikingCheers));
+    world.play(*this, s.who == kind::kOlaf && world.scene == scene::kShip ? anim::kOlafCheersOnTheShip
+                                                                          : by_who(anim::kVikingCheers));
     cheering(world);
 }
 
@@ -345,30 +345,30 @@ void Viking::arriving(World& world) {
 // A turn of what the worlds and the scenes have him do: teleporters and beams, the pump's air, the crane's
 // controls, being led.
 void Viking::resume_in_world(World& world) {
-    switch (at_) {
+    switch (s.at) {
         case At::kFadingAway:
             if (animation_waits()) {
                 return fade_away(world);
             }
-            if (beamed_) {  // to the beam's point, side by side: Erik on it, Baleog and Olaf behind him
+            if (s.beamed) {  // to the beam's point, side by side: Erik on it, Baleog and Olaf behind him
                 face(world, !world.beam.faces_right);
                 const int behind = by_who(0, 32, 64);
-                teleports_to_ = {.x = world.beam.x + (facing_left() ? behind : -behind), .y = world.beam.y};
+                s.teleports_to = {.x = world.beam.x + (facing_left() ? behind : -behind), .y = world.beam.y};
             }
             world.play(*this, by_who(anim::kVikingBeamedIn));
-            push_x = static_cast<std::int16_t>(teleports_to_.x - x);
-            push_y = static_cast<std::int16_t>(teleports_to_.y - y);
+            push_x = static_cast<std::int16_t>(s.teleports_to.x - x);
+            push_y = static_cast<std::int16_t>(s.teleports_to.y - y);
             moved_by = kMovedFreely;
-            return wait(beamed_ ? At::kBeamed : At::kTeleported);
+            return wait(s.beamed ? At::kBeamed : At::kTeleported);
         case At::kBeamed:  // a tick more than a teleporter's
             return wait(At::kTeleported);
         case At::kTeleported:
             // Beamed, he waits for the view whether he is played or not.
-            if ((beamed_ || played(world)) && (static_cast<std::uint16_t>(world.camera.moved_x) >= kCameraAtRest ||
-                                               static_cast<std::uint16_t>(world.camera.moved_y) >= kCameraAtRest)) {
+            if ((s.beamed || played(world)) && (static_cast<std::uint16_t>(world.camera.moved_x) >= kCameraAtRest ||
+                                                static_cast<std::uint16_t>(world.camera.moved_y) >= kCameraAtRest)) {
                 return wait(At::kTeleported);
             }
-            beamed_ = false;
+            s.beamed = false;
             sound(world, effect::kTeleportedIn);
             return appear(world);
         case At::kAppearing:
@@ -392,7 +392,7 @@ void Viking::resume_in_world(World& world) {
                 return cheer(world);
             }
             message = 0;
-            return at_ == At::kLedWalking ? led_walking(world) : led_standing(world);
+            return s.at == At::kLedWalking ? led_walking(world) : led_standing(world);
         case At::kCheering:
             return cheering(world);
         case At::kInflating:

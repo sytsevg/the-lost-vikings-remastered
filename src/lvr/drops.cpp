@@ -32,20 +32,23 @@ class DropMaker : public Entity {
         if (argument == 0) {
             static constexpr std::array<int, 5> kAcross{584, 440, 632, 488, 536};
             countdown = 10;
-            turn_ = turn_ >= 4 ? 0 : turn_ + 1;
-            world.spawn(*this, egypt_kind::kDropper, kAcross.at(static_cast<std::size_t>(turn_)), 280);
+            s.turn = s.turn >= 4 ? 0 : s.turn + 1;
+            world.spawn(*this, egypt_kind::kDropper, kAcross.at(static_cast<std::size_t>(s.turn)), 280);
         } else if (argument == 1) {
             static constexpr std::array<int, 6> kAcross{-32, 0, 32, -32, 32, 0};
             countdown = 20;
-            turn_ = turn_ >= 5 ? 0 : turn_ + 1;
-            world.spawn(*this, egypt_kind::kDropper, x + kAcross.at(static_cast<std::size_t>(turn_)), y, 0, 0);
+            s.turn = s.turn >= 5 ? 0 : s.turn + 1;
+            world.spawn(*this, egypt_kind::kDropper, x + kAcross.at(static_cast<std::size_t>(s.turn)), y, 0, 0);
         } else {
             world.remove(slot);
         }
     }
 
   private:
-    int turn_ = 0;
+    struct Saved {
+        int turn = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // One that is seen, and switched: while the switches of its argument's high byte are on and those of its low byte
@@ -55,17 +58,20 @@ class SwitchedDropMaker : public Entity {
     void update(World& world) override {
         if (first_turn()) {
             world.play(*this, anim::kSwitchedDropMakerLooks);
-            unless_ = argument & kLowByte;
+            s.unless = argument & kLowByte;
             argument &= kHighByte;
             count_down();
-        } else if (switches_on(world, argument) && !switches_on(world, unless_)) {
+        } else if (switches_on(world, argument) && !switches_on(world, s.unless)) {
             world.spawn(*this, egypt_kind::kDropper, x, y + 2);
         }
         world.animate(*this);
     }
 
   private:
-    std::uint16_t unless_ = 0;
+    struct Saved {
+        std::uint16_t unless = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // Something that hangs until nothing is under it, then falls: it hurts a Viking it hits, and breaks where it
@@ -73,15 +79,15 @@ class SwitchedDropMaker : public Entity {
 class Dropper : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kDropperHangs);
-                state_ = State::kHanging;
+                s.state = State::kHanging;
                 break;
             case State::kHanging:
                 if (!find_beside(world, *this, Side::kBelow, ground())) {
                     start_falling();
-                    state_ = State::kFalling;
+                    s.state = State::kFalling;
                 }
                 break;
             case State::kFalling:
@@ -95,7 +101,7 @@ class Dropper : public Entity {
                 if (saw.landed || saw.viking != kNobody) {
                     world.play(*this, anim::kDropperBreaks);
                     stop_falling();
-                    state_ = State::kBreaking;
+                    s.state = State::kBreaking;
                 }
                 break;
             case State::kBreaking:
@@ -108,7 +114,7 @@ class Dropper : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        return state_ == State::kFalling
+        return s.state == State::kFalling
                    ? Looks{lands_on(floor_or_raised_shield()), touching_one_of_the_vikings_class()}
                    : Looks{};
     }
@@ -116,7 +122,10 @@ class Dropper : public Entity {
   private:
     enum class State : std::uint8_t { kStart, kHanging, kFalling, kBreaking };
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A place that drips while a Viking is in it: a drop every so often, from fixed points of its level or from its
@@ -126,7 +135,7 @@ class DripPlace : public Entity {
     void update(World& world) override {
         if (first_turn()) {
             count_down();
-            mode_ = argument;
+            s.mode = argument;
             acts_as = tile::kBody;
             const int across = argument == 0 ? 56 : 64;
             const int down = argument == 0 ? 216 : 128;
@@ -137,41 +146,44 @@ class DripPlace : public Entity {
             return;
         }
         target = saw.viking;
-        if (mode_ == 10) {
+        if (s.mode == 10) {
             world.spawn(*this, egypt_kind::kDrop, 70, 592);
             countdown = 25;
-            mode_ = 0;
-        } else if (mode_ == 1) {
+            s.mode = 0;
+        } else if (s.mode == 1) {
             world.spawn(*this, egypt_kind::kDrop, x, box.top);
             countdown = 40;
         } else {
             world.spawn(*this, egypt_kind::kDrop, 48, 592);
             countdown = 15;
-            mode_ = 10;
+            s.mode = 10;
         }
     }
     Looks looks_for() const override { return started() ? Looks{touching_a_viking()} : Looks{}; }
 
   private:
-    std::uint16_t mode_ = 0;
+    struct Saved {
+        std::uint16_t mode = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A drop: it forms, falls, and splashes on the ground. A Viking it falls on is gone.
 class Drop : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 stay_active();
                 world.play(*this, anim::kDropForms);
-                state_ = State::kForming;
+                s.state = State::kForming;
                 break;
             case State::kForming:
                 if (animation_over()) {
                     world.play(*this, anim::kDropFalls);
                     start_falling();
                     speed_y = px(1.5);
-                    state_ = State::kFalling;
+                    s.state = State::kFalling;
                 }
                 break;
             case State::kFalling:
@@ -186,7 +198,7 @@ class Drop : public Entity {
                     world.sound(*this, effect::kDropLands);
                     world.play(*this, anim::kDropSplashes);
                     stop_falling();
-                    state_ = State::kSplashing;
+                    s.state = State::kSplashing;
                 }
                 break;
             case State::kSplashing:
@@ -199,24 +211,27 @@ class Drop : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        return state_ == State::kFalling ? Looks{lands_on(solid()), touching_one_of_the_vikings_class()} : Looks{};
+        return s.state == State::kFalling ? Looks{lands_on(solid()), touching_one_of_the_vikings_class()} : Looks{};
     }
 
   private:
     enum class State : std::uint8_t { kStart, kForming, kFalling, kSplashing };
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A drop that falls (at one of two speeds, by chance): it hurts a Viking it hits, and splashes on the ground.
 class FallingDrop : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kFallingDropFalls);
                 speed_y = world.random() <= 32768 ? px(12) : px(10);
-                state_ = State::kFalling;
+                s.state = State::kFalling;
                 break;
             case State::kFalling:
                 if (saw.on_shield) {
@@ -230,7 +245,7 @@ class FallingDrop : public Entity {
                     world.spawn(*this, kind::kSpark, x, y, 0, entity_flag::kLargePieces);
                     world.hide_pieces(*this);
                     world.play(*this, anim::kFallingDropGone);
-                    state_ = State::kEnding;
+                    s.state = State::kEnding;
                     break;
                 }
                 if (saw.ceiling) {
@@ -248,7 +263,7 @@ class FallingDrop : public Entity {
     }
     // Falling: Olaf's shield, held up, catches it; the ground ends it; a Viking is hit by it.
     Looks looks_for() const override {
-        return state_ == State::kFalling
+        return s.state == State::kFalling
                    ? Looks{stopped_above_or_below(shield_overhead(), &Saw::on_shield), stopped_above_or_below(solid()),
                            touching_any(hit::kViking, &Saw::viking)}
                    : Looks{};
@@ -260,11 +275,14 @@ class FallingDrop : public Entity {
     void splash(World& world) {
         speed_y = 0;
         world.play(*this, anim::kFallingDropSplashes);
-        state_ = State::kEnding;
+        s.state = State::kEnding;
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // What a level's bubbles (and other things that keep coming) are sent out by: a list of steps, each creating
@@ -275,25 +293,25 @@ class Sender : public Entity {
     void update(World& world) override {
         if (first_turn()) {
             count_down();
-            step_ = argument;
+            s.step = argument;
             if (argument == kWaitsForRoom) {
                 box = box_of(x - 48, y - 152, x + 48, y + 152);
             }
             return;
         }
-        if (waiting_for_room_) {
+        if (s.waiting_for_room) {
             if (saw.other != kNobody) {
                 return;
             }
-            waiting_for_room_ = false;
+            s.waiting_for_room = false;
             send(world, {kind::kRisingPlatform, 872, 792, kUpTwoATick, entity_flag::kAlwaysActive});
-            return next(20, static_cast<std::uint16_t>(step_ + 1));
+            return next(20, static_cast<std::uint16_t>(s.step + 1));
         }
         if (countdown != 0) {
             return;
         }
-        const auto after = static_cast<std::uint16_t>(step_ + 1);
-        switch (step_) {
+        const auto after = static_cast<std::uint16_t>(s.step + 1);
+        switch (s.step) {
             case 25: {
                 countdown = 20;
                 world.sound(*this, effect::kWhoosh);
@@ -317,7 +335,7 @@ class Sender : public Entity {
             case 54:
                 return next(40, 50);
             case kWaitsForRoom:
-                waiting_for_room_ = true;
+                s.waiting_for_room = true;
                 return;
             case 61:
                 send(world, {kind::kRisingPlatform, 920, 792, kUpTwoATick, entity_flag::kAlwaysActive});
@@ -365,14 +383,14 @@ class Sender : public Entity {
              kNext},  // any other step does as the first
         }};
         for (const Step& step : kSteps) {
-            if (step.step == step_ || step.step == kAnyStep) {
+            if (step.step == s.step || step.step == kAnyStep) {
                 send(world, step.sent);
                 return next(step.wait, step.then == kNext ? after : step.then);
             }
         }
     }
     Looks looks_for() const override {
-        return waiting_for_room_ ? Looks{touching(hit_class::kInTheWay, &Saw::other)} : Looks{};
+        return s.waiting_for_room ? Looks{touching(hit_class::kInTheWay, &Saw::other)} : Looks{};
     }
 
   private:
@@ -393,11 +411,14 @@ class Sender : public Entity {
     }
     void next(std::uint16_t wait, std::uint16_t step) {
         countdown = wait;
-        step_ = step;
+        s.step = step;
     }
 
-    bool waiting_for_room_ = false;
-    std::uint16_t step_ = 0;
+    struct Saved {
+        bool waiting_for_room = false;
+        std::uint16_t step = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A bubble that rises for a while and then bursts. The large kind carries the Vikings: it dips when one steps
@@ -405,7 +426,7 @@ class Sender : public Entity {
 class Bubble : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return at_start(world);
             case State::kDrifting:
@@ -437,55 +458,55 @@ class Bubble : public Entity {
     void when_drifting(World& world) {
         if (countdown == 0) {
             stay_active(false);
-            loaded_ = true;
+            s.loaded = true;
             world.play(*this, kind == prehistoric_kind::kSmallBubble
                                   ? anim::kBubbleSmallBursts
                                   : (kind == prehistoric_kind::kMiddleBubble ? anim::kBubbleMiddleBursts
                                                                              : anim::kBubbleBursts));
-            state_ = State::kBursting;
+            s.state = State::kBursting;
             world.animate(*this);
             return;
         }
-        if (ridden_ && !loaded_) {
-            loaded_ = true;
+        if (s.ridden && !s.loaded) {
+            s.loaded = true;
             speed_y = kBob;
-            ticks_ = 0;
-            state_ = State::kDipping;
+            s.ticks = 0;
+            s.state = State::kDipping;
             carry(world);
             world.animate(*this);
             return;
         }
-        if (!ridden_ && loaded_) {
-            loaded_ = false;
+        if (!s.ridden && s.loaded) {
+            s.loaded = false;
             speed_y = -kBob;
-            ticks_ = 0;
-            state_ = State::kBobbingUp;
+            s.ticks = 0;
+            s.state = State::kBobbingUp;
             world.animate(*this);
             return;
         }
         return drift(world);
     }
     void when_dipping(World& world) {
-        if (ticks_ == 2) {
-            if (state_ == State::kComingBack) {
+        if (s.ticks == 2) {
+            if (s.state == State::kComingBack) {
                 speed_y = kDrift;
                 return drift(world);
             }
             speed_y = -kBob;
-            ticks_ = 0;
-            state_ = State::kComingBack;
+            s.ticks = 0;
+            s.state = State::kComingBack;
         } else {
-            ++ticks_;
+            ++s.ticks;
         }
         carry(world);
         world.animate(*this);
     }
     void when_bobbing_up(World& world) {
-        if (ticks_ == 3) {
+        if (s.ticks == 3) {
             speed_y = kDrift;
             return drift(world);
         }
-        ++ticks_;
+        ++s.ticks;
         world.animate(*this);
     }
     void when_bursting(World& world) {
@@ -503,10 +524,10 @@ class Bubble : public Entity {
     static constexpr std::int16_t kBob = px(2.5);
 
     void drift(World& world) {
-        ridden_ = false;
+        s.ridden = false;
         carry(world);
         world.animate(*this);
-        state_ = State::kDrifting;
+        s.state = State::kDrifting;
     }
 
     void carry(World& world) {
@@ -517,15 +538,18 @@ class Bubble : public Entity {
             Entity* other = world.at(rider);
             if (other != nullptr && world.offset_to(*this, rider).below < -10) {
                 other->push_y += speed_y;
-                ridden_ = true;
+                s.ridden = true;
             }
         }
     }
 
-    State state_ = State::kStart;
-    bool ridden_ = false;
-    bool loaded_ = false;
-    int ticks_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        bool ridden = false;
+        bool loaded = false;
+        int ticks = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 }  // namespace

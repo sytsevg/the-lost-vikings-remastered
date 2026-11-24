@@ -147,6 +147,22 @@ void LvrPlayer::play_step() {
         World copy = play_.world;
         play_.world = std::move(copy);
     }
+    if (saves) {
+        std::vector<std::uint8_t> written;
+        Writer to{written};
+        play_.world.save(to);
+        World read = prepare_world(play_.loaded(), &play_.world.map, play_.world.rules);
+        Reader from{written};
+        std::vector<std::uint8_t> again;
+        Writer to_again{again};
+        if (read.load(from) && from.done()) {
+            read.save(to_again);
+        }
+        if (again != written) {
+            save_failed_ = true;
+        }
+        play_.world = std::move(read);
+    }
     const int refreshes = play_.step(replay_.steps[step_].keyboard, [&] {
         frames.push_back(picture());
         frames.back().sounds = take_sounds();
@@ -197,6 +213,9 @@ std::expected<std::optional<Refresh>, std::string> LvrPlayer::next() {
             return std::nullopt;
         }
         play_step();
+        if (save_failed_) {
+            return std::unexpected{std::format("step {}: the world written out didn't read back as it was", step_)};
+        }
     }
     Refresh refresh = std::move(queued_.front());
     queued_.pop_front();

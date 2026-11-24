@@ -14,7 +14,7 @@ bool Viking::told(World& world) {
         case message::kBlast:
         case message::kScorched:
             world.play(*this, looks().is_hurt);
-            doing_ = Doing::kOther;
+            s.doing = Doing::kOther;
             hurt(world);
             return true;
         case message::kSquashed:
@@ -115,7 +115,7 @@ bool Viking::told(World& world) {
             message = 0;
             return false;
         case message::kHeldInTheAir:
-            if (who_ != kind::kOlaf) {
+            if (s.who != kind::kOlaf) {
                 message = 0;
                 return false;
             }
@@ -123,21 +123,21 @@ bool Viking::told(World& world) {
             return true;
         case message::kLetGo:
             message = 0;
-            if (who_ != kind::kOlaf) {
+            if (s.who != kind::kOlaf) {
                 return false;
             }
             fall(world);
             return true;
         case message::kBlownBack:
             message = 0;
-            if (who_ != kind::kOlaf || is_falling()) {
+            if (s.who != kind::kOlaf || is_falling()) {
                 return false;
             }
             if (!on_own_ground(world)) {
                 fall(world);
                 return true;
             }
-            doing_ = Doing::kOther;
+            s.doing = Doing::kOther;
             speed_x = kBlownBack;
             keep_on_ground();
             world.animate(*this);
@@ -148,10 +148,10 @@ bool Viking::told(World& world) {
             if (world.database != database::kSpaceship) {
                 return false;
             }
-            beamed_ = true;
+            s.beamed = true;
             speed_x = speed_y = 0;
             set_falling(false);
-            doing_ = Doing::kTeleporting;
+            s.doing = Doing::kTeleporting;
             hit_class = 0;
             hit_mask &= static_cast<std::uint16_t>(~kVikingMaskBits);
             sound(world, effect::kTeleportedAway);
@@ -248,8 +248,8 @@ void Viking::hurt(World& world) {
     }
     sound(world, effect::kVikingHurt);
     message = 0;
-    hit_from_the_front_ = blow_from_the_right() != facing_left();
-    speed_x = static_cast<std::int16_t>(hit_from_the_front_ ? -kKnockedBack : kKnockedBack);
+    s.hit_from_the_front = blow_from_the_right() != facing_left();
+    speed_x = static_cast<std::int16_t>(s.hit_from_the_front ? -kKnockedBack : kKnockedBack);
     if (!on_ground(world)) {
         set_falling(true);
     }
@@ -262,10 +262,10 @@ void Viking::being_hurt(World& world) {
     }
     world.animate(*this);
     if (speed_y > 0) {
-        doing_ = Doing::kHurtFalling;
+        s.doing = Doing::kHurtFalling;
         wait(At::kHurt, {Test::kWall, Test::kLands, Test::kDeadly});
     } else {
-        doing_ = Doing::kHurt;
+        s.doing = Doing::kHurt;
         wait(At::kHurt, {Test::kWall, Test::kFloorOrCeiling, Test::kDeadly});
     }
 }
@@ -283,28 +283,28 @@ void Viking::hurt_after_item(World& world) {
     }
     speed_x = 0;
     message = 0;
-    doing_ = Doing::kOther;
+    s.doing = Doing::kOther;
     if (!on_ground(world)) {
         return fall(world);
     }
     speed_y = 0;
     set_falling(false);
-    if (who_ == kind::kBaleog) {
+    if (s.who == kind::kBaleog) {
         if (played(world)) {
             return stand(world);
         }
         // Left to himself he turns to where it came from and strikes back.
-        if (!hit_from_the_front_) {
+        if (!s.hit_from_the_front) {
             world.flip_across(*this);
         }
         return swing(world);
     }
-    if (who_ == kind::kOlaf) {
+    if (s.who == kind::kOlaf) {
         if (played(world)) {
             return stand(world);
         }
         // Left to himself he turns to where it came from, his shield before him.
-        if (!hit_from_the_front_) {
+        if (!s.hit_from_the_front) {
             world.flip_across(*this);
         }
         lower_shield(world);
@@ -317,13 +317,13 @@ void Viking::hurt_after_item(World& world) {
 }
 
 void Viking::carry_on(World& world) {
-    switch (doing_) {
+    switch (s.doing) {
         case Doing::kClimbing:
             return climb(world);
         case Doing::kFalling:
             return falling(world);
         case Doing::kTeleporting:
-            world.play(*this, shield_up_ ? anim::kOlafStandsShieldUp : looks().back_on_his_feet);
+            world.play(*this, s.shield_up ? anim::kOlafStandsShieldUp : looks().back_on_his_feet);
             return stand(world);
         case Doing::kHanging:
             return hang(world);
@@ -347,7 +347,7 @@ void Viking::carry_on(World& world) {
 // --- Dying ---
 
 void Viking::die(World& world) {
-    shield_away_ = who_ == kind::kOlaf;
+    s.shield_away = s.who == kind::kOlaf;
     if (slot >= 0 && slot < kVikingSlots) {
         world.armour.at(static_cast<std::size_t>(slot)) = 0;
     }
@@ -441,8 +441,8 @@ void Viking::squashed(World& world) {
         if (speed_y < static_cast<std::int16_t>(message_value)) {
             set_falling(true);
             speed_y = static_cast<std::int16_t>(message_value);
-            if (doing_ != Doing::kFalling) {
-                doing_ = Doing::kOther;
+            if (s.doing != Doing::kFalling) {
+                s.doing = Doing::kOther;
             }
         }
         return carry_on(world);
@@ -475,14 +475,14 @@ bool Viking::crushed(World& world) {
     set_falling(false);
     world.play(*this, looks().crushed);
     face(world, push >= 0);
-    crush_parts_left_ = 4;
+    s.crush_parts_left = 4;
     world.animate(*this);
     wait(At::kCrushed);
     return true;
 }
 
 void Viking::being_crushed(World& world) {
-    if (!animation_waits() && --crush_parts_left_ == 0) {
+    if (!animation_waits() && --s.crush_parts_left == 0) {
         return dead(world);
     }
     world.animate(*this);
@@ -546,13 +546,13 @@ void Viking::dead(World& world) {
 
 // A turn of being hurt, dizzy or dying.
 void Viking::resume_harmed(World& world) {
-    switch (at_) {
+    switch (s.at) {
         case At::kHurt:
             if (found(Test::kWall)) {
                 speed_x = 0;
             }
             if (landed() || found(Test::kFloorOrCeiling)) {
-                if (doing_ == Doing::kHurtFalling) {
+                if (s.doing == Doing::kHurtFalling) {
                     set_falling(false);
                 }
                 speed_y = 0;
@@ -575,7 +575,7 @@ void Viking::resume_harmed(World& world) {
                 return;
             }
             if (found(Test::kWall) || found(Test::kDeadly) || message != 0 || (world.pressed & key::kSOrE) != 0) {
-                returns_to_landing_ = false;
+                s.returns_to_landing = false;
             }
             if ((world.pressed & key::kS) != 0 && act(world)) {
                 return;
@@ -584,14 +584,14 @@ void Viking::resume_harmed(World& world) {
         case At::kDizzyInTheAir:
             if (found(Test::kWall) || (landed() || found(Test::kFloorOrCeiling)) || found(Test::kDeadly) ||
                 (world.pressed & key::kSOrE) != 0) {
-                returns_to_landing_ = false;
+                s.returns_to_landing = false;
             }
             if (found(Test::kWall)) {
                 speed_x = 0;
             }
             if (landed() || found(Test::kFloorOrCeiling)) {
                 speed_y = 0;
-                if (doing_ == Doing::kDizzyFalling) {  // landed
+                if (s.doing == Doing::kDizzyFalling) {  // landed
                     set_falling(false);
                     return dizzy(world);
                 }

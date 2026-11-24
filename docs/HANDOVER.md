@@ -13,7 +13,7 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
 - **It is published:** one initial commit on `main`, MIT, at
   <https://github.com/sytsevg/the-lost-vikings-remastered>. From here on, history is kept: new work is new
   commits.
-- **M7, the Remaster rules, is built** but for what waits on a profile on disk: the Rules switch, the GPU
+- **M7, the Remaster rules, is built:** the Rules switch, the GPU
   renderer, zoom-out, no limit on entities, the minimap, the rewind and a quicksave. The details are below.
 
 ## M7: where it stands
@@ -52,6 +52,13 @@ Built:
   runs each again from its snapshot for the pictures in between (`Session::back_to`). `lv-replay --copies` proves on the replays that a copy keeps
   everything; run it after adding state to `World` or to a kind.
 
+- **State that can be written out** (`archive.hpp`, ADR-0018, ADR-0020): every kind's own state is the plain
+  struct `Saved` nested in it (member `s`), `Entity`'s and `World`'s are `EntityState` and `WorldState`.
+  `World::save` and `World::load` write and read all of it; the quicksave is that in a file
+  (`profiles/quicksave.bin`). After adding state anywhere: `scripts/saves.sh`, and raise `kStateVersion` (a test in
+  `test_play.cpp` fails until its sizes and version are brought up to date). A member a kind declares outside
+  its `Saved` fails `check.sh` (`scripts/kind_state.py`).
+
 Open:
 
 - **A sprite's picture is known to the GPU renderer only by what it looks like:** it is put into the atlas the
@@ -61,10 +68,9 @@ Open:
   together or everything runs (ADR-0011). Not decided.
 - **Not checked by anything but the eye:** whatever the GPU renderer shows beyond the original's view, and
   whether a level still plays well zoomed out (enemies run for longer and further; nothing resets as often).
-- **The quicksave on disk.** The profile (`profile.*`, `Session::use_profile`) is a folder with, so far, what
-  the minimap has seen (`minimap.txt`). The quicksave is still only in memory: a `World` can be copied but not
-  written out, and its entities are some 150 classes with state of their own. What is the player's must never
-  change what a replay shows.
+- **Co-op's snapshots.** What is written of a world (ADR-0020) is all of it, 25 to 90 KB. Sent over a network
+  many times a second it wants trimming: the sprite layer's free pieces, the level's own data that both sides
+  have, and only what changed since the last one.
 - **Input per player** was planned from the start (ADR-0012) but the engine takes one keyboard word. Not needed
   for M7; worth not making harder.
 

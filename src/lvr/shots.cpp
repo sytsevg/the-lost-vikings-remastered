@@ -87,23 +87,23 @@ class FireShooter : public Entity {
     void update(World& world) override {
         if (first_turn()) {
             count_down();
-            arcs_ = kind == prehistoric_kind::kArcingFireShooter;
+            s.arcs = kind == prehistoric_kind::kArcingFireShooter;
             return;
         }
         if (kind == prehistoric_kind::kFireShooterInAWall && world.map.tile_type_at(x, y) == tile::kFree) {
             return gone_for_good(world, *this);
         }
         if (!switches_on(world, argument)) {
-            arcs_ = false;
+            s.arcs = false;
             return;
         }
         if (countdown != 0) {
             return;
         }
-        if (arcs_) {
+        if (s.arcs) {
             world.sound(*this, effect::kWhoosh);
-            world.spawn(*this, prehistoric_kind::kArcingFire, x, y, next_arc_, 0);
-            next_arc_ = static_cast<std::uint16_t>((next_arc_ + 1U) % 3U);
+            world.spawn(*this, prehistoric_kind::kArcingFire, x, y, s.next_arc, 0);
+            s.next_arc = static_cast<std::uint16_t>((s.next_arc + 1U) % 3U);
         } else {
             world.spawn(*this, prehistoric_kind::kFireball, x + (facing_left() ? -4 : 4), y);
             world.sound(*this, effect::kWhoosh);
@@ -112,8 +112,11 @@ class FireShooter : public Entity {
     }
 
   private:
-    bool arcs_ = false;
-    std::uint16_t next_arc_ = 0;
+    struct Saved {
+        bool arcs = false;
+        std::uint16_t next_arc = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A burner: a flame every forty ticks while its switches are on.
@@ -175,9 +178,9 @@ class Thrown : public StraightShot {
 // It bursts on a wall and on Olaf's shield held towards it, and hurts a Viking it hits.
 class Flame : public StraightShot {
     void fired(World& world) override {
-        shot_ = kind == wacky_kind::kFlameShot;
-        world.play(*this, shot_ ? anim::kFlameShotFlies : anim::kFlameFlies);
-        if (shot_) {
+        s.shot = kind == wacky_kind::kFlameShot;
+        world.play(*this, s.shot ? anim::kFlameShotFlies : anim::kFlameFlies);
+        if (s.shot) {
             speed_x = px(12);
         } else {
             speed_x = px(8);
@@ -186,21 +189,24 @@ class Flame : public StraightShot {
         }
     }
     void hit_viking(World& world) override {
-        hit_viking_touched(world, *this, shot_ ? x + (facing_left() ? -6 : 6) : x);
+        hit_viking_touched(world, *this, s.shot ? x + (facing_left() ? -6 : 6) : x);
         world.remove(slot);
     }
     void still_flying(World& world) override {
-        if (!shot_ && countdown == 0) {
+        if (!s.shot && countdown == 0) {
             end_with(world, anim::kFlameGivesOut);
         }
     }
     void bursting(World& world) override {
-        world.sound(*this, shot_ ? effect::kArrowBreaks : effect::kBurst);
-        world.play(*this, shot_ ? anim::kFlameShotBursts : anim::kFlameBursts);
+        world.sound(*this, s.shot ? effect::kArrowBreaks : effect::kBurst);
+        world.play(*this, s.shot ? anim::kFlameShotBursts : anim::kFlameBursts);
         speed_x = 0;
     }
 
-    bool shot_ = false;
+    struct Saved {
+        bool shot = false;
+    } s;
+    LVR_SAVES(StraightShot)
 };
 
 // What the robots shoot, and what the flying one drops: straight on until it hits a wall or the floor, Olaf's
@@ -208,17 +214,17 @@ class Flame : public StraightShot {
 class RobotShot : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
-                dropped_ = kind == factory_kind::kDroppedShot;
-                world.play(*this, dropped_ ? anim::kShotDrops : anim::kShotFlies);
-                if (dropped_) {
+                s.dropped = kind == factory_kind::kDroppedShot;
+                world.play(*this, s.dropped ? anim::kShotDrops : anim::kShotFlies);
+                if (s.dropped) {
                     speed_y = px(3);
                     start_falling();
                 } else {
                     speed_x = px(10);
                 }
-                state_ = State::kFlying;
+                s.state = State::kFlying;
                 break;
             case State::kFlying:
                 if ((saw.landed || saw.wall)) {
@@ -227,7 +233,7 @@ class RobotShot : public Entity {
                 if (saw.shield != kNobody) {
                     target = saw.shield;
                     const Entity* other = world.at(saw.shield);
-                    if (dropped_ || other == nullptr || other->kind != kind::kShield ||
+                    if (s.dropped || other == nullptr || other->kind != kind::kShield ||
                         other->facing_left() != facing_left()) {
                         return burst(world);
                     }
@@ -249,11 +255,11 @@ class RobotShot : public Entity {
     // Flying: a wall ends a shot that was fired, a floor one that was dropped; Olaf's shield, held the way it
     // comes from, stops either.
     Looks looks_for() const override {
-        if (state_ != State::kFlying) {
+        if (s.state != State::kFlying) {
             return {};
         }
         const Look viking = touching_any(hit::kViking, &Saw::viking);
-        return dropped_
+        return s.dropped
                    ? Looks{lands_on(floor_or_raised_shield()), touching_any(hit::kShieldOverhead, &Saw::shield), viking}
                    : Looks{stopped_by(solid()), touching_any(hit::kShield, &Saw::shield), viking};
     }
@@ -262,7 +268,7 @@ class RobotShot : public Entity {
     enum class State : std::uint8_t { kStart, kFlying, kBurst };
 
     void burst(World& world) {
-        if (dropped_) {
+        if (s.dropped) {
             world.play(*this, anim::kShotLands);
             stop_falling();
         } else {
@@ -270,12 +276,15 @@ class RobotShot : public Entity {
             world.play(*this, anim::kShotBursts);
             speed_x = 0;
         }
-        state_ = State::kBurst;
+        s.state = State::kBurst;
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
-    bool dropped_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool dropped = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // What the drone shoots: straight ahead until it hits a wall, Olaf's shield from the front, or a Viking, whom it
@@ -319,43 +328,43 @@ class DroneShot : public Entity {
 class Fireball : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
-                drop_ = kind == prehistoric_kind::kFireDrop;
-                world.play(*this, drop_ ? anim::kFireballDropFalls : anim::kFireballFlies);
+                s.drop = kind == prehistoric_kind::kFireDrop;
+                world.play(*this, s.drop ? anim::kFireballDropFalls : anim::kFireballFlies);
                 stay_active();
-                if (drop_) {
+                if (s.drop) {
                     speed_y = px(6);
                 } else {
                     speed_x = px(8);
                     count_down_from(35);
                 }
-                state_ = State::kFlying;
+                s.state = State::kFlying;
                 break;
             case State::kFlying:
-                if (!drop_ && (saw.wall || saw.shield != kNobody)) {
+                if (!s.drop && (saw.wall || saw.shield != kNobody)) {
                     world.sound(*this, effect::kBurst);
                     return end(world, anim::kFireballBursts, true);
                 }
-                if (drop_ && saw.shield != kNobody) {
+                if (s.drop && saw.shield != kNobody) {
                     return end(world, anim::kFireballDropSplashes, true);
                 }
                 if (saw.viking != kNobody) {
                     target = saw.viking;
                     if (Entity* other = world.at(saw.viking)) {
-                        const bool from_the_right = drop_ ? x >= other->x : facing_left();
+                        const bool from_the_right = s.drop ? x >= other->x : facing_left();
                         harm(*other, message::kBurned, 4, from_the_right);
                     }
                     world.spawn(*this, kind::kSpark, x, y, 0, entity_flag::kLargePieces);
                     world.remove(slot);
                     return;
                 }
-                if (drop_ && saw.landed) {
+                if (s.drop && saw.landed) {
                     return end(world, anim::kFireballDropSplashes, true);
                 }
                 message = 0;
                 message_value = 0;
-                if (!drop_ && countdown == 0) {
+                if (!s.drop && countdown == 0) {
                     return end(world, anim::kFireballGivesOut, false);
                 }
                 break;
@@ -371,12 +380,12 @@ class Fireball : public Entity {
     // Flying: a wall ends one that was shot, a floor one that drops; Olaf's shield, held the way it comes from,
     // stops either.
     Looks looks_for() const override {
-        if (state_ != State::kFlying) {
+        if (s.state != State::kFlying) {
             return {};
         }
         const Look viking = touching_any(hit::kViking, &Saw::viking);
-        return drop_ ? Looks{lands_on(solid()), touching_any(hit::kShieldOverhead, &Saw::shield), viking}
-                     : Looks{stopped_by(solid()), touching_any(hit::kShield, &Saw::shield), viking};
+        return s.drop ? Looks{lands_on(solid()), touching_any(hit::kShieldOverhead, &Saw::shield), viking}
+                      : Looks{stopped_by(solid()), touching_any(hit::kShield, &Saw::shield), viking};
     }
 
   private:
@@ -387,12 +396,15 @@ class Fireball : public Entity {
         if (stops) {
             speed_x = speed_y = 0;
         }
-        state_ = State::kEnding;
+        s.state = State::kEnding;
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
-    bool drop_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool drop = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // Fire thrown in an arc (its argument: to the left, straight up, or to the right). It goes out on a wall, the
@@ -400,30 +412,30 @@ class Fireball : public Entity {
 class ArcingFire : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kArcingFireFlies);
                 start_falling();
                 stay_active();
                 count_down();
-                from_the_right_ = argument == 0;
+                s.from_the_right = argument == 0;
                 speed_x = static_cast<std::int16_t>(argument == 0 ? px(-8) : (argument == 1 ? 0 : px(12)));
                 speed_y = argument == 1 ? px(-12) : px(-10);
                 countdown = argument == 0 ? 35 : (argument == 1 ? 25 : 40);
-                state_ = State::kFlying;
+                s.state = State::kFlying;
                 break;
             case State::kFlying:
                 if (saw.wall || saw.landed || saw.shield != kNobody || saw.other != kNobody) {
                     world.play(*this, anim::kArcingFireGoesOut);
                     speed_x = 0;
                     stop_falling();
-                    state_ = State::kEnding;
+                    s.state = State::kEnding;
                     break;
                 }
                 if (saw.viking != kNobody) {
                     target = saw.viking;
                     if (Entity* other = world.at(saw.viking)) {
-                        harm(*other, message::kBurned, 4, from_the_right_);
+                        harm(*other, message::kBurned, 4, s.from_the_right);
                     }
                     world.spawn(*this, kind::kSpark, x, y, 0, entity_flag::kLargePieces);
                     world.remove(slot);
@@ -433,7 +445,7 @@ class ArcingFire : public Entity {
                 message_value = 0;
                 if (countdown == 0) {
                     world.play(*this, anim::kArcingFireFades);
-                    state_ = State::kEnding;
+                    s.state = State::kEnding;
                 }
                 break;
             case State::kEnding:
@@ -446,7 +458,7 @@ class ArcingFire : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        return state_ == State::kFlying
+        return s.state == State::kFlying
                    ? Looks{stopped_by(solid()), lands_on(solid()), touching_any(hit::kShield, &Saw::shield),
                            touching_any(hit::kShieldOverhead, &Saw::other), touching_any(hit::kViking, &Saw::viking)}
                    : Looks{};
@@ -455,8 +467,11 @@ class ArcingFire : public Entity {
   private:
     enum class State : std::uint8_t { kStart, kFlying, kEnding };
 
-    State state_ = State::kStart;
-    bool from_the_right_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool from_the_right = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // What is left of an enemy that was killed: its animation, then it is gone.

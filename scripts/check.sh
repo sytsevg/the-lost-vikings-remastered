@@ -11,6 +11,9 @@ git ls-files -co --exclude-standard -- '*.cpp' '*.hpp' ':!tools/dosbox/*' | xarg
 echo "== constants defined once"
 ./scripts/duplicate_constants.py
 
+echo "== a kind's state is all in its Saved"
+./scripts/kind_state.py check src/lvr/*.hpp src/lvr/*.cpp
+
 echo "== configure + build (ci)"
 cmake --preset ci
 cmake --build --preset ci

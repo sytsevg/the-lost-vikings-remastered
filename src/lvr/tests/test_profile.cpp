@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -73,4 +74,44 @@ TEST_CASE("profile: kept in a folder, which is made; nothing kept yet is nothing
     // A folder that can't be made (a file is in its place): an error.
     CHECK_FALSE(save_seen(folder / "minimap.txt" / "under", levels));
     std::filesystem::remove_all(folder.parent_path());
+}
+
+TEST_CASE("profile: the quicksave's file is written and read back; another kind of file is refused") {
+    const std::filesystem::path folder = folder_for("quicksave");
+    const auto nothing = load_quicksave(folder);
+    REQUIRE(nothing);
+    CHECK_FALSE(nothing->has_value());
+    const SavedPlay play{.remaster = true, .scene = 7, .database_entry = 450, .world = {1, 2, 3, 250}};
+    REQUIRE(save_quicksave(folder, play));
+    const auto kept = load_quicksave(folder);
+    REQUIRE(kept);
+    REQUIRE(kept->has_value());
+    CHECK(**kept == play);
+
+    // Cut short, with something after it, or not one at all.
+    std::string bytes;
+    {
+        std::ifstream file{folder / "quicksave.bin", std::ios::binary};
+        bytes.assign(std::istreambuf_iterator<char>{file}, {});
+    }
+    for (const std::string& bad : {bytes.substr(0, bytes.size() - 1), bytes + "x", std::string{"rubbish"}}) {
+        std::ofstream{folder / "quicksave.bin", std::ios::binary} << bad;
+        CHECK_FALSE(load_quicksave(folder));
+    }
+    std::string damaged = bytes;  // a byte of the world: the sum after it no longer fits
+    damaged[bytes.size() - 10] = static_cast<char>(damaged[bytes.size() - 10] ^ 1);
+    std::ofstream{folder / "quicksave.bin", std::ios::binary} << damaged;
+    CHECK_FALSE(load_quicksave(folder));
+    std::string other_kind = bytes;
+    other_kind[0] = 'X';
+    std::ofstream{folder / "quicksave.bin", std::ios::binary} << other_kind;
+    CHECK_FALSE(load_quicksave(folder));
+    // Another version of the game's state (the four bytes after the file's kind): refused, and it says so.
+    std::string other_version = bytes;
+    other_version[4] = static_cast<char>(other_version[4] + 1);
+    std::ofstream{folder / "quicksave.bin", std::ios::binary} << other_version;
+    const auto stale = load_quicksave(folder);
+    REQUIRE_FALSE(stale);
+    CHECK(stale.error().find("another version") != std::string::npos);
+    std::filesystem::remove_all(folder);
 }

@@ -40,39 +40,39 @@ class Title : public Entity {
   public:
     void update(World& world) override {
         const bool confirm = (world.pressed & key::kEnter) != 0 || (world.pressed & key::kF) != 0;
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kTitleStands);
                 world.animate(*this);
                 world.current_viking = 0;
                 count_down_from(kPatience);
-                state_ = State::kTitle;
+                s.state = State::kTitle;
                 return;
             case State::kTitle:
                 if (countdown == 0) {
                     return show_demo(world);
                 }
                 if (confirm) {
-                    step_ = 0;
+                    s.step = 0;
                     set_tint(world, kDimming.at(0));
-                    state_ = State::kDimming;
+                    s.state = State::kDimming;
                 }
                 return;
             case State::kDimming:
-                if (++step_ < kDimming.size()) {
-                    set_tint(world, kDimming.at(step_));
+                if (++s.step < kDimming.size()) {
+                    set_tint(world, kDimming.at(s.step));
                     return;
                 }
                 world.title.screen_cleared = true;
-                choice_ = 0;
+                s.choice = 0;
                 world.play(*this, anim::kTitlePointerAtChoice.at(0));
-                step_ = 0;
+                s.step = 0;
                 set_tint(world, kBrightening.at(0));
-                state_ = State::kBrightening;
+                s.state = State::kBrightening;
                 return;
             case State::kBrightening:
-                if (++step_ < kBrightening.size()) {
-                    set_tint(world, kBrightening.at(step_));
+                if (++s.step < kBrightening.size()) {
+                    set_tint(world, kBrightening.at(s.step));
                     return;
                 }
                 set_tint(world, 0);
@@ -82,31 +82,31 @@ class Title : public Entity {
                 put(world, 0xff, 14, 14);
                 put(world, 0x100, 14, 16);
                 put(world, 0x110, 14, 18);
-                state_ = State::kMenuShown;
+                s.state = State::kMenuShown;
                 return;
             case State::kMenuShown:
                 world.show_pieces(*this);
                 countdown = 200;
                 world.play(*this, anim::kTitlePointer);
-                state_ = State::kMenu;
+                s.state = State::kMenu;
                 break;
             case State::kMenu:
                 if ((world.pressed & key::kUp) != 0) {
-                    choice_ = choice_ == 0 ? 2 : choice_ - 1;
+                    s.choice = s.choice == 0 ? 2 : s.choice - 1;
                     chosen(world);
                 } else if ((world.pressed & key::kDown) != 0) {
-                    choice_ = choice_ == 2 ? 0 : choice_ + 1;
+                    s.choice = s.choice == 2 ? 0 : s.choice + 1;
                     chosen(world);
                 } else if (world.typed == 'N' ||
-                           (world.typed != 'P' && world.typed != 'Q' && confirm && choice_ == 0)) {
+                           (world.typed != 'P' && world.typed != 'Q' && confirm && s.choice == 0)) {
                     world.sound(*this, effect::kTitleChosen);
-                    state_ = State::kNewGame;
+                    s.state = State::kNewGame;
                     return;
-                } else if (world.typed == 'P' || (world.typed != 'Q' && confirm && choice_ == 1)) {
+                } else if (world.typed == 'P' || (world.typed != 'Q' && confirm && s.choice == 1)) {
                     world.sound(*this, effect::kTitlePassword);
                     world.play(*this, anim::kTitlePointerAtChoice.at(1));
                     world.animate(*this);
-                    state_ = State::kPasswordComing;
+                    s.state = State::kPasswordComing;
                     return;
                 } else if (world.typed == 'Q' || confirm) {
                     world.title.quit = true;
@@ -119,7 +119,7 @@ class Title : public Entity {
                 world.title.demo_wanted = true;
                 world.next_scene = scene::kIntro;
                 world.leave = true;
-                state_ = State::kDone;
+                s.state = State::kDone;
                 return;
             case State::kPasswordComing:
                 world.play(*this, anim::kTitlePasswordStands);
@@ -129,10 +129,10 @@ class Title : public Entity {
                 put(world, 0x100, 14, 16);
                 put(world, 0x101, 14, 18);
                 world.play(*this, anim::kTitlePointerAtLetter.at(0));
-                at_ = 0;
+                s.at = 0;
                 countdown = 0;
                 world.typed = 0;
-                state_ = State::kPassword;
+                s.state = State::kPassword;
                 break;
             case State::kPassword:
                 if (password(world, confirm)) {
@@ -141,18 +141,18 @@ class Title : public Entity {
                 break;
             case State::kWrong:
                 put(world, 0x10e, 10, 18);
-                state_ = State::kWrongShown;
+                s.state = State::kWrongShown;
                 return;
             case State::kWrongShown:
                 countdown = 40;
-                state_ = State::kWrongWaiting;
+                s.state = State::kWrongWaiting;
                 return;
             case State::kWrongWaiting:
                 if (!confirm && countdown != 0) {
                     return;
                 }
                 world.clear_text();
-                choice_ = 1;
+                s.choice = 1;
                 world.play(*this, anim::kTitlePointerAtChoice.at(1));
                 return show_menu(world);
             case State::kDone:
@@ -197,16 +197,16 @@ class Title : public Entity {
     void show_demo(World& world) {
         world.title.demo_wanted = true;
         world.leave = true;
-        state_ = State::kDone;
+        s.state = State::kDone;
     }
     void show_menu(World& world) {
         world.animate(*this);
-        state_ = State::kMenuComing;
+        s.state = State::kMenuComing;
     }
     void chosen(World& world) {
         countdown = kPatience;
         world.sound(*this, effect::kMenuMoves);
-        world.play(*this, anim::kTitlePointerAtChoice.at(static_cast<std::size_t>(choice_)));
+        world.play(*this, anim::kTitlePointerAtChoice.at(static_cast<std::size_t>(s.choice)));
     }
 
     // The letter after or before one, as up and down turn them: the digits, then the letters the passwords use.
@@ -223,7 +223,7 @@ class Title : public Entity {
 
     // One tick of the password being put in. True if the turn ended here.
     bool password(World& world, bool confirm) {
-        std::uint8_t& letter = world.password.at(static_cast<std::size_t>(at_));
+        std::uint8_t& letter = world.password.at(static_cast<std::size_t>(s.at));
         if (world.typed != 0 && world.typed != kBackspace) {
             if (world.typed == kReturn) {
                 return submit(world);
@@ -253,7 +253,7 @@ class Title : public Entity {
             return false;
         }
         if (world.typed == kBackspace || (world.held & key::kLeft) != 0) {
-            if (at_ != 0) {
+            if (s.at != 0) {
                 world.typed = 0;
                 move(world, false);
             }
@@ -271,19 +271,19 @@ class Title : public Entity {
 
     void move(World& world, bool right) {
         if (right) {
-            if (at_ == 3) {
+            if (s.at == 3) {
                 return;
             }
-            ++at_;
-            std::uint8_t& letter = world.password.at(static_cast<std::size_t>(at_));
+            ++s.at;
+            std::uint8_t& letter = world.password.at(static_cast<std::size_t>(s.at));
             if (letter == ' ') {
                 letter = 'B';
             }
         } else {
-            --at_;
+            --s.at;
         }
         world.sound(*this, effect::kMenuMoves);
-        world.play(*this, anim::kTitlePointerAtLetter.at(static_cast<std::size_t>(at_)));
+        world.play(*this, anim::kTitlePointerAtLetter.at(static_cast<std::size_t>(s.at)));
     }
 
     // The cheat's password: the four letters the title's own script compares the typed ones with, read from the
@@ -305,7 +305,7 @@ class Title : public Entity {
             world.sound(*this, effect::kTitleChosen);
             world.clear_text();
             world.hide_pieces(*this);
-            choice_ = 1;
+            s.choice = 1;
             world.play(*this, anim::kTitlePointerAtChoice.at(1));
             show_menu(world);
             return true;
@@ -315,20 +315,23 @@ class Title : public Entity {
                 world.next_scene = static_cast<int>(level);
                 world.sound(*this, effect::kTitleChosen);
                 world.leave = true;
-                state_ = State::kDone;
+                s.state = State::kDone;
                 return true;
             }
         }
         world.sound(*this, effect::kNothingToUse);
         world.hide_pieces(*this);
-        state_ = State::kWrong;
+        s.state = State::kWrong;
         return true;
     }
 
-    State state_ = State::kStart;
-    std::size_t step_ = 0;
-    int choice_ = 0;
-    int at_ = 0;  // which of the password's letters the pointer is at
+    struct Saved {
+        State state = State::kStart;
+        std::size_t step = 0;
+        int choice = 0;
+        int at = 0;  // which of the password's letters the pointer is at
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // The galaxy between two worlds: shown for its argument in ticks, then the first level of the world after the
@@ -370,10 +373,10 @@ class GalaxyLight : public Entity {
             world.play(*this, anim::kGalaxyLightFlies);
             max_step_x = px(16);
             max_step_y = px(16);
-            at_ = argument >= 8 ? kLateStart : (argument < 3 ? kEarlyStart : 0);
+            s.at = argument >= 8 ? kLateStart : (argument < 3 ? kEarlyStart : 0);
         }
-        const auto& speed = kSpeeds.at(std::min(at_, kSpeeds.size() - 1));
-        ++at_;
+        const auto& speed = kSpeeds.at(std::min(s.at, kSpeeds.size() - 1));
+        ++s.at;
         speed_x = speed[0];
         speed_y = speed[1];
         world.animate(*this);
@@ -402,7 +405,10 @@ class GalaxyLight : public Entity {
          {85, -93},      {113, 37},      {10, 112},      {-94, 48},      {-75, -66},     {34, -87},     {88, 3},
          {22, 80},       {0, 0}}};
 
-    std::size_t at_ = 0;
+    struct Saved {
+        std::size_t at = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 }  // namespace

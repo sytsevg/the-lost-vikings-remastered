@@ -33,15 +33,15 @@ class Lever : public Entity {
     void update(World& world) override {
         if (first_turn()) {
             acts_as = tile::kThing;
-            on_ = (argument & kOnBit) != 0;
+            s.on = (argument & kOnBit) != 0;
             argument &= static_cast<std::uint16_t>(~kOnBit);
-            world.play(*this, on_ ? stands_on() : stands_off());
+            world.play(*this, s.on ? stands_on() : stands_off());
         } else if (worked(message)) {
             message = 0;
             message_value = 0;
             click(world, *this);
-            on_ = !on_;
-            world.play(*this, on_ ? goes_on() : goes_off());
+            s.on = !s.on;
+            world.play(*this, s.on ? goes_on() : goes_off());
             // One kind flips the level's second set of switches.
             (kind == kind::kLeverOfSecondSet ? world.more_switches : world.switches) ^= argument;
         }
@@ -50,7 +50,7 @@ class Lever : public Entity {
     void outside_active_area(World& world) override {
         if (placement >= 0) {
             world.placements.at(static_cast<std::size_t>(placement)).argument =
-                static_cast<std::uint16_t>(on_ ? (argument | kOnBit) : argument);
+                static_cast<std::uint16_t>(s.on ? (argument | kOnBit) : argument);
         }
         world.remove(slot);
     }
@@ -63,18 +63,21 @@ class Lever : public Entity {
     Animation goes_on() const { return kind == kind::kOtherLever ? anim::kOtherLeverOn : anim::kLeverGoesOn; }
     Animation goes_off() const { return kind == kind::kOtherLever ? anim::kOtherLeverOff : anim::kLeverGoesOff; }
 
-    bool on_ = false;
+    struct Saved {
+        bool on = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A button: worked, it flips its switches. One kind only for a moment, one once and for all, one for a while.
 class Button : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 acts_as = tile::kThing;
                 world.play(*this, anim::kButtonOut);
-                state_ = State::kOut;
+                s.state = State::kOut;
                 break;
             case State::kOut:
                 if (!worked(message)) {
@@ -90,34 +93,34 @@ class Button : public Entity {
                     if (placement >= 0) {
                         world.placements.at(static_cast<std::size_t>(placement)).argument = 0;
                     }
-                    state_ = State::kPressed;
+                    s.state = State::kPressed;
                 } else if (kind == kind::kButtonForAWhile) {
                     countdown = kAWhile;
                     set_flag(kHeldInFlags);
-                    state_ = State::kGoingInForAWhile;
+                    s.state = State::kGoingInForAWhile;
                 } else {
-                    state_ = State::kPressedForAMoment;
+                    s.state = State::kPressedForAMoment;
                 }
                 break;
             case State::kPressedForAMoment:
                 world.switches ^= argument;
-                state_ = State::kIn;
+                s.state = State::kIn;
                 break;
             case State::kPressed:
-                state_ = State::kIn;
+                s.state = State::kIn;
                 break;
             case State::kIn:
                 if (animation_over()) {
                     click(world, *this);
                     world.play(*this, anim::kButtonComesOut);
-                    state_ = State::kOut;
+                    s.state = State::kOut;
                 }
                 break;
             case State::kGoingInForAWhile:
                 if (!animation_over()) {
                     break;
                 }
-                state_ = State::kInForAWhile;
+                s.state = State::kInForAWhile;
                 return;
             case State::kInForAWhile:
                 if (countdown != 0) {
@@ -128,7 +131,7 @@ class Button : public Entity {
                 clear_flag(kHeldInFlags);
                 world.play(*this, anim::kButtonComesOut);
                 click(world, *this);
-                state_ = State::kOut;
+                s.state = State::kOut;
                 break;
         }
         world.animate(*this);
@@ -147,7 +150,10 @@ class Button : public Entity {
     static constexpr std::uint16_t kAWhile = 150;  // ticks
     static constexpr std::uint16_t kHeldInFlags = entity_flag::kCountingDown | entity_flag::kAlwaysActive;
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A lock: worked (by a Viking using the key that fits), it flips its switches and is gone for good.
@@ -180,7 +186,7 @@ class Lock : public Entity {
 class Dial : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return at_start(world);
             case State::kWaiting:
@@ -189,7 +195,7 @@ class Dial : public Entity {
                 }
                 return;
             case State::kTurning:
-                state_ = State::kTurned;
+                s.state = State::kTurned;
                 return;
             case State::kTurned:
                 return when_turned(world);
@@ -197,29 +203,29 @@ class Dial : public Entity {
     }
     void at_start(World& world) {
         acts_as = tile::kThing;
-        right_ = argument & kLowByte;
+        s.right = argument & kLowByte;
         argument &= kHighByte;
         world.play(*this, facing_left() ? anim::kDialFacingLeft : anim::kDialFacingRight);
         world.animate(*this);
         for (std::size_t bit = 0; bit < 8; ++bit) {  // which of the level's values is its own
             if ((argument & (0x0100U << bit)) != 0) {
-                own_ = bit;
+                s.own = bit;
                 break;
             }
         }
-        shows_ = world.values.at(own_);
-        if (shows_ > 3) {  // (a value that isn't a picture: it is turned at once)
+        s.shows = world.values.at(s.own);
+        if (s.shows > 3) {  // (a value that isn't a picture: it is turned at once)
             return turn(world);
         }
         show(world);
-        state_ = State::kWaiting;
+        s.state = State::kWaiting;
     }
     void when_turned(World& world) {
         message = 0;
         message_value = 0;
-        shows_ = static_cast<std::uint16_t>((shows_ + 1) % 4);
+        s.shows = static_cast<std::uint16_t>((s.shows + 1) % 4);
         show(world);
-        state_ = State::kWaiting;
+        s.state = State::kWaiting;
     }
 
   private:
@@ -229,24 +235,27 @@ class Dial : public Entity {
         world.play(*this, anim::kDialTurns);
         world.sound(*this, effect::kSwitch);
         world.animate(*this);
-        state_ = State::kTurning;
+        s.state = State::kTurning;
     }
     void show(World& world) {
         world.play(*this,
-                   {static_cast<std::uint16_t>(anim::kDialPictures.place + (6 * shows_)), anim::kDialPictures.home});
+                   {static_cast<std::uint16_t>(anim::kDialPictures.place + (6 * s.shows)), anim::kDialPictures.home});
         world.animate(*this);
-        if (shows_ == right_) {
+        if (s.shows == s.right) {
             world.switches |= argument;
         } else {
             world.switches &= static_cast<std::uint16_t>(~argument);
         }
-        world.values.at(own_) = shows_;
+        world.values.at(s.own) = s.shows;
     }
 
-    State state_ = State::kStart;
-    std::uint16_t right_ = 0;
-    std::uint16_t shows_ = 0;
-    std::size_t own_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        std::uint16_t right = 0;
+        std::uint16_t shows = 0;
+        std::size_t own = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A sign on a wall: one of a few pictures, by its argument. It shows what a dial has to show.
@@ -365,7 +374,7 @@ class Breakable : public Entity {
 class MachineToDestroy : public Entity {
   public:
     void update(World& world) override {
-        if (wrecked_) {
+        if (s.wrecked) {
             const int column = cell_of(x - 8);
             const int row = cell_of(y - 8);
             const std::array<std::array<int, 3>, 4> cells{{{0, 0, 18}, {1, 0, 19}, {1, 1, 21}, {0, 1, 20}}};
@@ -389,11 +398,14 @@ class MachineToDestroy : public Entity {
         stay_active();
         world.spawn(*this, factory_kind::kBlast, x, y, 0, entity_flag::kLargePieces);
         world.switches ^= argument;
-        wrecked_ = true;
+        s.wrecked = true;
     }
 
   private:
-    bool wrecked_ = false;
+    struct Saved {
+        bool wrecked = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // The ship's generator: blows wear it down; the last one blows it up. Its switches change, its four cells show
@@ -401,11 +413,11 @@ class MachineToDestroy : public Entity {
 class Generator : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kGeneratorHums);
                 world.animate(*this);
-                state_ = State::kWhole;
+                s.state = State::kWhole;
                 return;
             case State::kWhole:
                 return when_whole(world);
@@ -437,7 +449,7 @@ class Generator : public Entity {
         hit_mask = 0;
         world.spawn(*this, kind::kBlast, x, y, 0, entity_flag::kLargePieces);
         count_down_from(20);
-        state_ = State::kBlown;
+        s.state = State::kBlown;
     }
     void when_blown(World& world) {
         if (countdown != 0) {
@@ -453,8 +465,8 @@ class Generator : public Entity {
             }
         }
         world.sound(*this, effect::kAlarm);
-        step_ = 0;
-        state_ = State::kDimming;
+        s.step = 0;
+        s.state = State::kDimming;
         return next(world);
     }
 
@@ -478,24 +490,27 @@ class Generator : public Entity {
     }};
 
     void next(World& world) {
-        if (step_ == kSteps.size()) {
+        if (s.step == kSteps.size()) {
             world.tint = {};
             world.stop_sound(*this, effect::kPowerDown);
             gone_for_good(world, *this);
             return;
         }
-        if (step_ == kPowerDownAt) {
+        if (s.step == kPowerDownAt) {
             world.sound(*this, effect::kPowerDown);
         }
-        const Step& step = kSteps.at(step_);
+        const Step& step = kSteps.at(s.step);
         world.tint = {static_cast<std::uint8_t>(step.tint[0] << 1U), static_cast<std::uint8_t>(step.tint[1] << 1U),
                       static_cast<std::uint8_t>(step.tint[2] << 1U)};
         countdown = step.ticks;
-        ++step_;
+        ++s.step;
     }
 
-    State state_ = State::kStart;
-    std::size_t step_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        std::size_t step = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A place that takes an item (its argument's low byte: which): given it, it flips its switches, its cell of the
@@ -504,7 +519,7 @@ class Generator : public Entity {
 class ItemPlace : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return at_start(world);
             case State::kWaiting:
@@ -520,7 +535,7 @@ class ItemPlace : public Entity {
         if (wanted_item == kStartsMachine && world.factory.part_fitted) {
             return run();
         }
-        state_ = State::kWaiting;
+        s.state = State::kWaiting;
     }
     void when_waiting(World& world) {
         const bool given = message == message::kAsked;
@@ -578,10 +593,13 @@ class ItemPlace : public Entity {
     void run() {
         static constexpr std::uint16_t kCanBeBlownUp = bits(hit::kHurtByFire, hit::kBombable, hit::kStopsArrow);
         hit_mask |= kCanBeBlownUp;
-        state_ = State::kRunning;
+        s.state = State::kRunning;
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A machine that takes item 0E and gives the item of its argument, which drops out beside it.
@@ -613,36 +631,39 @@ class BlinkingLight : public Entity {
         if (first_turn()) {
             acts_as = tile::kThing;
             count_down();
-            column_ = cell_of(x);
-            row_ = (cell_of(y)) - 1;
+            s.column = cell_of(x);
+            s.row = (cell_of(y)) - 1;
             return;
         }
-        if (phase_ < 0) {
+        if (s.phase < 0) {
             const bool asked = message == message::kAsked;
             message = 0;
             if (!asked) {
                 return;
             }
             countdown = 16;
-            phase_ = 0;
-        } else if (++phase_ == 4) {
+            s.phase = 0;
+        } else if (++s.phase == 4) {
             if (countdown == 0) {
-                phase_ = -1;
+                s.phase = -1;
                 return;
             }
-            phase_ = 0;
+            s.phase = 0;
         }
-        if (phase_ == 0 || phase_ == 2) {
-            if (Cell* cell = world.map.cell(column_, row_)) {
-                cell->metatile = phase_ == 0 ? 3 : 4;
+        if (s.phase == 0 || s.phase == 2) {
+            if (Cell* cell = world.map.cell(s.column, s.row)) {
+                cell->metatile = s.phase == 0 ? 3 : 4;
             }
         }
     }
 
   private:
-    int column_ = 0;
-    int row_ = 0;
-    int phase_ = -1;  // which of a blink's four ticks; -1: not blinking
+    struct Saved {
+        int column = 0;
+        int row = 0;
+        int phase = -1;  // which of a blink's four ticks; -1: not blinking
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // Something a Viking can act on that does nothing itself.

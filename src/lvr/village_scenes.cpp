@@ -84,11 +84,14 @@ class Abduction : public Entity {
             cue::wait(85),
             cue::leave(),
         }};
-        (void)run_cues(world, *this, kCues, at_);
+        (void)run_cues(world, *this, kCues, s.at);
     }
 
   private:
-    std::size_t at_ = 0;
+    struct Saved {
+        std::size_t at = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A Viking asleep in his house: when the scene's switch for him is on he is pulled up.
@@ -98,18 +101,21 @@ class TakenViking : public Entity {
         if (first_turn()) {
             never_again(world, *this);
             if (argument <= 2) {
-                bit_ = static_cast<std::uint16_t>(1U << argument);
+                s.bit = static_cast<std::uint16_t>(1U << argument);
                 world.play(*this, anim::kSceneLights.at(argument));
             }
         }
-        if ((world.switches & bit_) == bit_) {
+        if ((world.switches & s.bit) == s.bit) {
             speed_y = px(-2);
         }
         world.animate(*this);
     }
 
   private:
-    std::uint16_t bit_ = 0;
+    struct Saved {
+        std::uint16_t bit = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // The alien ship: while one of the switches 1, 2, 4 is on it stops and its beam is on.
@@ -117,28 +123,28 @@ class AlienShip : public Entity {
   public:
     void update(World& world) override {
         const bool beam = (world.switches & 7U) != 0;
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kAlienShipFlies);
                 world.animate(*this);
-                state_ = State::kFlying;
+                s.state = State::kFlying;
                 [[fallthrough]];
             case State::kFlying:
                 world.animate(*this);
                 if (beam) {
-                    state_ = State::kStopping;
+                    s.state = State::kStopping;
                 }
                 return;
             case State::kStopping:
                 speed_x = 0;
                 speed_y = 0;
                 world.play(*this, anim::kAlienShipBeams);
-                state_ = State::kBeaming;
+                s.state = State::kBeaming;
                 [[fallthrough]];
             case State::kBeaming:
                 if (!beam) {
                     world.play(*this, anim::kAlienShipBeamOff);
-                    state_ = State::kFlying;
+                    s.state = State::kFlying;
                 }
                 world.animate(*this);
                 return;
@@ -148,7 +154,10 @@ class AlienShip : public Entity {
   private:
     enum class State : std::uint8_t { kStart, kFlying, kStopping, kBeaming };
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A light of the beam: unseen for a while (its argument's upper bits, eight a tick), then shown until its switch
@@ -158,23 +167,23 @@ class BeamLight : public Entity {
     void update(World& world) override {
         if (first_turn()) {
             world.play(*this, anim::kBeamLightLooks);
-            delay_ = argument & 0xfff8U;
+            s.delay = argument & 0xfff8U;
             argument &= 7U;
             world.animate(*this);
             world.hide_pieces(*this);
         }
-        if (hidden_) {
-            if (delay_ != 0) {
-                delay_ -= 8;
+        if (s.hidden) {
+            if (s.delay != 0) {
+                s.delay -= 8;
                 return;
             }
-            hidden_ = false;
+            s.hidden = false;
             world.show_pieces(*this);
         }
-        if (!ending_ && switches_on(world, argument)) {
-            ending_ = true;
+        if (!s.ending && switches_on(world, argument)) {
+            s.ending = true;
         }
-        if (ending_ && animation_over()) {
+        if (s.ending && animation_over()) {
             world.remove(slot);
             return;
         }
@@ -182,9 +191,12 @@ class BeamLight : public Entity {
     }
 
   private:
-    bool hidden_ = true;
-    bool ending_ = false;
-    std::uint16_t delay_ = 0;
+    struct Saved {
+        bool hidden = true;
+        bool ending = false;
+        std::uint16_t delay = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // Something of the night village that moves on to the right while the scene's switch 8 is on.
@@ -216,19 +228,19 @@ class VillageVoices : public Entity {
         if (countdown != 0) {
             return;
         }
-        if (run_cues(world, *this, cues_, at_)) {
+        if (run_cues(world, *this, std::span{s.cues}.first(s.cue_count), s.at)) {
             return;
         }
-        if (talking_ >= 0) {  // he has had his say
-            said_.at(static_cast<std::size_t>(talking_)) = true;
-            talking_ = -1;
-            if (said_[0] && said_[1] && said_[2]) {
+        if (s.talking >= 0) {  // he has had his say
+            s.said.at(static_cast<std::size_t>(s.talking)) = true;
+            s.talking = -1;
+            if (s.said[0] && s.said[1] && s.said[2]) {
                 gone_for_good(world, *this);
             }
             return;
         }
         for (int viking = 0; viking < 3; ++viking) {
-            if (said_.at(static_cast<std::size_t>(viking))) {
+            if (s.said.at(static_cast<std::size_t>(viking))) {
                 continue;
             }
             target = viking;
@@ -243,49 +255,54 @@ class VillageVoices : public Entity {
                 continue;
             }
             const int px = he->x;
-            cues_.clear();
-            cues_.push_back(cue::effect(effect::kTalk));
+            s.cue_count = 0;
+            const auto add = [this](const Cue& cue) { s.cues.at(s.cue_count++) = cue; };
+            add(cue::effect(effect::kTalk));
             if (viking == 0) {
                 const int py = he->y - 52;
-                cues_.push_back(cue::colour(text_colour::kErik));
-                cues_.push_back(cue::say_at_point(0x15b, tail::kBelowLeft, px, py));
-                cues_.push_back(cue::wait(120));
-                cues_.push_back(cue::clear());
-                cues_.push_back(cue::say_at_point(0x15c, tail::kBelowLeft, px, py));
-                cues_.push_back(cue::wait(120));
-                cues_.push_back(cue::clear());
-                cues_.push_back(cue::colour(text_colour::kOthers));
-                cues_.push_back(cue::say_at_point(0x178, tail::kBelowMiddle, px + 32, py));
-                cues_.push_back(cue::wait(80));
-                cues_.push_back(cue::clear());
+                add(cue::colour(text_colour::kErik));
+                add(cue::say_at_point(0x15b, tail::kBelowLeft, px, py));
+                add(cue::wait(120));
+                add(cue::clear());
+                add(cue::say_at_point(0x15c, tail::kBelowLeft, px, py));
+                add(cue::wait(120));
+                add(cue::clear());
+                add(cue::colour(text_colour::kOthers));
+                add(cue::say_at_point(0x178, tail::kBelowMiddle, px + 32, py));
+                add(cue::wait(80));
+                add(cue::clear());
             } else if (viking == 1) {
                 const int py = he->y - 48;
-                cues_.push_back(cue::colour(text_colour::kBaleog));
-                cues_.push_back(cue::say_at_point(0x15d, tail::kBelowMiddle, px, py));
-                cues_.push_back(cue::wait(120));
-                cues_.push_back(cue::clear());
+                add(cue::colour(text_colour::kBaleog));
+                add(cue::say_at_point(0x15d, tail::kBelowMiddle, px, py));
+                add(cue::wait(120));
+                add(cue::clear());
             } else {
                 const int py = he->y - 48;
-                cues_.push_back(cue::colour(text_colour::kOlaf));
-                cues_.push_back(cue::say_at_point(0x15e, tail::kBelowMiddle, px, py));
-                cues_.push_back(cue::wait(80));
-                cues_.push_back(cue::clear());
-                cues_.push_back(cue::say_at_point(0x15f, tail::kBelowMiddle, px, py));
-                cues_.push_back(cue::wait(80));
-                cues_.push_back(cue::clear());
+                add(cue::colour(text_colour::kOlaf));
+                add(cue::say_at_point(0x15e, tail::kBelowMiddle, px, py));
+                add(cue::wait(80));
+                add(cue::clear());
+                add(cue::say_at_point(0x15f, tail::kBelowMiddle, px, py));
+                add(cue::wait(80));
+                add(cue::clear());
             }
-            at_ = 0;
-            talking_ = viking;
-            (void)run_cues(world, *this, cues_, at_);
+            s.at = 0;
+            s.talking = viking;
+            (void)run_cues(world, *this, std::span{s.cues}.first(s.cue_count), s.at);
             return;
         }
     }
 
   private:
-    std::array<bool, 3> said_{};
-    int talking_ = -1;
-    std::vector<Cue> cues_;
-    std::size_t at_ = 0;
+    struct Saved {
+        std::array<bool, 3> said{};
+        int talking = -1;
+        std::array<Cue, 12> cues{};  // what the Viking spoken to says, at most this much
+        std::size_t cue_count = 0;   // how much of it there is
+        std::size_t at = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // Something in the village a Viking can act on: he says two things about it, a hint follows, and the first item
@@ -313,14 +330,14 @@ class VillageThing : public Entity {
             cue::wait(80),
             cue::clear(),
         }};
-        if (!touched_) {
+        if (!s.touched) {
             if (saw.viking == kNobody || (world.pressed & key::kS) == 0) {
                 return;
             }
             target = saw.viking;
-            touched_ = true;
+            s.touched = true;
         }
-        if (run_cues(world, *this, kCues, at_)) {
+        if (run_cues(world, *this, kCues, s.at)) {
             return;
         }
         for (auto& his : world.items) {
@@ -331,8 +348,11 @@ class VillageThing : public Entity {
     Looks looks_for() const override { return Looks{touching_any(hit::kVikingInField, &Saw::viking)}; }
 
   private:
-    bool touched_ = false;
-    std::size_t at_ = 0;
+    struct Saved {
+        bool touched = false;
+        std::size_t at = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // The village the Vikings come home to: they fall in, Olaf has a word, they walk on, the village greets them,
@@ -383,11 +403,14 @@ class Homecoming : public Entity {
             cue::wait(120),
             cue::leave(),
         }};
-        (void)run_cues(world, *this, kCues, at_);
+        (void)run_cues(world, *this, kCues, s.at);
     }
 
   private:
-    std::size_t at_ = 0;
+    struct Saved {
+        std::size_t at = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // Someone or something of the village that only plays its animation: which, by its argument.

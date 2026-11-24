@@ -206,6 +206,49 @@ void World::create_in_view(ViewPart part) {
     }
 }
 
+void World::save(Writer& to) const {
+    to.measured([this](Writer& part) { part(static_cast<const WorldState&>(*this)); });
+    to(static_cast<std::uint32_t>(entities.size()));
+    for (const OwnedEntity& entity : entities) {
+        to(static_cast<bool>(entity));
+        if (entity) {
+            to(entity->kind);
+            to.measured([&entity](Writer& part) { entity->save(part); });
+        }
+    }
+}
+
+bool World::load(Reader& from) {
+    from.measured([this](Reader& part) { part(static_cast<WorldState&>(*this)); });
+    std::uint32_t count = 0;
+    from(count);
+    if (!from.ok() || count > kRemasterSlots) {
+        return false;
+    }
+    entities.clear();
+    entities.resize(count);
+    removed_.clear();
+    for (OwnedEntity& slot : entities) {
+        bool there = false;
+        from(there);
+        if (!there) {
+            continue;
+        }
+        std::uint16_t kind = 0;
+        from(kind);
+        std::unique_ptr<Entity> made = make ? make(kind) : nullptr;
+        if (!made) {
+            made = make_entity<Unwritten>();
+        }
+        from.measured([&made](Reader& part) { made->load(part); });
+        slot = std::move(made);
+        if (!from.ok()) {
+            return false;
+        }
+    }
+    return from.ok();
+}
+
 Camera World::camera_for_view(int width, int height) const noexcept {
     Camera placed = camera;
     const bool larger = width > camera.view_width || height > camera.view_height;

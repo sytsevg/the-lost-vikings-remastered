@@ -78,15 +78,152 @@ struct Creation {
 // The part of the view placements are looked for in: all of it, or the strip that came into view.
 enum class ViewPart : std::uint8_t { kWhole, kLeft, kRight, kBottom, kTop };
 
+// What a world holds as plain data: everything of it that can be written out as it is (lvr/archive.hpp). The world
+// itself adds its entities, and what it has of the level it was made for (the programs, the texts, how a kind is
+// made), which a world read back gets from that level again.
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding): its members are grouped by meaning, not by size
-class World {
-  public:
+struct WorldState {
     Rules rules = Rules::kVanilla;  // a game's, not a scene's: it goes on from scene to scene
     Map map;                        // the level's, as the entities have changed it
     Cell cleared_cell{};            // what a cell becomes where a wall is broken away: the world's empty cell
     Cell filled_cell{.metatile = 0, .tile_type = tile::kGround};  // and where a floor is built: its solid cell
     std::uint16_t broken_picture = 0;  // the picture of a cell where a target was shot away: the world's
     std::uint16_t shot_picture = 0;    // and where another kind of target was (the wacky world's)
+    Pieces pieces;                     // as many, laid out, as the rules give (set_rules)
+    Camera camera;
+    // The height of a slope's surface at each of a cell's 16 columns, by slope (tile type - 0x30): from VIKINGS.EXE.
+    std::array<std::uint8_t, 256> slope_heights{};
+    std::array<KindRecord, kKinds> kinds{};
+    std::vector<LoadedSpriteSet> sprite_sets;  // at most 32
+    // The level's placements; entities that leave the active area write where they were back into theirs.
+    std::vector<Placement> placements;
+    std::bitset<kMostPlacements> gone;     // placements that don't come back: collected, destroyed
+    int first_placed_slot = kVikingSlots;  // the slots before it aren't for placements (a cutscene: 1)
+    int strip_x = 0;                       // the camera, in cells, when placements last came into view
+    int strip_y = 0;
+    int gravity = 0;                 // the level's, added to a falling entity's speed every tick
+    int level_push = 0;              // the same across
+    std::uint16_t keys_before = 0;   // the keys held at the last tick's start
+    int updating = kNobody;          // the slot of the entity whose turn it is
+    std::vector<int> created_below;  // entities created this turn in a lower slot: their turn comes right after
+    bool ending = false;             // the scene ends: what is removed now isn't created again
+    std::vector<int> created_late;   // placements created again in a slot the tick's turns have passed
+    // What the animations asked for that this world doesn't have, by kind (for the spawn sweep test): a broken
+    // program (one not in this world's database, or not paired with it), a packed set the level doesn't load.
+    struct Missing {
+        std::uint16_t kind;
+        std::uint16_t what;  // the program where it broke, or the packed set's DATA.DAT entry
+        bool program;
+        bool operator==(const Missing&) const = default;
+    };
+    std::vector<Missing> missing;
+    int database = database::kSpaceship;  // this world's
+    AnimationTables animation_tables{};
+    std::vector<std::uint16_t> packed_entries;  // the level's packed sets, as DATA.DAT entries
+    std::vector<SoundCue> cues;                 // what was reported to the sound side since it was last taken
+    // Random numbers, as the original draws them: every kind draws from the same sequence, so the order of the
+    // draws is part of how a level plays. A demo has a sequence of its own, so it plays the same every time.
+    std::uint32_t seed = 0;
+    std::uint16_t demo_seed = 30;
+    int level = 1;           // 1-37
+    int scene = 0;           // the scene, as the original numbers them: 0-36 the levels, 37 game over, 38-47 the others
+    int previous_scene = 0;  // the scene before it
+    int next_scene = 0;      // what follows it; a scene's entities can say otherwise
+    bool leave = false;      // the scene is over: on to the next
+    std::array<std::uint8_t, 4> password{};              // the level's
+    std::vector<std::array<std::uint8_t, 4>> passwords;  // every level's, in order: typed at the title, one leads there
+    // What the title's scene leaves for the game around it.
+    struct Title {
+        bool demo_wanted = false;     // it was left alone: a demo follows
+        bool cheat = false;           // the cheat's password was typed: F5 and F6 change the level
+        bool quit = false;            // its menu: the game ends
+        bool screen_cleared = false;  // its menu cleared the scene's picture; what that showed below is at the top
+    } title;
+    std::array<std::uint8_t, 3> tint{};   // how much darker red, green and blue are shown (the title's menu, the alarm)
+    std::array<std::uint8_t, 3> tint2{};  // a second one on top of it: a bomb's flash
+    int retries = 0;                      // how often the Vikings have lost this level in a row
+    bool after_game_over = false;         // the level starts again after a game over
+    bool attract = false;                 // the level is played by a recording (the title's demos)
+    std::uint16_t switches = 0;           // the level's 16 switches: buttons flip them; doors, barriers ... read theirs
+    std::uint16_t more_switches = 0;      // a second set of 16, for the levels that need more
+    std::uint16_t hints_seen = 0;         // a bit per hint the Vikings have been shown
+    struct Beam {  // where the Vikings told so (message 0x20, the ship's last level) are beamed to
+        int x = 0;
+        int y = 0;
+        bool faces_right = false;
+    } beam;
+    std::array<std::uint16_t, 8> values{};  // eight numbers some levels' kinds count with; set as a level starts
+    bool pushing_sound = false;             // the scrape of a block being pushed is playing
+    std::uint16_t vikings_arriving = 0;     // a bit per Viking still on his way in, where a level starts with that
+    std::uint16_t vikings_falling_in = 0;   // a bit per Viking that starts the level falling in, until he lands
+    // The factory: its cranes, magnets, furnaces and fire jets.
+    struct Factory {
+        bool part_fitted = false;                  // the machine that takes item 0D has it
+        std::array<std::uint16_t, 3> cranes{};     // its three cranes: what the Viking at the controls asks
+        std::array<std::uint16_t, 3> burn_wait{};  // the glowing furnaces: ticks until each Viking burns again
+        int magnets_on = 0;                        // how many magnets hum
+        int jets_on = 0;                           // how many fire jets are on: their sound plays while any is
+    } factory;
+    // Tomator's level.
+    struct Tomator {
+        int force_field = kNobody;  // the slot of his force field while it is up
+    } tomator;
+    // The game-over scene: the health each Viking was left with (0: dead; its figures show by it, and its
+    // lightning gives a dead one his back), and how it ends.
+    struct GameOverScene {
+        std::array<std::uint16_t, kVikingSlots> kept_health{};
+        bool letters_fall = false;  // the players gave up: GAME OVER drops in
+        bool try_again = false;     // ... or the level starts again
+        bool give_up = false;       // ... or the game goes back to the title
+    } game_over_scene;
+    static constexpr int kSquares = 4;                                      // a Viking's squares in the HUD
+    std::array<std::array<std::uint16_t, kSquares>, kVikingSlots> items{};  // by Viking, by square; 0: nothing
+    std::array<std::uint16_t, kVikingSlots> armour{};  // the shield item's extra point of health, x 2, per Viking
+    std::array<int, kVikingSlots> chosen_square{};     // the square each Viking uses from
+    std::array<std::uint16_t, std::size_t{kSquares} * kVikingSlots> shown_items{};  // as the HUD last drew them
+    bool has_hud = false;  // the level shows the HUD: the inventory can be opened
+    Inventory inventory;
+    std::vector<Line> lines;  // what the entities said this tick: shown after it, line by line
+    std::size_t next_line = 0;
+    TextLayer text;
+    bool waiting_for_key = false;  // a line holds the game until an action key is pressed
+    // A range of colours that goes round by one every `delay` ticks: lights, lava, water. From a lower to a
+    // higher colour they move up and the last comes round to the first; the other way round otherwise.
+    struct ColourCycle {
+        std::uint8_t delay = 0;
+        std::uint8_t left = 0;  // ticks until the next turn
+        std::uint8_t from = 0;
+        std::uint8_t to = 0;
+        bool running = false;
+    };
+    assets::Palette palette{};        // as the cycles have turned it
+    std::vector<ColourCycle> cycles;  // at most 8
+    bool has_vikings = true;          // a level, not a cutscene
+    std::uint16_t held = 0;           // this tick's input: the keys held, and of them the ones newly pressed
+    std::uint16_t pressed = 0;        // (docs/original/input.md)
+    int current_viking = 0;           // the slot of the Viking being played; kNobody when all are dead
+    int shown_viking = kNobody;       // the one that last blinked as it was chosen
+    int blink = 0;                    // ticks of that blinking left
+    bool game_over = false;           // the last Viking died: the scene ends
+    bool level_done = false;          // the Vikings have all reached the exit: the scene ends
+    std::uint16_t typed = 0;          // the last character typed (Y and N answer the scene's question)
+    // The screen's shake, per axis: the view is off by `offset`, which flips between 0 and `amount` every tick
+    // while `ticks` last.
+    struct Shake {
+        std::uint16_t amount = 0;
+        std::uint16_t offset = 0;
+        std::uint16_t ticks = 0;
+
+        bool operator==(const Shake&) const = default;
+    };
+    Shake shake_x;
+    Shake shake_y;
+    int last_nearest_viking = 0;
+};
+
+// The world: its state (above), its entities, and the engine's services to them.
+class World : public WorldState {
+  public:
     // An entity is created in the lowest free slot; they are updated and drawn in slot order.
     // As many slots as the rules give (set_rules); they are not added to while a world runs.
     std::vector<OwnedEntity> entities = std::vector<OwnedEntity>(kSlots);
@@ -104,34 +241,20 @@ class World {
         entities.resize(now == Rules::kRemaster ? kRemasterSlots : kSlots);
         pieces = Pieces{now == Rules::kRemaster ? kRemasterPieces : kOriginalPieces};
     }
-    Pieces pieces;  // as many, laid out, as the rules give (set_rules)
     // The piece of a number; the numbers go round (a sprite's pieces may wrap past the last).
     Piece& piece_at(int index) { return pieces.at(static_cast<std::size_t>(index) % pieces.size()); }
-    Camera camera;
-    // The height of a slope's surface at each of a cell's 16 columns, by slope (tile type - 0x30): from VIKINGS.EXE.
-    std::array<std::uint8_t, 256> slope_heights{};
 
-    std::array<KindRecord, kKinds> kinds{};
-    std::vector<LoadedSpriteSet> sprite_sets;  // at most 32
     // Makes an entity of a kind, with its behaviour. Kinds whose behaviour isn't written yet stand still.
     std::function<std::unique_ptr<Entity>(std::uint16_t kind)> make;
 
-    // The level's placements; entities that leave the active area write where they were back into theirs.
-    std::vector<Placement> placements;
-    std::bitset<kMostPlacements> gone;     // placements that don't come back: collected, destroyed
-    int first_placed_slot = kVikingSlots;  // the slots before it aren't for placements (a cutscene: 1)
-    int strip_x = 0;                       // the camera, in cells, when placements last came into view
-    int strip_y = 0;
+    // The world written out (lvr/archive.hpp): its state, then each slot's entity, by its kind; each with its
+    // length. And read back, into a world made for the same level (play.hpp's prepare_world: it has the level's
+    // programs and texts and makes its kinds); false if what was read isn't a whole world as this engine would
+    // write it (the state or a kind has another length by now).
+    void save(Writer& to) const;
+    bool load(Reader& from);
 
     // --- The tick ---
-
-    int gravity = 0;                 // the level's, added to a falling entity's speed every tick
-    int level_push = 0;              // the same across
-    std::uint16_t keys_before = 0;   // the keys held at the last tick's start
-    int updating = kNobody;          // the slot of the entity whose turn it is
-    std::vector<int> created_below;  // entities created this turn in a lower slot: their turn comes right after
-    bool ending = false;             // the scene ends: what is removed now isn't created again
-    std::vector<int> created_late;   // placements created again in a slot the tick's turns have passed
 
     // Tells the entity in a slot something (message::), if one is there; with a number that goes with it, or
     // leaving that as it is.
@@ -170,15 +293,6 @@ class World {
         entity.set_flag(entity_flag::kPutOnGround);
         animate(entity);
     }
-    // What the animations asked for that this world doesn't have, by kind (for the spawn sweep test): a broken
-    // program (one not in this world's database, or not paired with it), a packed set the level doesn't load.
-    struct Missing {
-        std::uint16_t kind;
-        std::uint16_t what;  // the program where it broke, or the packed set's DATA.DAT entry
-        bool program;
-        bool operator==(const Missing&) const = default;
-    };
-    std::vector<Missing> missing;
     void note_missing(const Missing& what);
     std::span<const std::byte> programs;  // the animation programs (the world's object database)
     // Where this world keeps the programs the kinds name by their place in the spaceship's database; none: the
@@ -187,12 +301,8 @@ class World {
     // The same for what a kind names by its place in another world's database (a hazard the spaceship doesn't
     // have, a kind of that world): by home database, 449 first.
     const std::array<AnimationPlaces, kWorlds>* places_from = nullptr;
-    int database = database::kSpaceship;  // this world's
     // Starts the entity's animation.
     void play(Entity& entity, Animation animation) const;
-    AnimationTables animation_tables{};
-    std::vector<std::uint16_t> packed_entries;  // the level's packed sets, as DATA.DAT entries
-    std::vector<SoundCue> cues;                 // what was reported to the sound side since it was last taken
     // An entity makes a sound: one of the original's effects, by its number. And stops one.
     void sound(const Entity& from, std::uint16_t effect) {
         cues.push_back({.kind = SoundCue::Kind::kEffect, .value = effect, .tune = 0, .entity = from.slot});
@@ -208,89 +318,21 @@ class World {
         cues.push_back({.kind = SoundCue::Kind::kStopEffect, .value = effect, .tune = 0, .entity = kNobody});
     }
 
-    // Random numbers, as the original draws them: every kind draws from the same sequence, so the order of the
-    // draws is part of how a level plays. A demo has a sequence of its own, so it plays the same every time.
-    std::uint32_t seed = 0;
-    std::uint16_t demo_seed = 30;
     std::uint16_t random() noexcept;
 
     // --- The game around the level ---
 
-    int level = 1;           // 1-37
-    int scene = 0;           // the scene, as the original numbers them: 0-36 the levels, 37 game over, 38-47 the others
-    int previous_scene = 0;  // the scene before it
-    int next_scene = 0;      // what follows it; a scene's entities can say otherwise
-    bool leave = false;      // the scene is over: on to the next
-    std::array<std::uint8_t, 4> password{};              // the level's
-    std::vector<std::array<std::uint8_t, 4>> passwords;  // every level's, in order: typed at the title, one leads there
-    // What the title's scene leaves for the game around it.
-    struct Title {
-        bool demo_wanted = false;     // it was left alone: a demo follows
-        bool cheat = false;           // the cheat's password was typed: F5 and F6 change the level
-        bool quit = false;            // its menu: the game ends
-        bool screen_cleared = false;  // its menu cleared the scene's picture; what that showed below is at the top
-    } title;
-    std::array<std::uint8_t, 3> tint{};   // how much darker red, green and blue are shown (the title's menu, the alarm)
-    std::array<std::uint8_t, 3> tint2{};  // a second one on top of it: a bomb's flash
-    int retries = 0;                      // how often the Vikings have lost this level in a row
-    bool after_game_over = false;         // the level starts again after a game over
-    bool attract = false;                 // the level is played by a recording (the title's demos)
-    std::uint16_t switches = 0;           // the level's 16 switches: buttons flip them; doors, barriers ... read theirs
-    std::uint16_t more_switches = 0;      // a second set of 16, for the levels that need more
-    std::uint16_t hints_seen = 0;         // a bit per hint the Vikings have been shown
-    struct Beam {  // where the Vikings told so (message 0x20, the ship's last level) are beamed to
-        int x = 0;
-        int y = 0;
-        bool faces_right = false;
-    } beam;
-    std::array<std::uint16_t, 8> values{};  // eight numbers some levels' kinds count with; set as a level starts
-    bool pushing_sound = false;             // the scrape of a block being pushed is playing
-    std::uint16_t vikings_arriving = 0;     // a bit per Viking still on his way in, where a level starts with that
-    std::uint16_t vikings_falling_in = 0;   // a bit per Viking that starts the level falling in, until he lands
-
     // --- What only some worlds' kinds need ---
-
-    // The factory: its cranes, magnets, furnaces and fire jets.
-    struct Factory {
-        bool part_fitted = false;                  // the machine that takes item 0D has it
-        std::array<std::uint16_t, 3> cranes{};     // its three cranes: what the Viking at the controls asks
-        std::array<std::uint16_t, 3> burn_wait{};  // the glowing furnaces: ticks until each Viking burns again
-        int magnets_on = 0;                        // how many magnets hum
-        int jets_on = 0;                           // how many fire jets are on: their sound plays while any is
-    } factory;
-    // Tomator's level.
-    struct Tomator {
-        int force_field = kNobody;  // the slot of his force field while it is up
-    } tomator;
-    // The game-over scene: the health each Viking was left with (0: dead; its figures show by it, and its
-    // lightning gives a dead one his back), and how it ends.
-    struct GameOverScene {
-        std::array<std::uint16_t, kVikingSlots> kept_health{};
-        bool letters_fall = false;  // the players gave up: GAME OVER drops in
-        bool try_again = false;     // ... or the level starts again
-        bool give_up = false;       // ... or the game goes back to the title
-    } game_over_scene;
 
     // --- What the Vikings carry ---
 
-    static constexpr int kSquares = 4;                                      // a Viking's squares in the HUD
-    std::array<std::array<std::uint16_t, kSquares>, kVikingSlots> items{};  // by Viking, by square; 0: nothing
-    std::array<std::uint16_t, kVikingSlots> armour{};  // the shield item's extra point of health, x 2, per Viking
-    std::array<int, kVikingSlots> chosen_square{};     // the square each Viking uses from
-    std::array<std::uint16_t, std::size_t{kSquares} * kVikingSlots> shown_items{};  // as the HUD last drew them
     // The HUD draws the items that changed. After one it goes on from the square after Olaf's chosen one (a quirk
     // of the original), so a change can take another tick to show.
     void update_hud();
-    bool has_hud = false;  // the level shows the HUD: the inventory can be opened
-    Inventory inventory;
 
     // --- Conversations ---
 
-    Texts texts;              // the game's texts (VIKINGS.EXE)
-    std::vector<Line> lines;  // what the entities said this tick: shown after it, line by line
-    std::size_t next_line = 0;
-    TextLayer text;
-    bool waiting_for_key = false;  // a line holds the game until an action key is pressed
+    Texts texts;  // the game's texts (VIKINGS.EXE)
 
     // A framed box with text `number` at a point of the level (its anchor cell there), or at a cell of the screen.
     void say_at_point(int number, int anchor, int x, int y);
@@ -313,17 +355,6 @@ class World {
 
     // --- The palette ---
 
-    // A range of colours that goes round by one every `delay` ticks: lights, lava, water. From a lower to a
-    // higher colour they move up and the last comes round to the first; the other way round otherwise.
-    struct ColourCycle {
-        std::uint8_t delay = 0;
-        std::uint8_t left = 0;  // ticks until the next turn
-        std::uint8_t from = 0;
-        std::uint8_t to = 0;
-        bool running = false;
-    };
-    assets::Palette palette{};        // as the cycles have turned it
-    std::vector<ColourCycle> cycles;  // at most 8
     void turn_colours();
     // Sixteen colours from the world's database at `offset` become colours 192-207 and 224-239 (a scene's
     // creature brings its own).
@@ -331,31 +362,9 @@ class World {
 
     // --- A level's rules ---
 
-    bool has_vikings = true;     // a level, not a cutscene
-    std::uint16_t held = 0;      // this tick's input: the keys held, and of them the ones newly pressed
-    std::uint16_t pressed = 0;   // (docs/original/input.md)
-    int current_viking = 0;      // the slot of the Viking being played; kNobody when all are dead
-    int shown_viking = kNobody;  // the one that last blinked as it was chosen
-    int blink = 0;               // ticks of that blinking left
-    bool game_over = false;      // the last Viking died: the scene ends
-    bool level_done = false;     // the Vikings have all reached the exit: the scene ends
-    std::uint16_t typed = 0;     // the last character typed (Y and N answer the scene's question)
-    // The screen's shake, per axis: the view is off by `offset`, which flips between 0 and `amount` every tick
-    // while `ticks` last.
-    struct Shake {
-        std::uint16_t amount = 0;
-        std::uint16_t offset = 0;
-        std::uint16_t ticks = 0;
-
-        bool operator==(const Shake&) const = default;
-    };
-    Shake shake_x;
-    Shake shake_y;
-
     // The living Viking nearest to the entity (the distances across and down added up); with none alive, the one
     // found the last time anyone looked.
     int nearest_viking(const Entity& entity);
-    int last_nearest_viking = 0;
     // How far the entity in `slot` is from this one: ahead of it and below it are positive.
     struct Offset {
         int ahead = 0;

@@ -48,7 +48,9 @@ the cheat's switch, the keys held, a few counters.
 
 An entity is an object of its kind's class ([`decisions.md`](decisions.md), ADR-0018): its own state and data,
 and what the engine reads and moves of every entity (place, box, speed, flags, health, sprite, what it acts as to
-others, what it was told). A kind is a class with a state and a turn; what it needs from the original's files it
+others, what it was told). What a kind remembers is all in one plain struct nested in the class, `Saved`, as its
+member `s`, with `LVR_SAVES(Base)` after it: that is what a snapshot, a quicksave and later a network snapshot
+write (ADR-0020), and a new field needs nothing but being added there. A kind is a class with a state and a turn; what it needs from the original's files it
 gets by name, and what many kinds do is a verb.
 
 The kinds are sorted into files by family (`walkers.cpp`, `shooters.cpp`, `blocks.cpp`, `switched.cpp` …). Each

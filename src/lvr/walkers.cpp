@@ -33,7 +33,7 @@ class WalkingRobot : public Enemy {
   public:
   protected:
     Looks looks() const override {
-        switch (at_) {
+        switch (s.at) {
             case At::kWalking:
                 return {stopped_by(walls()), touching_an_enemy(), touching_a_viking()};
             case At::kFalling:
@@ -45,7 +45,7 @@ class WalkingRobot : public Enemy {
         }
     }
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 appear(world, anim::kWalkerAppears);
                 return set_off(world);
@@ -80,7 +80,7 @@ class WalkingRobot : public Enemy {
         if (!can_walk_on(world, *this)) {
             if (!on_ground(world)) {
                 start_falling();
-                at_ = At::kFalling;
+                s.at = At::kFalling;
                 world.animate(*this);
                 return;
             }
@@ -124,7 +124,7 @@ class WalkingRobot : public Enemy {
     }
     void walk(World& world) {
         world.animate_on_ground(*this);
-        at_ = At::kWalking;
+        s.at = At::kWalking;
     }
 
     // A blow, in his own way; whatever else he is told he forgets.
@@ -144,7 +144,7 @@ class WalkingRobot : public Enemy {
                 stop_falling();
                 world.play(*this, anim::kWalkerIsHurt);
                 world.animate_on_ground(*this);
-                at_ = At::kHurt;
+                s.at = At::kHurt;
                 return true;
             }
             default:
@@ -155,20 +155,23 @@ class WalkingRobot : public Enemy {
     void led_to_attack(World& world) override {
         speed_x = 0;
         follow(world, anim::kWalkerWalks, Led::kAnimated);
-        at_ = At::kLed;
+        s.at = At::kLed;
     }
     void led_to_stand(World& world) override {
         speed_x = 0;
         follow(world, anim::kWalkerWalks, Led::kAnimated);
-        at_ = At::kLed;
+        s.at = At::kLed;
     }
     void led_to_walk(World& world) override {
         speed_x = kPace;
         follow(world, anim::kWalkerWalks, Led::kMoving);
-        at_ = At::kLed;
+        s.at = At::kLed;
     }
 
-    At at_ = At::kStart;
+    struct Saved {
+        At at = At::kStart;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // An enemy that walks back and forth inside the view, turns at walls and ledges, and strikes a Viking he touches
@@ -176,7 +179,7 @@ class WalkingRobot : public Enemy {
 class Brawler : public Enemy {
   public:
     Looks looks() const override {
-        switch (at_) {
+        switch (s.at) {
             case At::kAppeared:
             case At::kStriking:
                 return {touching_one_of_the_vikings_class()};
@@ -191,7 +194,7 @@ class Brawler : public Enemy {
 
   protected:
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 return at_start(world);
             case At::kAppeared:
@@ -218,12 +221,12 @@ class Brawler : public Enemy {
         world.animate(*this);
         take_kept_health();
         acts_as = tile::kEnemy;
-        pace_ = kind == prehistoric_kind::kFastBrawler ? px(4) : px(3);
+        s.pace = kind == prehistoric_kind::kFastBrawler ? px(4) : px(3);
         count_down();
         if (is_falling()) {
             return fall(world);
         }
-        at_ = At::kAppeared;
+        s.at = At::kAppeared;
     }
     void when_walking(World& world) {
         if (saw.wall) {
@@ -265,19 +268,19 @@ class Brawler : public Enemy {
 
     void set_off(World& world) {
         world.play(*this, anim::kBrawlerWalks);
-        speed_x = pace_;
+        speed_x = s.pace;
         walking(world);
     }
 
     void walking(World& world) {
         world.animate_on_ground(*this);
-        at_ = At::kWalking;
+        s.at = At::kWalking;
     }
 
     void fall(World& world) {
         start_falling();
         world.animate(*this);
-        at_ = At::kFalling;
+        s.at = At::kFalling;
     }
 
     // A Viking touches him: about level with him (or another one that is), he turns to him and strikes.
@@ -291,18 +294,18 @@ class Brawler : public Enemy {
         }
         world.play(*this, anim::kBrawlerStrikes);
         speed_x = 0;
-        still_touching_ = true;
+        s.still_touching = true;
         world.animate(*this);
-        at_ = At::kStriking;
+        s.at = At::kStriking;
     }
 
     void striking(World& world) {
         if (saw.viking != kNobody) {
             target = saw.viking;
-            still_touching_ = true;
+            s.still_touching = true;
         }
         World::Offset to;
-        if (still_touching_ && level_with(world, to)) {
+        if (s.still_touching && level_with(world, to)) {
             if (to.ahead < 0) {
                 turn_round(world);
             }
@@ -319,7 +322,7 @@ class Brawler : public Enemy {
             world.play(*this, anim::kBrawlerWalks);
             return fall(world);
         }
-        still_touching_ = false;
+        s.still_touching = false;
         world.animate(*this);
     }
 
@@ -365,12 +368,15 @@ class Brawler : public Enemy {
     void lead(World& world, Animation animation, std::int16_t speed, bool moving) {
         speed_x = speed;
         follow(world, animation, moving ? Led::kMoving : Led::kStill);
-        at_ = At::kLed;
+        s.at = At::kLed;
     }
 
-    At at_ = At::kStart;
-    std::int16_t pace_ = 0;
-    bool still_touching_ = false;
+    struct Saved {
+        At at = At::kStart;
+        std::int16_t pace = 0;
+        bool still_touching = false;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // An enemy that shuffles back and forth (his walk moves him, not a speed), turns at walls and ledges, and takes
@@ -379,7 +385,7 @@ class Mummy : public Enemy {
   public:
   protected:
     Looks looks() const override {
-        switch (at_) {
+        switch (s.at) {
             case At::kAppeared:
             case At::kGrabbing:
                 return {touching_one_of_the_vikings_class()};
@@ -392,7 +398,7 @@ class Mummy : public Enemy {
         }
     }
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 return at_start(world);
             case At::kAppeared:
@@ -419,7 +425,7 @@ class Mummy : public Enemy {
         if (is_falling()) {
             return fall(world);
         }
-        at_ = At::kAppeared;
+        s.at = At::kAppeared;
     }
     void when_walking(World& world) {
         if (saw.wall) {
@@ -447,10 +453,10 @@ class Mummy : public Enemy {
     void when_grabbing(World& world) {
         if (saw.viking != kNobody) {
             target = saw.viking;
-            still_touching_ = true;
+            s.still_touching = true;
         }
         World::Offset to;
-        if (still_touching_ && level_with(world, to)) {
+        if (s.still_touching && level_with(world, to)) {
             if (to.ahead < 0) {
                 turn_round(world);
             }
@@ -472,7 +478,7 @@ class Mummy : public Enemy {
         if (told_all(world)) {
             return;
         }
-        still_touching_ = false;
+        s.still_touching = false;
         if (!on_ground(world)) {
             return fall(world);
         }
@@ -488,7 +494,7 @@ class Mummy : public Enemy {
         world.animate(*this);
     }
     void recovered(World& world) override {
-        if (still_touching_) {
+        if (s.still_touching) {
             return grab(world);
         }
         countdown = 30;
@@ -506,20 +512,20 @@ class Mummy : public Enemy {
     }
     void walking(World& world) {
         world.animate_on_ground(*this);
-        at_ = At::kWalking;
+        s.at = At::kWalking;
     }
     void fall(World& world) {
         world.play(*this, anim::kMummyFalls);
         start_falling();
         world.animate(*this);
-        at_ = At::kFalling;
+        s.at = At::kFalling;
     }
     void grab(World& world) {
         world.play(*this, anim::kMummyGrabs);
         speed_x = 0;
-        still_touching_ = true;
+        s.still_touching = true;
         world.animate(*this);
-        at_ = At::kGrabbing;
+        s.at = At::kGrabbing;
     }
     void touched(World& world) {
         World::Offset to;
@@ -540,20 +546,23 @@ class Mummy : public Enemy {
             speed_x = 0;
         }
         follow(world, animation, moving ? Led::kMoving : Led::kStill);
-        at_ = At::kLed;
+        s.at = At::kLed;
     }
 
-    At at_ = At::kStart;
-    bool still_touching_ = false;
+    struct Saved {
+        At at = At::kStart;
+        bool still_touching = false;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // An enemy that runs back and forth, strikes a Viking he touches who is about level with him, and shoots at
 // one further ahead. Spikes under him kill him.
 class Clown : public Enemy {
   public:
-    Clown() { own_hurt_animation_ = anim::kClownIsHurt; }
+    Clown() { enemy.own_hurt_animation = anim::kClownIsHurt; }
     Looks looks() const override {
-        switch (at_) {
+        switch (s.at) {
             case At::kAppeared:
             case At::kStriking:
                 return {touching_one_of_the_vikings_class()};
@@ -568,7 +577,7 @@ class Clown : public Enemy {
 
   protected:
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 return at_start(world);
             case At::kAppeared:
@@ -596,7 +605,7 @@ class Clown : public Enemy {
         if (is_falling()) {
             return fall(world);
         }
-        at_ = At::kAppeared;
+        s.at = At::kAppeared;
     }
     void when_walking(World& world) {
         if (saw.wall) {
@@ -624,13 +633,13 @@ class Clown : public Enemy {
     void when_striking(World& world) {
         if (saw.viking != kNobody) {
             target = saw.viking;
-            still_touching_ = true;
+            s.still_touching = true;
         }
         if (dies_on_spikes(world)) {
             return;
         }
         World::Offset to;
-        if (still_touching_ && level_with(world, to)) {
+        if (s.still_touching && level_with(world, to)) {
             if (!on_ground(world)) {
                 return fall(world);
             }
@@ -651,7 +660,7 @@ class Clown : public Enemy {
         if (told_all(world)) {
             return;
         }
-        still_touching_ = false;
+        s.still_touching = false;
         world.animate(*this);
     }
     void when_aiming(World& world) {
@@ -662,7 +671,7 @@ class Clown : public Enemy {
             world.spawn(*this, wacky_kind::kFlameShot, x, y - 4);
             world.sound(*this, effect::kArrowLoosed);
             world.play(*this, anim::kClownHasShot);
-            at_ = At::kAfterShot;
+            s.at = At::kAfterShot;
         }
         world.animate(*this);
     }
@@ -692,7 +701,7 @@ class Clown : public Enemy {
         if (told_all(world)) {
             return;
         }
-        if (led_bows_ && animation_over()) {
+        if (s.led_bows && animation_over()) {
             return lead(world, anim::kClownStands, 0, false, true);
         }
         return led_on(world);
@@ -710,19 +719,19 @@ class Clown : public Enemy {
     }
     void walk(World& world) {
         world.animate_on_ground(*this);
-        at_ = At::kWalking;
+        s.at = At::kWalking;
     }
     void aim(World& world) {
         world.play(*this, anim::kClownAims);
         speed_x = 0;
         world.animate(*this);
-        at_ = At::kAiming;
+        s.at = At::kAiming;
     }
     void fall(World& world) {
         world.play(*this, anim::kClownFalls);
         start_falling();
         world.animate(*this);
-        at_ = At::kFalling;
+        s.at = At::kFalling;
     }
 
     // A Viking touches him: about level with him (or another one that is), he turns to him, shouts and strikes.
@@ -739,14 +748,14 @@ class Clown : public Enemy {
                                         : (dice < 43700 ? effect::kClownStrikes2 : effect::kClownStrikes3));
         world.play(*this, anim::kClownStrikes);
         speed_x = 0;
-        still_touching_ = true;
+        s.still_touching = true;
         world.animate(*this);
-        at_ = At::kStriking;
+        s.at = At::kStriking;
     }
 
     void led_to_attack(World& world) override {
         lead(world, anim::kClownBows, 0, false, true);
-        led_bows_ = true;
+        s.led_bows = true;
     }
     void led_to_stand(World& world) override { lead(world, anim::kClownStands, 0, false, true); }
     void led_to_walk(World& world) override { lead(world, anim::kClownRuns, px(3), true, true); }
@@ -754,13 +763,16 @@ class Clown : public Enemy {
     void lead(World& world, Animation animation, std::int16_t speed, bool moving, bool /*animated*/) {
         speed_x = speed;
         follow(world, animation, moving ? Led::kMoving : Led::kAnimated, animation != anim::kClownBows);
-        led_bows_ = false;
-        at_ = At::kLed;
+        s.led_bows = false;
+        s.at = At::kLed;
     }
 
-    At at_ = At::kStart;
-    bool still_touching_ = false;
-    bool led_bows_ = false;
+    struct Saved {
+        At at = At::kStart;
+        bool still_touching = false;
+        bool led_bows = false;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 }  // namespace

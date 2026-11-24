@@ -106,7 +106,7 @@ add_library(lvr_engine STATIC
     lvr/world.cpp)
 add_library(lvr::engine ALIAS lvr_engine)
 target_include_directories(lvr_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(lvr_engine PUBLIC lvr::assets)
+target_link_libraries(lvr_engine PUBLIC lvr::assets glaze::glaze)  # glaze: a plain struct's fields (archive.hpp)
 lvr_target_defaults(lvr_engine)
 
 # --- The engine as a game to play: its pictures and sound per refresh (what a front end needs) ---
@@ -205,6 +205,7 @@ if(LVR_BUILD_TESTS)
         input/tests/test_input.cpp
         replay/tests/test_golden.cpp
         replay/tests/test_replay.cpp
+        lvr/tests/test_archive.cpp
         lvr/tests/test_camera.cpp
         lvr/tests/test_conversations.cpp
         lvr/tests/test_dialogue.cpp

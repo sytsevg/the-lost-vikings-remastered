@@ -209,6 +209,50 @@ std::expected<void, std::string> Session::use_profile(const std::filesystem::pat
         }
     }
     update_minimap();
+    return read_quicksave();
+}
+
+std::expected<void, std::string> Session::write_quicksave() const {
+    if (profile_.empty() || !quick_) {
+        return {};
+    }
+    SavedPlay play{.remaster = quick_->world.rules == Rules::kRemaster,
+                   .scene = quick_->world.scene,
+                   .database_entry = quick_->loaded->database_entry,
+                   .world = {}};
+    Writer to{play.world};
+    quick_->world.save(to);
+    return save_quicksave(profile_, play);
+}
+
+// The quicksave's file: its level is loaded again, a world made for it, and what was written read into that.
+std::expected<void, std::string> Session::read_quicksave() {
+    auto kept = load_quicksave(profile_);
+    if (!kept) {
+        return std::unexpected{kept.error()};
+    }
+    if (!*kept) {
+        return {};
+    }
+    const SavedPlay& play = **kept;
+    const Rules rules = play.remaster ? Rules::kRemaster : Rules::kVanilla;
+    if (rules != play_.world.rules || play.scene < 0 || play.scene >= kSceneSlots) {
+        return std::unexpected{std::string{"the quicksave is of another game than this"}};
+    }
+    auto loaded = load_slot(files_, play.scene, play.database_entry);
+    if (!loaded) {
+        return std::unexpected{loaded.error()};
+    }
+    Play::Snapshot snapshot;
+    snapshot.owner = std::make_shared<LoadedLevel>(std::move(*loaded));
+    snapshot.loaded = snapshot.owner.get();
+    snapshot.world = prepare_world(*snapshot.loaded, nullptr, rules);
+    Reader from{play.world};
+    if (!snapshot.world.load(from) || !from.done()) {
+        return std::unexpected{
+            std::string{"the quicksave was written by another version of the game: it can't be read"}};
+    }
+    quick_ = std::move(snapshot);
     return {};
 }
 
@@ -443,6 +487,7 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
     const bool remaster = play_.world.rules == Rules::kRemaster;
     if (std::exchange(save_wanted_, false) && remaster && play_.world.title.cheat && level_played()) {
         quick_ = play_.snapshot();
+        (void)write_quicksave();  // (a profile that can't be written is said when the game is closed)
     }
     if (std::exchange(load_wanted_, false) && remaster && play_.world.title.cheat && quick_ && !play_.in_menu()) {
         if (play_.restore(*quick_)) {

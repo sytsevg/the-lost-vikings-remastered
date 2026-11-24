@@ -35,15 +35,15 @@ const TileTypes& wall() {
 class Tomator : public Entity {
   public:
     void update(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 return at_start(world);
             case At::kOpening:
                 talk(world);
-                at_ = At::kAfterTalk;
+                s.at = At::kAfterTalk;
                 return;
             case At::kAfterTalk:
-                at_ = At::kAfterTalkAgain;
+                s.at = At::kAfterTalkAgain;
                 return;
             case At::kAfterTalkAgain:
                 stage = 1;
@@ -95,7 +95,7 @@ class Tomator : public Entity {
         world.tomator.force_field = kNobody;
         stand_still(world);
         world.animate(*this);
-        at_ = At::kOpening;
+        s.at = At::kOpening;
     }
     void when_vanishing(World& world) {
         if (!animation_over()) {
@@ -105,17 +105,17 @@ class Tomator : public Entity {
         arrive(world);
         world.play(*this, anim::kTomatorComesBack);
         pose = tomator_pose::kComesBack;
-        at_ = At::kAppearing;
+        s.at = At::kAppearing;
         world.animate(*this);
     }
     void when_waiting(World& world) {
         if (guarded(world)) {
             return;
         }
-        if (at_ == At::kWaitingShielded && world.tomator.force_field == kNobody) {
+        if (s.at == At::kWaitingShielded && world.tomator.force_field == kNobody) {
             raise_force_field(world);
         }
-        if (at_ == At::kAnimating ? !animation_over() : (at_ != At::kWaitingOnce && countdown != 0)) {
+        if (s.at == At::kAnimating ? !animation_over() : (s.at != At::kWaitingOnce && countdown != 0)) {
             world.animate(*this);
             return;
         }
@@ -189,7 +189,7 @@ class Tomator : public Entity {
         }
         if (animation_over()) {
             speed_x = 0;
-            at_ = At::kKnockedOver;
+            s.at = At::kKnockedOver;
         }
         world.animate(*this);
     }
@@ -233,7 +233,7 @@ class Tomator : public Entity {
     }
     Looks looks_for() const override {
         const Look viking = touching_one_of_the_vikings_class();
-        switch (at_) {
+        switch (s.at) {
             case At::kWaiting:
             case At::kWaitingOnce:
             case At::kWaitingShielded:
@@ -351,10 +351,10 @@ class Tomator : public Entity {
     // --- Vanishing and coming back somewhere else ---
 
     void vanish(World& world, Then then) {
-        then_ = then;
+        s.then = then;
         world.play(*this, anim::kTomatorVanishes);
         pose = tomator_pose::kVanishes;
-        at_ = At::kVanishing;
+        s.at = At::kVanishing;
         world.animate(*this);
     }
 
@@ -365,7 +365,7 @@ class Tomator : public Entity {
     }
 
     void arrive(World& world) {
-        switch (then_) {
+        switch (s.then) {
             case Then::kFirstPlace:
                 return move_to(616, 120);
             case Then::kThirdStage:
@@ -388,7 +388,7 @@ class Tomator : public Entity {
     }
 
     void arrived(World& world) {
-        switch (then_) {
+        switch (s.then) {
             case Then::kFirstPlace:
                 stand_still(world);
                 stage = 2;
@@ -408,7 +408,7 @@ class Tomator : public Entity {
                 world.values.at(0) = 0;
                 stand_still(world);
                 world.animate(*this);
-                at_ = At::kPause;
+                s.at = At::kPause;
                 return;
             case Then::kFifthStage:
                 stage = 5;
@@ -440,7 +440,7 @@ class Tomator : public Entity {
         if (world.tomator.force_field != kNobody) {
             lower_force_field(world);
             stand_still(world);
-            at_ = At::kLoweringField;
+            s.at = At::kLoweringField;
             world.animate(*this);
             return;
         }
@@ -459,7 +459,7 @@ class Tomator : public Entity {
                 return fourth_stage(world);
             case 5:
                 if (world.values.at(1) == 0) {
-                    at_ = At::kIdle;
+                    s.at = At::kIdle;
                     world.animate(*this);
                     return;
                 }
@@ -472,8 +472,8 @@ class Tomator : public Entity {
     // --- Waiting and shooting ---
 
     void wait(World& world, At how, Next next) {
-        next_ = next;
-        at_ = how;
+        s.next = next;
+        s.at = how;
         world.animate(*this);
     }
 
@@ -493,7 +493,7 @@ class Tomator : public Entity {
 
     void aim(World& world) {
         stand_still(world);
-        if (volley_.faces_olaf) {
+        if (s.volley.faces_olaf) {
             target = slot::kOlaf;
             if (world.offset_to(*this, slot::kOlaf).ahead <= 0) {
                 world.flip_across(*this);
@@ -503,14 +503,14 @@ class Tomator : public Entity {
     }
     void start_volley(World& world, std::uint16_t first, Volley volley, Next after) {
         argument = first;
-        volley_ = volley;
-        after_volley_ = after;
+        s.volley = volley;
+        s.after_volley = after;
         aim(world);
     }
 
     // After a wait.
     void go_on(World& world) {
-        switch (next_) {
+        switch (s.next) {
             case Next::kAim:
                 return aim(world);
             case Next::kFire:
@@ -519,9 +519,9 @@ class Tomator : public Entity {
                 return wait(world, At::kAnimating, Next::kShoot);
             case Next::kShoot:
                 world.spawn(*this, tomator_kind::kTomatorShot, x + (facing_left() ? -28 : 28), y, argument, 1);
-                countdown = volley_.pause;
+                countdown = s.volley.pause;
                 ++argument;
-                if (argument < volley_.until) {
+                if (argument < s.volley.until) {
                     return aim(world);
                 }
                 return after_volley(world);
@@ -546,7 +546,7 @@ class Tomator : public Entity {
     }
 
     void after_volley(World& world) {
-        switch (after_volley_) {
+        switch (s.after_volley) {
             case Next::kFirstVolley:  // again and again, until the floor is gone from under him
                 argument = 0;
                 return aim(world);
@@ -580,7 +580,7 @@ class Tomator : public Entity {
         pose = tomator_pose::kWalks;
         countdown = 80;
         speed_x = px(2);
-        at_ = At::kWalking;
+        s.at = At::kWalking;
         world.animate(*this);
     }
 
@@ -642,7 +642,7 @@ class Tomator : public Entity {
                 world.play(*this, anim::kTomatorIsBlownOut);
                 speed_y = px(-3);
                 countdown = 60;
-                at_ = At::kDefeated;
+                s.at = At::kDefeated;
                 world.animate(*this);
                 return true;
             default:
@@ -657,7 +657,7 @@ class Tomator : public Entity {
         world.play(*this, anim::kTomatorReels);
         pose = tomator_pose::kReels;
         countdown = 60;
-        at_ = At::kStunned;
+        s.at = At::kStunned;
         world.animate(*this);
     }
 
@@ -670,7 +670,7 @@ class Tomator : public Entity {
             world.flip_across(*this);
         }
         speed_x = px(-6);
-        at_ = At::kKnocked;
+        s.at = At::kKnocked;
         world.animate(*this);
     }
 
@@ -685,7 +685,7 @@ class Tomator : public Entity {
         ++world.values.at(0);
         world.play(*this, anim::kTomatorReels);
         pose = tomator_pose::kReels;
-        at_ = At::kBlasted;
+        s.at = At::kBlasted;
         world.animate(*this);
     }
 
@@ -698,7 +698,7 @@ class Tomator : public Entity {
         }
         world.switches &= static_cast<std::uint16_t>(~0x0080U);
         speed_x = speed_y = 0;
-        at_ = At::kSuckedUp;
+        s.at = At::kSuckedUp;
         world.animate(*this);
         return true;
     }
@@ -714,7 +714,7 @@ class Tomator : public Entity {
         }
         lower_force_field(world);
         start_falling();
-        at_ = At::kFalling;
+        s.at = At::kFalling;
         world.animate(*this);
     }
 
@@ -726,7 +726,7 @@ class Tomator : public Entity {
                 if (world.values.at(0) < 3) {
                     return wait(world, At::kWaitingOnce, Next::kLongVolley);
                 }
-                at_ = At::kSettling;
+                s.at = At::kSettling;
                 world.animate(*this);
                 return;
             case 3:
@@ -739,11 +739,14 @@ class Tomator : public Entity {
         }
     }
 
-    At at_ = At::kStart;
-    Then then_ = Then::kFirstPlace;
-    Next next_ = Next::kAim;
-    Next after_volley_ = Next::kFirstVolley;
-    Volley volley_{};
+    struct Saved {
+        At at = At::kStart;
+        Then then = Then::kFirstPlace;
+        Next next = Next::kAim;
+        Next after_volley = Next::kFirstVolley;
+        Volley volley{};
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // One of the three parts of Tomator that go with him: attached to him, it shows what goes with his pose.
@@ -819,7 +822,7 @@ class TomatorPart : public Entity {
 class ForceField : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart: {
                 world.play(*this, anim::kForceFieldStands);
                 world.tomator.force_field = slot;
@@ -829,7 +832,7 @@ class ForceField : public Entity {
                     box.top = static_cast<std::int16_t>(y - 32);
                     box.bottom = static_cast<std::int16_t>(y + 32);
                 }
-                state_ = State::kUp;
+                s.state = State::kUp;
                 break;
             }
             case State::kUp:
@@ -840,7 +843,7 @@ class ForceField : public Entity {
                 if (message == message::kArrowBlow) {
                     world.play(*this, anim::kForceFieldGoes);
                     hit_mask = 0;
-                    state_ = State::kGoing;
+                    s.state = State::kGoing;
                 }
                 message = 0;
                 break;
@@ -855,14 +858,17 @@ class ForceField : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        return state_ == State::kUp ? Looks{touching_one_of_the_vikings_class()} : Looks{};
+        return s.state == State::kUp ? Looks{touching_one_of_the_vikings_class()} : Looks{};
     }
     void outside_active_area(World& world) override { world.remove(slot); }
 
   private:
     enum class State : std::uint8_t { kStart, kUp, kGoing };
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // What Tomator shoots. By the stage of the fight and which shot of a volley it is, it flies straight, in an arc
@@ -870,7 +876,7 @@ class ForceField : public Entity {
 class TomatorShot : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return start(world);
             case State::kRising:
@@ -878,13 +884,13 @@ class TomatorShot : public Entity {
                 if (saw.wall) {
                     return burst(world);
                 }
-                if (state_ == State::kRising ? false : saw.landed) {
+                if (s.state == State::kRising ? false : saw.landed) {
                     return burst(world);
                 }
                 if (saw.ceiling) {
                     speed_y = 0;
                 }
-                if (saw.shield != kNobody && (state_ == State::kRising || past_shield(world))) {
+                if (saw.shield != kNobody && (s.state == State::kRising || past_shield(world))) {
                     return burst(world);
                 }
                 if (saw.other != kNobody) {
@@ -895,7 +901,7 @@ class TomatorShot : public Entity {
                     return burst(world);
                 }
                 if (speed_y >= 0) {
-                    state_ = State::kComingDown;
+                    s.state = State::kComingDown;
                 }
                 break;
             case State::kRollingFalling:
@@ -903,9 +909,9 @@ class TomatorShot : public Entity {
                 if (saw.wall) {
                     return burst(world);
                 }
-                if (state_ == State::kRollingFalling && saw.landed) {
+                if (s.state == State::kRollingFalling && saw.landed) {
                     stop_falling();
-                    state_ = State::kRolling;
+                    s.state = State::kRolling;
                     set_flag(entity_flag::kPutOnGround);
                     break;
                 }
@@ -919,10 +925,10 @@ class TomatorShot : public Entity {
                     hit(world, x);
                     return burst(world);
                 }
-                if (state_ == State::kRolling) {
+                if (s.state == State::kRolling) {
                     if (!find_beside(world, *this, Side::kBelow, ground())) {
                         start_falling();
-                        state_ = State::kRollingFalling;
+                        s.state = State::kRollingFalling;
                     } else {
                         set_flag(entity_flag::kPutOnGround);
                     }
@@ -950,7 +956,7 @@ class TomatorShot : public Entity {
         world.animate(*this);
     }
     Looks looks_for() const override {
-        switch (state_) {
+        switch (s.state) {
             case State::kRising:
                 return {stopped_by(solid()), stopped_above_or_below(solid()), touching_any(hit::kShield, &Saw::shield),
                         touching_any(hit::kShieldOverhead, &Saw::other), touching_any(hit::kViking, &Saw::viking)};
@@ -978,7 +984,7 @@ class TomatorShot : public Entity {
         speed_y = up;
         start_falling();
         world.play(*this, anim::kTomatorShotArcs);
-        state_ = State::kRising;
+        s.state = State::kRising;
         world.animate(*this);
     }
 
@@ -992,7 +998,7 @@ class TomatorShot : public Entity {
                     world.play(*this, anim::kTomatorShotArcs);
                     speed_x = px(8);
                     start_falling();
-                    state_ = State::kRollingFalling;
+                    s.state = State::kRollingFalling;
                     world.animate(*this);
                     return;
                 }
@@ -1039,7 +1045,7 @@ class TomatorShot : public Entity {
         }
         world.play(*this, anim::kTomatorShotFlies);
         speed_x = px(7);
-        state_ = State::kStraight;
+        s.state = State::kStraight;
         world.animate(*this);
     }
 
@@ -1067,18 +1073,21 @@ class TomatorShot : public Entity {
         world.sound(*this, effect::kTargetBreaks);
         world.play(*this, anim::kTomatorShotBursts);
         world.shake_y = {.amount = 1, .offset = 0, .ticks = 8};
-        state_ = State::kEnding;
+        s.state = State::kEnding;
         world.animate(*this);
     }
     void fizzle(World& world) {
         world.sound(*this, effect::kBurst);
         world.play(*this, anim::kTomatorShotFizzles);
         speed_x = 0;
-        state_ = State::kEnding;
+        s.state = State::kEnding;
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // The air lock: when its switches come on it opens, and an enemy under it just then is told so: Tomator is
@@ -1086,13 +1095,13 @@ class TomatorShot : public Entity {
 class AirLock : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 count_down();
                 box.bottom += 96;
                 world.play(*this, anim::kAirLockShut);
                 world.animate(*this);
-                state_ = State::kShut;
+                s.state = State::kShut;
                 return;
             case State::kShut:
                 if (!switches_on(world, argument)) {
@@ -1101,12 +1110,12 @@ class AirLock : public Entity {
                 stay_active();
                 world.play(*this, anim::kAirLockOpens);
                 world.sound(*this, effect::kScrape);
-                state_ = State::kOpening;
+                s.state = State::kOpening;
                 break;
             case State::kOpening:
                 if (animation_over()) {
                     world.stop_sound(*this, effect::kScrape);
-                    state_ = State::kOpen;
+                    s.state = State::kOpen;
                 }
                 break;
             case State::kOpen:
@@ -1114,11 +1123,11 @@ class AirLock : public Entity {
                     target = saw.enemy;
                     world.tell(saw.enemy, message::kVanish);
                 }
-                state_ = State::kAfter;
+                s.state = State::kAfter;
                 break;
             case State::kAfter:
                 if (animation_over()) {
-                    state_ = State::kDone;
+                    s.state = State::kDone;
                     return;
                 }
                 break;
@@ -1127,13 +1136,16 @@ class AirLock : public Entity {
         }
         world.animate(*this);
     }
-    Looks looks_for() const override { return state_ == State::kOpen ? Looks{touching_an_enemy()} : Looks{}; }
+    Looks looks_for() const override { return s.state == State::kOpen ? Looks{touching_an_enemy()} : Looks{}; }
     void outside_active_area(World& world) override { world.remove(slot); }
 
   private:
     enum class State : std::uint8_t { kStart, kShut, kOpening, kOpen, kAfter, kDone };
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A bar of electricity (kind 58) that runs up and down at its argument's speed, back when it meets the floor or
@@ -1171,12 +1183,12 @@ class ElectricBar : public Entity {
 class SlidingWall : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 acts_as = tile::kGround;
                 world.play(*this, anim::kSlidingWallLooks);
                 world.animate(*this);
-                state_ = switches_on(world) ? State::kAside : State::kInPlace;
+                s.state = switches_on(world) ? State::kAside : State::kInPlace;
                 return;
             case State::kInPlace:
                 if (switches_on(world)) {
@@ -1201,11 +1213,11 @@ class SlidingWall : public Entity {
         }
         speed_x = 0;
         clear_flag(kMovingFlags);
-        if (state_ == State::kComingBack) {
+        if (s.state == State::kComingBack) {
             set_cells(world, 1);
-            state_ = State::kInPlace;
+            s.state = State::kInPlace;
         } else {
-            state_ = State::kAside;
+            s.state = State::kAside;
         }
     }
 
@@ -1220,7 +1232,7 @@ class SlidingWall : public Entity {
         speed_x = speed;
         countdown = kMovingTicks;
         set_flag(kMovingFlags);
-        state_ = state;
+        s.state = state;
         world.animate(*this);
     }
     // The four cells in a row it covers, from its left edge on: their type, their pictures kept.
@@ -1234,7 +1246,10 @@ class SlidingWall : public Entity {
         }
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 }  // namespace

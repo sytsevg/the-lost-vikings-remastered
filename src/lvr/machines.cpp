@@ -23,7 +23,7 @@ namespace {
 class Press : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return at_start(world);
             case State::kWaiting:
@@ -39,24 +39,24 @@ class Press : public Entity {
         }
     }
     void at_start(World& world) {
-        slams_ = kind == factory_kind::kSlammingPress || kind == factory_kind::kSlammingPressAE;
-        world.play(*this, slams_ ? anim::kPressSlammerLooks : anim::kPressLooks);
+        s.slams = kind == factory_kind::kSlammingPress || kind == factory_kind::kSlammingPressAE;
+        world.play(*this, s.slams ? anim::kPressSlammerLooks : anim::kPressLooks);
         world.animate(*this);
-        speed_ = static_cast<std::int16_t>(argument & kHighByte);
+        s.speed = static_cast<std::int16_t>(argument & kHighByte);
         argument &= kLowByte;
         acts_as = tile::kGround;
         return wait(world);
     }
     void when_coming_down(World& world) {
         if (saw.landed) {
-            if (slams_) {
+            if (s.slams) {
                 world.shake_y = {.amount = 1, .offset = 0, .ticks = 4};
                 world.sound(*this, effect::kPressSlams);
             }
             return go_up(world);
         }
         for (const int under : vikings_in_row(world, *this, Row::kBelow)) {
-            if (!slams_ && under == slot::kOlaf && olaf_holds_shield_up(world)) {
+            if (!s.slams && under == slot::kOlaf && olaf_holds_shield_up(world)) {
                 return go_up(world);
             }
             squash(world, *this, under);
@@ -73,9 +73,9 @@ class Press : public Entity {
         return types;
     }
     Looks looks_for() const override {
-        switch (state_) {
+        switch (s.state) {
             case State::kComingDown:
-                return {lands_on(slams_ ? end_of_its_way() : anything())};
+                return {lands_on(s.slams ? end_of_its_way() : anything())};
             case State::kGoingUp:
                 return {stopped_above_or_below(ceilings())};
             default:
@@ -88,7 +88,7 @@ class Press : public Entity {
 
     void wait(World& world) {
         speed_y = 0;
-        state_ = State::kWaiting;
+        s.state = State::kWaiting;
         if (switches_on(world, argument)) {
             come_down(world);
         }
@@ -97,25 +97,28 @@ class Press : public Entity {
     void come_down(World& world) {
         if (!switches_on(world, argument)) {
             speed_y = 0;
-            state_ = State::kWaiting;
+            s.state = State::kWaiting;
             return;
         }
         stay_active();
-        speed_y = speed_;
-        state_ = State::kComingDown;
+        speed_y = s.speed;
+        s.state = State::kComingDown;
         world.animate(*this);
     }
 
     void go_up(World& world) {
         stay_active(false);
-        speed_y = static_cast<std::int16_t>(-speed_);
-        state_ = State::kGoingUp;
+        speed_y = static_cast<std::int16_t>(-s.speed);
+        s.state = State::kGoingUp;
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
-    bool slams_ = false;
-    std::int16_t speed_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        bool slams = false;
+        std::int16_t speed = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A piston: while its switches are on it waits (its argument's low byte, in ticks), slams out to the floor (one
@@ -124,14 +127,14 @@ class Press : public Entity {
 class Piston : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
-                upwards_ = kind == factory_kind::kUpwardPiston;
-                wait_ = argument & kLowByte;
+                s.upwards = kind == factory_kind::kUpwardPiston;
+                s.wait = argument & kLowByte;
                 argument &= kHighByte;
                 acts_as = tile::kGround;
                 count_down();
-                world.play(*this, upwards_ ? anim::kPistonUpwardsLooks : anim::kPistonLooks);
+                world.play(*this, s.upwards ? anim::kPistonUpwardsLooks : anim::kPistonLooks);
                 world.animate(*this);
                 return rest(world);
             case State::kResting:
@@ -144,21 +147,21 @@ class Piston : public Entity {
                 if (countdown != 0) {
                     return;
                 }
-                speed_y = static_cast<std::int16_t>(upwards_ ? -kSpeed : kSpeed);
+                speed_y = static_cast<std::int16_t>(s.upwards ? -kSpeed : kSpeed);
                 world.sound(*this, effect::kPistonGoes);
-                state_ = State::kGoingOut;
+                s.state = State::kGoingOut;
                 break;
             case State::kGoingOut: {
                 if ((saw.landed || saw.ceiling)) {
-                    speed_y = static_cast<std::int16_t>(upwards_ ? kSpeed : -kSpeed);
-                    state_ = State::kGoingBack;
+                    speed_y = static_cast<std::int16_t>(s.upwards ? kSpeed : -kSpeed);
+                    s.state = State::kGoingBack;
                     break;
                 }
                 const int in_its_way =
-                    find_in_row(world, *this, upwards_ ? Row::kAbove : Row::kBelow, vikings(), true, 0);
+                    find_in_row(world, *this, s.upwards ? Row::kAbove : Row::kBelow, vikings(), true, 0);
                 if (in_its_way != kNobody) {
                     target = in_its_way;
-                    world.tell(in_its_way, upwards_ ? message::kImpaled : message::kImpaledFromAbove);
+                    world.tell(in_its_way, s.upwards ? message::kImpaled : message::kImpaledFromAbove);
                 } else {
                     hurt_viking_ahead(world);
                 }
@@ -185,10 +188,10 @@ class Piston : public Entity {
     }
     // Going out or back: what ends its way, a floor going down or a ceiling going up.
     Looks looks_for() const override {
-        if (state_ != State::kGoingOut && state_ != State::kGoingBack) {
+        if (s.state != State::kGoingOut && s.state != State::kGoingBack) {
             return {};
         }
-        const bool down = (state_ == State::kGoingOut) != upwards_;
+        const bool down = (s.state == State::kGoingOut) != s.upwards;
         return down ? Looks{lands_on(end_of_its_way())} : Looks{stopped_above_or_below(ceilings())};
     }
 
@@ -197,7 +200,7 @@ class Piston : public Entity {
     static constexpr std::int16_t kSpeed = px(16);
 
     void rest(World& world) {
-        state_ = State::kResting;
+        s.state = State::kResting;
         if (switches_on(world, argument)) {
             set_off(world);
         }
@@ -208,8 +211,8 @@ class Piston : public Entity {
             speed_y = 0;
             return rest(world);
         }
-        countdown = wait_;
-        state_ = State::kWaiting;
+        countdown = s.wait;
+        s.state = State::kWaiting;
     }
 
     void hurt_viking_ahead(World& world) {
@@ -240,9 +243,12 @@ class Piston : public Entity {
         return false;
     }
 
-    State state_ = State::kStart;
-    bool upwards_ = false;
-    std::uint16_t wait_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        bool upwards = false;
+        std::uint16_t wait = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A place that burns the Vikings in it while its switches are on.
@@ -254,12 +260,15 @@ class Furnace : public Entity {
             world.tell(saw.viking, message::kScorched, 10);
             saw.viking = kNobody;
         }
-        on_ = switches_on(world, argument);
+        s.on = switches_on(world, argument);
     }
-    Looks looks_for() const override { return on_ ? Looks{touching_a_viking()} : Looks{}; }
+    Looks looks_for() const override { return s.on ? Looks{touching_a_viking()} : Looks{}; }
 
   private:
-    bool on_ = false;
+    struct Saved {
+        bool on = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A furnace that glows (kind BE). While its switches are on, the screen turns red as the Viking being played
@@ -268,7 +277,7 @@ class Furnace : public Entity {
 class GlowingFurnace : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 count_down();
                 if (switches_on(world, argument)) {
@@ -289,12 +298,12 @@ class GlowingFurnace : public Entity {
             return burn_on(world);
         }
         stay_active(false);
-        if (glow_ == 0) {
+        if (s.glow == 0) {
             return;
         }
         stay_active();
         if (countdown == 0) {
-            set_glow(world, glow_ - 1);
+            set_glow(world, s.glow - 1);
         }
     }
     void when_burning(World& world) {
@@ -306,17 +315,17 @@ class GlowingFurnace : public Entity {
             return go_out(world);
         }
         const int wanted = wanted_glow(world);
-        active = active || glow_ != 0;
-        if (wanted != glow_) {
+        active = active || s.glow != 0;
+        if (wanted != s.glow) {
             active = true;
             if (countdown == 0) {
-                set_glow(world, wanted < glow_ ? glow_ - 1 : glow_ + 1);
+                set_glow(world, wanted < s.glow ? s.glow - 1 : s.glow + 1);
             }
         }
         stay_active(active);
         return burn_on(world);
     }
-    Looks looks_for() const override { return state_ == State::kBurning ? Looks{touching_a_viking()} : Looks{}; }
+    Looks looks_for() const override { return s.state == State::kBurning ? Looks{touching_a_viking()} : Looks{}; }
 
   private:
     enum class State : std::uint8_t { kStart, kOut, kBurning };
@@ -337,7 +346,7 @@ class GlowingFurnace : public Entity {
     void go_out(World& world) {
         stay_active();
         show(world, {7, 8, 10, 9});
-        state_ = State::kOut;
+        s.state = State::kOut;
     }
     void burn_on(World& world) {
         health = 0;
@@ -346,10 +355,10 @@ class GlowingFurnace : public Entity {
                 --wait;
             }
         }
-        state_ = State::kBurning;
+        s.state = State::kBurning;
     }
     void set_glow(World& world, int glow) {
-        glow_ = glow;
+        s.glow = glow;
         const auto by = static_cast<std::uint8_t>(glow == 0 ? 0 : (2 * glow) - 1);
         world.tint = {0, by, by};
         countdown = 2;
@@ -385,8 +394,11 @@ class GlowingFurnace : public Entity {
         }
     }
 
-    State state_ = State::kStart;
-    int glow_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        int glow = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A fire jet: on while its switches are. A Viking who touches it then burns. One sound for all the jets that are
@@ -403,14 +415,14 @@ class FireJet : public Entity {
             } else {
                 world.play(*this, anim::kFireJetOut);
             }
-        } else if (on_) {
+        } else if (s.on) {
             if (saw.viking != kNobody) {
                 target = saw.viking;
                 world.tell(saw.viking, message::kBurned, 50);
             }
             if (!wanted) {
                 world.play(*this, anim::kFireJetOut);
-                on_ = false;
+                s.on = false;
                 acts_as = tile::kFree;
                 one_less(world);
             }
@@ -419,9 +431,9 @@ class FireJet : public Entity {
         }
         world.animate(*this);
     }
-    Looks looks_for() const override { return on_ ? Looks{touching_a_viking()} : Looks{}; }
+    Looks looks_for() const override { return s.on ? Looks{touching_a_viking()} : Looks{}; }
     void outside_active_area(World& world) override {
-        if (on_) {
+        if (s.on) {
             one_less(world);
         }
         world.remove(slot);
@@ -430,7 +442,7 @@ class FireJet : public Entity {
   private:
     void turn_on(World& world, Animation animation) {
         world.play(*this, animation);
-        on_ = true;
+        s.on = true;
         if (++world.factory.jets_on == 1) {
             world.sound(*this, effect::kRoar);
         }
@@ -441,7 +453,10 @@ class FireJet : public Entity {
         }
     }
 
-    bool on_ = false;
+    struct Saved {
+        bool on = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A fan: while its switches are on it blows the Vikings before it along (one kind: across, up to 128 pixels
@@ -452,19 +467,19 @@ class Fan : public Entity {
     void update(World& world) override {
         const bool on = switches_on(world, argument);
         if (first_turn()) {
-            upwards_ = kind == wacky_kind::kUpwardFan;
-            world.play(*this, upwards_ ? anim::kFanUpwardsAppears : anim::kFanAppears);
+            s.upwards = kind == wacky_kind::kUpwardFan;
+            world.play(*this, s.upwards ? anim::kFanUpwardsAppears : anim::kFanAppears);
             world.animate(*this);
-            on_ = !on;
+            s.on = !on;
         }
-        if (on != on_) {
-            on_ = on;
+        if (on != s.on) {
+            s.on = on;
             stay_active(false);
             if (on) {
-                world.play(*this, upwards_ ? anim::kFanUpwardsBlows : anim::kFanBlows);
+                world.play(*this, s.upwards ? anim::kFanUpwardsBlows : anim::kFanBlows);
             } else {
-                world.play(*this, upwards_ ? (upside_down() ? anim::kFanUpwardsStillFlipped : anim::kFanUpwardsStill)
-                                           : anim::kFanStill);
+                world.play(*this, s.upwards ? (upside_down() ? anim::kFanUpwardsStillFlipped : anim::kFanUpwardsStill)
+                                            : anim::kFanStill);
                 world.animate(*this);
                 return;
             }
@@ -476,7 +491,7 @@ class Fan : public Entity {
         for (const int who : {1, 0, 2}) {
             target = who;
             if (Entity* viking = world.at(who)) {
-                upwards_ ? lift(world, *viking) : blow(world, *viking);
+                s.upwards ? lift(world, *viking) : blow(world, *viking);
             }
         }
         world.animate(*this);
@@ -524,8 +539,11 @@ class Fan : public Entity {
         }
     }
 
-    bool upwards_ = false;
-    bool on_ = false;
+    struct Saved {
+        bool upwards = false;
+        bool on = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A conveyor belt: the Vikings on it are carried the way it faces. While one is on it, it stays active.
@@ -550,14 +568,14 @@ class Conveyor : public Entity {
 class Plate : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return at_start(world);
             case State::kUp:
                 return when_up(world);
             case State::kGoingDown:
                 if (countdown == 0) {
-                    state_ = State::kDown;
+                    s.state = State::kDown;
                     return down(world);
                 }
                 return go_down(world);
@@ -572,17 +590,17 @@ class Plate : public Entity {
         world.animate(*this);
         count_down();
         acts_as = tile::kPlatform;
-        up_when_on_ = facing_left();
+        s.up_when_on = facing_left();
         if (is_up(world)) {
             world.play(*this, anim::kPlateIsUp);
             world.animate(*this);
             shift_box(-12);
-            state_ = State::kUp;
+            s.state = State::kUp;
         } else {
             world.play(*this, anim::kPlateIsDown);
             world.animate(*this);
             shift_box(12);
-            state_ = State::kDown;
+            s.state = State::kDown;
         }
     }
     void when_up(World& world) {
@@ -590,19 +608,19 @@ class Plate : public Entity {
             return;
         }
         world.sound(*this, effect::kSprung);
-        if (up_when_on_) {
+        if (s.up_when_on) {
             world.switches &= static_cast<std::uint16_t>(~argument);
         } else {
             world.switches |= argument;
         }
         world.play(*this, anim::kPlateIsDown);
         countdown = 3;
-        state_ = State::kGoingDown;
+        s.state = State::kGoingDown;
         return go_down(world);
     }
     void when_going_up(World& world) {
         if (countdown == 0) {
-            state_ = State::kUp;
+            s.state = State::kUp;
             return;
         }
         shift_box(-8);
@@ -613,7 +631,7 @@ class Plate : public Entity {
   private:
     enum class State : std::uint8_t { kStart, kUp, kGoingDown, kDown, kGoingUp };
 
-    bool is_up(const World& world) const { return (world.switches & argument) == (up_when_on_ ? argument : 0); }
+    bool is_up(const World& world) const { return (world.switches & argument) == (s.up_when_on ? argument : 0); }
     void shift_box(int by) {
         box.top += by;
         box.bottom += by;
@@ -671,13 +689,16 @@ class Plate : public Entity {
                 other->speed_y -= px(16);
             }
         }
-        state_ = State::kGoingUp;
+        s.state = State::kGoingUp;
         shift_box(-8);
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
-    bool up_when_on_ = false;
+    struct Saved {
+        State state = State::kStart;
+        bool up_when_on = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 }  // namespace

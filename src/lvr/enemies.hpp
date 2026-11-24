@@ -21,22 +21,22 @@ namespace lvr {
 class Enemy : public Entity {
   public:
     void update(World& world) final {
-        if (!hurt_) {
+        if (!enemy.hurt) {
             return turn(world);
         }
         if (!animation_over()) {
             return being_hurt(world);
         }
-        hurt_ = false;
-        if (turns_after_) {
+        enemy.hurt = false;
+        if (enemy.turns_after) {
             countdown = kTurnedTicks;
             world.flip_across(*this);
-            turns_after_ = false;
+            enemy.turns_after = false;
         }
         recovered(world);
     }
     // While a blow throws him he looks for nothing; otherwise for what his kind says (looks()).
-    Looks looks_for() const final { return hurt_ ? Looks{} : looks(); }
+    Looks looks_for() const final { return enemy.hurt ? Looks{} : looks(); }
     void outside_active_area(World& world) override {
         if (placement >= 0) {
             Placement& mine = world.placements.at(static_cast<std::size_t>(placement));
@@ -59,10 +59,7 @@ class Enemy : public Entity {
     virtual void recovered(World& world) = 0;
     // What he looks for after a move, by what he is doing.
     virtual Looks looks() const { return {}; }
-    bool is_hurt() const noexcept { return hurt_; }
-    // An enemy with a hurt animation of its own: its place, and the database that is named in.
-    Animation own_hurt_animation_{};  // place 0: none of its own
-
+    bool is_hurt() const noexcept { return enemy.hurt; }
     // An enemy's first turn: the health he left with the last time, his first animation (named in the `home`
     // database) and a step of it, and what he is to the others from now on.
     void appear(World& world, Animation animation) {
@@ -251,14 +248,14 @@ class Enemy : public Entity {
             set_flag(entity_flag::kPutOnGround);
         }
         world.animate(*this);
-        led_ = how;
+        enemy.led = how;
     }
     // A turn of being led.
     void led_on(World& world) {
-        if (led_ == Led::kMoving) {
+        if (enemy.led == Led::kMoving) {
             set_flag(entity_flag::kPutOnGround);
         }
-        if (led_ != Led::kStill) {
+        if (enemy.led != Led::kStill) {
             world.animate(*this);
         }
     }
@@ -309,8 +306,8 @@ class Enemy : public Entity {
             return false;
         }
         stop_falling();
-        if (own_hurt_animation_.place != 0) {
-            world.play(*this, own_hurt_animation_);
+        if (enemy.own_hurt_animation.place != 0) {
+            world.play(*this, enemy.own_hurt_animation);
         } else {
             world.play(*this, anim::kEnemyIsHurt);
         }
@@ -326,9 +323,9 @@ class Enemy : public Entity {
         message_value = 0;
         // Hit from behind he is thrown forward; from the front, back, and then he turns to it.
         const bool from_behind = from_the_right == facing_left();
-        turns_after_ = from_behind || turns_whatever;
+        enemy.turns_after = from_behind || turns_whatever;
         speed_x = from_behind ? kThrownForward : kThrownBack;
-        hurt_ = true;
+        enemy.hurt = true;
         being_hurt(world);
         return true;
     }
@@ -355,9 +352,15 @@ class Enemy : public Entity {
         world.animate(*this);
     }
 
-    bool hurt_ = false;
-    bool turns_after_ = false;
-    Led led_ = Led::kStill;
+  protected:
+    struct Saved {
+        // An enemy with a hurt animation of its own: its place, and the database that is named in.
+        Animation own_hurt_animation{};  // place 0: none of its own
+        bool hurt = false;
+        bool turns_after = false;
+        Led led = Led::kStill;
+    } enemy;
+    LVR_SAVES_AS(Entity, enemy)
 };
 
 }  // namespace lvr

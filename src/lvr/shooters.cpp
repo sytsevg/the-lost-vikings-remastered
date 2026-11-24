@@ -22,7 +22,7 @@ class Gunner : public Enemy {
   public:
   protected:
     Looks looks() const override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 return {};
             case At::kWalking:
@@ -34,7 +34,7 @@ class Gunner : public Enemy {
         }
     }
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 appear(world, anim::kGunnerAppears);
                 if (is_falling()) {
@@ -146,7 +146,7 @@ class Gunner : public Enemy {
             return held_up(world);
         }
         world.animate_on_ground(*this);
-        at_ = At::kWalking;
+        s.at = At::kWalking;
     }
 
     void held_up(World& world) {
@@ -154,7 +154,7 @@ class Gunner : public Enemy {
             return set_off(world);
         }
         world.animate_on_ground(*this);
-        at_ = At::kHeldUp;
+        s.at = At::kHeldUp;
     }
 
     void attack(World& world) {
@@ -164,7 +164,7 @@ class Gunner : public Enemy {
     }
 
     void attacking(World& world) {
-        at_ = At::kAttacking;
+        s.at = At::kAttacking;
         if (told_all(world)) {
             return;
         }
@@ -180,7 +180,7 @@ class Gunner : public Enemy {
 
     void falling(World& world) {
         world.animate(*this);
-        at_ = At::kFalling;
+        s.at = At::kFalling;
     }
 
     // What he is told besides blows, by a scene's director: to shoot where he stands, to stand, to walk on, to
@@ -188,7 +188,7 @@ class Gunner : public Enemy {
     void led_to_attack(World& world) override {
         speed_x = 0;
         lead(world, anim::kGunnerShoots, Led::kMoving);
-        at_ = At::kLedShooting;
+        s.at = At::kLedShooting;
     }
     void led_to_stand(World& world) override {
         speed_x = 0;
@@ -198,7 +198,7 @@ class Gunner : public Enemy {
 
     void lead(World& world, Animation animation, Led how) {
         follow(world, animation, how);
-        at_ = At::kLed;
+        s.at = At::kLed;
     }
 
     // A Viking he touches is hurt (not by the kind that shoots from close by): a spark where they meet.
@@ -220,7 +220,10 @@ class Gunner : public Enemy {
         world.spawn(*this, kind::kSpark, x + reach, y - 4, 0, entity_flag::kLargePieces);
     }
 
-    At at_ = At::kStart;
+    struct Saved {
+        At at = At::kStart;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // The spaceship's trooper: he walks, and shoots at a Viking ahead of him about level (one kind only from near
@@ -229,7 +232,7 @@ class Gunner : public Enemy {
 class Trooper : public Enemy {
   public:
     Looks looks() const override {
-        switch (at_) {
+        switch (s.at) {
             case At::kWalking:
                 return {stopped_by(walls()), touching_an_enemy()};
             case At::kUnseen:
@@ -243,7 +246,7 @@ class Trooper : public Enemy {
 
   protected:
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 return at_start(world);
             case At::kWalking:
@@ -261,7 +264,7 @@ class Trooper : public Enemy {
             case At::kReappearing:
                 world.show_pieces(*this);
                 world.animate(*this);
-                at_ = At::kAppearing;
+                s.at = At::kAppearing;
                 return;
             case At::kAppearing:
                 return when_appearing(world);
@@ -269,8 +272,8 @@ class Trooper : public Enemy {
     }
     void at_start(World& world) {
         take_kept_health();
-        near_only_ = kind == kind::kNearTrooper;
-        pace_ = near_only_ ? px(3) : px(4);
+        s.near_only = kind == kind::kNearTrooper;
+        s.pace = s.near_only ? px(3) : px(4);
         world.play(*this, anim::kTrooperAppears);
         world.animate(*this);
         acts_as = tile::kEnemy;
@@ -301,7 +304,7 @@ class Trooper : public Enemy {
         if (cloak_due(world)) {
             return;
         }
-        if (countdown == 0 && viking_ahead(world, 16, near_only_ ? 128 : kAnyDistance)) {
+        if (countdown == 0 && viking_ahead(world, 16, s.near_only ? 128 : kAnyDistance)) {
             return shoot(world);
         }
         return walk(world);
@@ -328,8 +331,8 @@ class Trooper : public Enemy {
         if (cloak_due(world)) {
             return;
         }
-        if (sprite.packed_frame == kFiresAt && !fired_) {
-            fired_ = true;
+        if (sprite.packed_frame == kFiresAt && !s.fired) {
+            s.fired = true;
             world.spawn(*this, kind::kBullet, x + (facing_left() ? -6 : 6), y + 4);
             world.sound(*this, effect::kShot30);
         }
@@ -352,7 +355,7 @@ class Trooper : public Enemy {
         world.hide_pieces(*this);
         speed_x = px(4);
         world.animate_on_ground(*this);
-        at_ = At::kUnseen;
+        s.at = At::kUnseen;
     }
     void when_unseen(World& world) {
         if (saw.wall) {
@@ -375,7 +378,7 @@ class Trooper : public Enemy {
         }
         face_viking_behind(world);
         hit_mask = kHitMask;
-        cloak_in_ = kCloakTicks;
+        s.cloak_in = kCloakTicks;
         return shoot(world);
     }
     // Over a blow: he cloaks at once, if he is the kind that does.
@@ -413,10 +416,10 @@ class Trooper : public Enemy {
 
     void set_off(World& world) {
         world.play(*this, anim::kTrooperWalks);
-        speed_x = pace_;
+        speed_x = s.pace;
         countdown = 15;
-        if (cloak_in_ == 0) {
-            cloak_in_ = kCloakTicks;
+        if (s.cloak_in == 0) {
+            s.cloak_in = kCloakTicks;
         }
         walk(world);
     }
@@ -428,23 +431,23 @@ class Trooper : public Enemy {
             return held_up(world);
         }
         world.animate_on_ground(*this);
-        at_ = At::kWalking;
+        s.at = At::kWalking;
     }
     void held_up(World& world) {
         if (!blocked(world)) {
             return set_off(world);
         }
         world.animate(*this);
-        at_ = At::kHeldUp;
+        s.at = At::kHeldUp;
     }
     void shoot(World& world) {
         world.play(*this, anim::kTrooperShoots);
         speed_x = 0;
-        fired_ = false;
+        s.fired = false;
         shooting(world);
     }
     void shooting(World& world) {
-        at_ = At::kShooting;
+        s.at = At::kShooting;
         if (told(world)) {
             return;
         }
@@ -453,18 +456,18 @@ class Trooper : public Enemy {
     void fall(World& world) {
         start_falling();
         world.animate(*this);
-        at_ = At::kFalling;
+        s.at = At::kFalling;
     }
     // The count to his next cloaking, a tick on; true if he cloaked.
     bool cloak_due(World& world) {
-        if (cloak_in_ != 0) {
-            --cloak_in_;
+        if (s.cloak_in != 0) {
+            --s.cloak_in;
         }
-        return cloak_in_ == 0 && cloak(world);
+        return s.cloak_in == 0 && cloak(world);
     }
     // He vanishes: only the kind that shoots from afar, and not in the last level.
     bool cloak(World& world) {
-        if (near_only_ || world.scene == scene::kLastLevel) {
+        if (s.near_only || world.scene == scene::kLastLevel) {
             return false;
         }
         world.play(*this, anim::kTrooperVanishes);
@@ -472,21 +475,24 @@ class Trooper : public Enemy {
         hit_mask = 0;
         countdown = 25;
         world.animate(*this);
-        at_ = At::kVanishing;
+        s.at = At::kVanishing;
         return true;
     }
     void reappear(World& world) {
         world.play(*this, anim::kTrooperComesBack);
         speed_x = 0;
         world.animate(*this);
-        at_ = At::kReappearing;
+        s.at = At::kReappearing;
     }
 
-    At at_ = At::kStart;
-    bool near_only_ = false;
-    std::int16_t pace_ = 0;
-    std::uint16_t cloak_in_ = 0;
-    bool fired_ = false;
+    struct Saved {
+        At at = At::kStart;
+        bool near_only = false;
+        std::int16_t pace = 0;
+        std::uint16_t cloak_in = 0;
+        bool fired = false;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // A robot that walks back and forth and shoots at a Viking ahead who is level with it. Olaf's shield, or a
@@ -494,7 +500,7 @@ class Trooper : public Enemy {
 class ShootingRobot : public Enemy {
   public:
     Looks looks() const override {
-        switch (at_) {
+        switch (s.at) {
             case At::kWalking:
                 return {stopped_by(walls()), touching_an_enemy()};
             case At::kFalling:
@@ -506,7 +512,7 @@ class ShootingRobot : public Enemy {
 
   protected:
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 appear(world, anim::kShooterAppears);
                 if (is_falling()) {
@@ -563,24 +569,24 @@ class ShootingRobot : public Enemy {
     }
     void when_shooting(World& world) {
         if (animation_over()) {
-            if (at_ == At::kLedShooting) {
+            if (s.at == At::kLedShooting) {
                 speed_x = 0;
                 follow(world, anim::kShooterWalks, Led::kAnimated);
-                at_ = At::kLed;
+                s.at = At::kLed;
                 return;
             }
             countdown = 30;
             return set_off(world);
         }
-        if (sprite.packed_frame == kShotFrame && !shot_) {
-            shot_ = true;
+        if (sprite.packed_frame == kShotFrame && !s.shot) {
+            s.shot = true;
             world.spawn(*this, factory_kind::kShot, x + (facing_left() ? -12 : 12), y - 8);
             world.sound(*this, effect::kShot33);
         }
         if (told_all(world)) {
             return;
         }
-        if (at_ == At::kLedShooting) {
+        if (s.at == At::kLedShooting) {
             set_flag(entity_flag::kPutOnGround);
         }
         world.animate(*this);
@@ -612,20 +618,20 @@ class ShootingRobot : public Enemy {
             return held_up(world);
         }
         world.animate_on_ground(*this);
-        at_ = At::kWalking;
+        s.at = At::kWalking;
     }
     void held_up(World& world) {
         if (!in_his_way(world)) {
             return set_off(world);
         }
         world.animate_on_ground(*this);
-        at_ = At::kHeldUp;
+        s.at = At::kHeldUp;
     }
     void shoot(World& world) {
         world.play(*this, anim::kShooterShoots);
         speed_x = 0;
-        shot_ = false;
-        at_ = At::kShooting;
+        s.shot = false;
+        s.at = At::kShooting;
         if (told_all(world)) {
             return;
         }
@@ -634,7 +640,7 @@ class ShootingRobot : public Enemy {
     void fall(World& world) {
         start_falling();
         world.animate(*this);
-        at_ = At::kFalling;
+        s.at = At::kFalling;
     }
 
     // A blow, in his own way; whatever else he is told he forgets.
@@ -653,23 +659,26 @@ class ShootingRobot : public Enemy {
         message = 0;
         world.play(*this, anim::kShooterShoots);
         speed_x = 0;
-        shot_ = false;
+        s.shot = false;
         world.animate_on_ground(*this);
-        at_ = At::kLedShooting;
+        s.at = At::kLedShooting;
     }
     void led_to_stand(World& world) override {
         speed_x = 0;
         follow(world, anim::kShooterWalks, Led::kAnimated);
-        at_ = At::kLed;
+        s.at = At::kLed;
     }
     void led_to_walk(World& world) override {
         speed_x = px(3);
         follow(world, anim::kShooterWalks, Led::kMoving);
-        at_ = At::kLed;
+        s.at = At::kLed;
     }
 
-    At at_ = At::kStart;
-    bool shot_ = false;
+    struct Saved {
+        At at = At::kStart;
+        bool shot = false;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // An enemy that walks slowly back and forth and spits at a Viking ahead who is level with him. Olaf's shield, or
@@ -681,7 +690,7 @@ class Spitter : public Enemy {
         return types;
     }
     Looks looks() const override {
-        switch (at_) {
+        switch (s.at) {
             case At::kWalking:
                 return {stopped_by(stops()), touching_an_enemy()};
             case At::kFalling:
@@ -694,7 +703,7 @@ class Spitter : public Enemy {
 
   protected:
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 appear(world, anim::kSpitterAppears);
                 if (is_falling()) {
@@ -753,14 +762,14 @@ class Spitter : public Enemy {
     }
     void when_spitting(World& world) {
         if (animation_over()) {
-            if (at_ == At::kLedSpitting) {
+            if (s.at == At::kLedSpitting) {
                 return lead(world, 0, false);
             }
             countdown = kRestTicks;
             return set_off(world);
         }
-        if (sprite.packed_frame == kSpitFrame && !spat_) {
-            spat_ = true;
+        if (sprite.packed_frame == kSpitFrame && !s.spat) {
+            s.spat = true;
             world.spawn(*this, prehistoric_kind::kSpit, x + (facing_left() ? -12 : 12), y + 4);
             sound(world, effect::kSpit);
         }
@@ -783,9 +792,9 @@ class Spitter : public Enemy {
             stop_falling();
         }
         if (animation_over()) {
-            if (turns_after_) {
+            if (s.turns_after) {
                 turn_round(world);
-                turns_after_ = false;
+                s.turns_after = false;
             }
             return set_off(world);
         }
@@ -818,7 +827,7 @@ class Spitter : public Enemy {
             return held_up(world);
         }
         world.animate(*this);
-        at_ = At::kWalking;
+        s.at = At::kWalking;
     }
 
     void held_up(World& world) {
@@ -826,14 +835,14 @@ class Spitter : public Enemy {
             return set_off(world);
         }
         world.animate(*this);
-        at_ = At::kHeldUp;
+        s.at = At::kHeldUp;
     }
 
     void spit(World& world) {
         world.play(*this, anim::kSpitterSpits);
         speed_x = 0;
-        spat_ = false;
-        at_ = At::kSpitting;
+        s.spat = false;
+        s.at = At::kSpitting;
         spitting(world);
     }
 
@@ -847,7 +856,7 @@ class Spitter : public Enemy {
     void fall(World& world) {
         start_falling();
         world.animate(*this);
-        at_ = At::kFalling;
+        s.at = At::kFalling;
     }
 
     void being_hurt(World& world) {
@@ -861,7 +870,7 @@ class Spitter : public Enemy {
             speed_x = 0;
         }
         world.animate(*this);
-        at_ = At::kHurt;
+        s.at = At::kHurt;
     }
 
     // What he is told. True if his turn ended (or he is gone).
@@ -880,7 +889,7 @@ class Spitter : public Enemy {
                 }
                 const bool from_behind = from_the_right == facing_left();
                 if (from_behind) {
-                    turns_after_ = true;
+                    s.turns_after = true;
                 }
                 speed_x = from_behind ? px(3) : px(-4);
                 world.play(*this, anim::kSpitterIsHurt);
@@ -896,8 +905,8 @@ class Spitter : public Enemy {
         message = 0;
         world.play(*this, anim::kSpitterSpits);
         speed_x = 0;
-        spat_ = false;
-        at_ = At::kLedSpitting;
+        s.spat = false;
+        s.at = At::kLedSpitting;
         spitting(world);
     }
     void led_to_stand(World& world) override { lead(world, 0, false); }
@@ -906,12 +915,15 @@ class Spitter : public Enemy {
     void lead(World& world, std::int16_t speed, bool moving) {
         speed_x = speed;
         follow(world, anim::kSpitterWalks, moving ? Led::kMoving : Led::kStill);
-        at_ = At::kLed;
+        s.at = At::kLed;
     }
 
-    At at_ = At::kStart;
-    bool spat_ = false;
-    bool turns_after_ = false;
+    struct Saved {
+        At at = At::kStart;
+        bool spat = false;
+        bool turns_after = false;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // An enemy that walks back and forth and throws something at a Viking ahead who is level with him. Olaf's
@@ -920,7 +932,7 @@ class Spitter : public Enemy {
 class Thrower : public Enemy {
   public:
     Looks looks() const override {
-        switch (at_) {
+        switch (s.at) {
             case At::kWalking:
                 return {stopped_by(walls()), touching_an_enemy()};
             case At::kFalling:
@@ -932,7 +944,7 @@ class Thrower : public Enemy {
 
   protected:
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 appear(world, anim::kThrowerAppears);
                 if (is_falling()) {
@@ -988,7 +1000,7 @@ class Thrower : public Enemy {
         return throw_it(world);
     }
     void when_throwing(World& world) {
-        if (at_ == At::kLedThrowing) {
+        if (s.at == At::kLedThrowing) {
             if (told_all(world)) {
                 return;
             }
@@ -996,16 +1008,16 @@ class Thrower : public Enemy {
             return;
         }
         if (animation_over()) {
-            if (at_ == At::kLedThrowing) {
+            if (s.at == At::kLedThrowing) {
                 return lead(world, 0, false);
             }
             return set_off(world);
         }
-        if (sprite.packed_frame == kThrowFrame && !thrown_) {
-            thrown_ = true;
+        if (sprite.packed_frame == kThrowFrame && !s.thrown) {
+            s.thrown = true;
             world.spawn(*this, wacky_kind::kThrown, x + (facing_left() ? -10 : 10), y - 6);
         }
-        if (at_ == At::kLedThrowing) {
+        if (s.at == At::kLedThrowing) {
             set_flag(entity_flag::kPutOnGround);
         } else if (told_all(world)) {
             return;
@@ -1044,20 +1056,20 @@ class Thrower : public Enemy {
             return held_up(world);
         }
         world.animate_on_ground(*this);
-        at_ = At::kWalking;
+        s.at = At::kWalking;
     }
     void held_up(World& world) {
         if (!in_his_way(world)) {
             return set_off(world);
         }
         world.animate_on_ground(*this);
-        at_ = At::kHeldUp;
+        s.at = At::kHeldUp;
     }
     void throw_it(World& world) {
-        thrown_ = false;
+        s.thrown = false;
         speed_x = 0;
         world.play(*this, anim::kThrowerThrows);
-        at_ = At::kThrowing;
+        s.at = At::kThrowing;
         if (told_all(world)) {
             return;
         }
@@ -1067,16 +1079,16 @@ class Thrower : public Enemy {
         world.play(*this, anim::kThrowerFalls);
         start_falling();
         world.animate(*this);
-        at_ = At::kFalling;
+        s.at = At::kFalling;
     }
 
     void led_to_attack(World& world) override {
         message = 0;
         world.play(*this, anim::kThrowerThrows);
         speed_x = 0;
-        thrown_ = false;
+        s.thrown = false;
         world.animate_on_ground(*this);
-        at_ = At::kLedThrowing;
+        s.at = At::kLedThrowing;
     }
     void led_to_stand(World& world) override { lead(world, 0, false); }
     void led_to_walk(World& world) override { lead(world, px(3), true); }
@@ -1084,11 +1096,14 @@ class Thrower : public Enemy {
     void lead(World& world, std::int16_t speed, bool moving) {
         speed_x = speed;
         follow(world, anim::kThrowerWalks, moving ? Led::kMoving : Led::kStill);
-        at_ = At::kLed;
+        s.at = At::kLed;
     }
 
-    At at_ = At::kStart;
-    bool thrown_ = false;
+    struct Saved {
+        At at = At::kStart;
+        bool thrown = false;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // A robot that flies back and forth, bobbing up and down, and drops a bomb every eight ticks.
@@ -1096,13 +1111,13 @@ class FlyingRobot : public Enemy {
   public:
     // Flying, it bounces off walls, ceilings and floors.
     Looks looks() const override {
-        return at_ == At::kFlying ? Looks{stopped_by(walls()), stopped_above_or_below(walls()), lands_on(ground())}
-                                  : Looks{};
+        return s.at == At::kFlying ? Looks{stopped_by(walls()), stopped_above_or_below(walls()), lands_on(ground())}
+                                   : Looks{};
     }
 
   protected:
     void turn(World& world) override {
-        if (at_ == At::kStart) {
+        if (s.at == At::kStart) {
             appear(world, anim::kFlyerAppears);
             countdown = kBobTicks;
             return set_off(world);
@@ -1152,14 +1167,17 @@ class FlyingRobot : public Enemy {
             turn_round(world);
         }
         world.animate(*this);
-        at_ = At::kFlying;
+        s.at = At::kFlying;
     }
     void bob(World& /*world*/) {
         countdown = kBobTicks;
         speed_y = speed_y == px(2) ? px(-2) : px(2);
     }
 
-    At at_ = At::kStart;
+    struct Saved {
+        At at = At::kStart;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // A drone that flies back and forth, down to the floor (or the view's bottom) and up again for 20 ticks at a
@@ -1169,13 +1187,13 @@ class Drone : public Enemy {
   public:
     // Flying, it bounces off walls, ceilings and floors.
     Looks looks() const override {
-        return at_ == At::kFlying ? Looks{stopped_by(walls()), stopped_above_or_below(walls()), lands_on(ground())}
-                                  : Looks{};
+        return s.at == At::kFlying ? Looks{stopped_by(walls()), stopped_above_or_below(walls()), lands_on(ground())}
+                                   : Looks{};
     }
 
   protected:
     void turn(World& world) override {
-        if (at_ == At::kStart) {
+        if (s.at == At::kStart) {
             appear(world, anim::kDroneAppears);
             countdown = kUpTicks;
             set_off(world);
@@ -1244,10 +1262,13 @@ class Drone : public Enemy {
             turn_round(world);
         }
         world.animate(*this);
-        at_ = At::kFlying;
+        s.at = At::kFlying;
     }
 
-    At at_ = At::kStart;
+    struct Saved {
+        At at = At::kStart;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 }  // namespace

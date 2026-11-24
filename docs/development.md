@@ -40,9 +40,9 @@ ctest --preset asan-ubsan
 the engine and compares each refresh with its golden (`replays/README.md`), in under a minute: run both before a
 commit that touches the engine.
 
-After adding state to `World` or to a kind, `lv-replay --check --copies replays/*.replay` plays the replays
-with the world replaced by a copy of itself before every step: what the rewind and the quicksave keep must be all
-a replay needs.
+After adding state to `World` or to a kind, `./scripts/saves.sh` plays the replays with the world written out and
+read back before every step (`lv-replay --saves`; `--copies` does the same with a copy): what the rewind, the
+quicksave and later a network snapshot hold must be all a replay needs. About a minute.
 
 After a change to the GPU renderer's drawing, `lv-replay --check --gpu REPLAY...` plays replays with it in the
 Classic renderer's place, against the same goldens (all of them take about five minutes on the software driver;

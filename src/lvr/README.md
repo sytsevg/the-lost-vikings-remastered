@@ -14,10 +14,11 @@ Target `lvr::engine`, plain C++ on `lvr::assets`.
 - `sprites.*`: sprite pieces (`Piece`, 128 to a layer in three pools; 2,048 under Remaster rules), an entity's `Sprite`, taking and letting go
   of pieces, the animation player (the original's animation programs, imported and played as they are), and the
   pieces made into pictures for the renderer (`PiecePainter`).
-- `profile.*`: the player's profile on disk (Remaster rules): so far what the minimap has seen.
+- `profile.*`: the player's profile on disk (Remaster rules): what the minimap has seen, and the quicksave.
 - `minimap.*`: Remaster rules' minimap: the level small, by what its cells are, as far as it was seen.
 - `camera.*`: the camera: its limits, where it starts, how it follows the Viking being played; the size of the
   view (the original's, or a zoomed one).
+- `archive.hpp`: the game's state written out and read back: fixed-width, field by field (ADR-0020).
 - `entity.hpp`: `Entity`, the base class of every kind (ADR-0018): what the engine reads and moves of each.
 - `movement.*`: speed and gravity into a tick's push, and the move itself.
 - `world.*`: `World`: the map, the entity slots (20, or 512 under Remaster rules), the pieces, the camera; kinds' records, creating and removing

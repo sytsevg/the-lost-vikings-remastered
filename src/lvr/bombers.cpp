@@ -20,7 +20,7 @@ namespace {
 class Bomber : public Enemy {
   public:
     Looks looks() const override {
-        switch (at_) {
+        switch (s.at) {
             case At::kWaiting:
                 return {touching_one_of_the_vikings_class()};
             case At::kWalking:
@@ -34,7 +34,7 @@ class Bomber : public Enemy {
 
   protected:
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 return at_start(world);
             case At::kWaiting:
@@ -58,7 +58,7 @@ class Bomber : public Enemy {
         if (is_falling()) {
             return fall(world);
         }
-        at_ = At::kWaiting;
+        s.at = At::kWaiting;
     }
     void when_walking(World& world) {
         if (saw.wall) {
@@ -70,8 +70,8 @@ class Bomber : public Enemy {
         }
         stay_in_view(world);
         face_viking_behind(world);
-        if (count_ != 0) {
-            --count_;
+        if (s.count != 0) {
+            --s.count;
             return next_step(world);
         }
         const int below = world.offset_to(*this, world.nearest_viking(*this)).below;
@@ -87,10 +87,10 @@ class Bomber : public Enemy {
         if (!on_ground(world)) {
             return fall(world);
         }
-        if (count_ == 0) {
+        if (s.count == 0) {
             return attack(world);
         }
-        --count_;
+        --s.count;
         return held_up(world);
     }
     void when_attacking(World& world) {
@@ -104,7 +104,7 @@ class Bomber : public Enemy {
             world.play(*this, anim::kBomberStrolls);
             return fall(world);
         }
-        if (count_ != kBombs || sprite.packed_frame != kLastThrowFrame) {
+        if (s.count != kBombs || sprite.packed_frame != kLastThrowFrame) {
             return attacking(world);
         }
         if (world.random() <= 32000) {  // about half the time he turns round after it
@@ -140,17 +140,17 @@ class Bomber : public Enemy {
         speed_x = px(2.5);
         world.play(*this, anim::kBomberStrolls);
         countdown = kTurnedTicks;
-        count_ = kPatience;
-        steps_ = pick(world, 40, 30, 20);
-        running_ = false;
+        s.count = kPatience;
+        s.steps = pick(world, 40, 30, 20);
+        s.running = false;
         go(world);
     }
 
     void run(World& world) {
         speed_x = px(6);
         world.play(*this, anim::kBomberRuns);
-        steps_ = pick(world, 35, 25, 15);
-        running_ = true;
+        s.steps = pick(world, 35, 25, 15);
+        s.running = true;
         go(world);
     }
 
@@ -164,20 +164,20 @@ class Bomber : public Enemy {
                 return fall(world);
             }
             turn_round(world, kTurnedTicks);
-            if (count_ != 0) {
-                --count_;
+            if (s.count != 0) {
+                --s.count;
             }
             return next_step(world);
         }
         world.animate_on_ground(*this);
-        at_ = At::kWalking;
+        s.at = At::kWalking;
     }
 
     void next_step(World& world) {
-        if (steps_ == 0) {
-            return running_ ? stroll(world) : run(world);
+        if (s.steps == 0) {
+            return s.running ? stroll(world) : run(world);
         }
-        --steps_;
+        --s.steps;
         go(world);
     }
 
@@ -186,13 +186,13 @@ class Bomber : public Enemy {
             return stroll(world);
         }
         world.animate(*this);
-        at_ = At::kHeldUp;
+        s.at = At::kHeldUp;
     }
 
     void attack(World& world) {
         world.play(*this, anim::kBomberThrows);
         speed_x = 0;
-        count_ = 0;
+        s.count = 0;
         if (world.offset_to(*this, world.nearest_viking(*this)).ahead <= 0) {
             turn_round(world);
         }
@@ -201,7 +201,7 @@ class Bomber : public Enemy {
 
     void attacking(World& world) {
         world.animate(*this);
-        at_ = At::kAttacking;
+        s.at = At::kAttacking;
     }
 
     void throw_bomb(World& world) {
@@ -210,9 +210,9 @@ class Bomber : public Enemy {
         if (bomb != nullptr) {
             target = bomb->slot;
             bomb->speed_y = px(-8);
-            bomb->speed_x = count_ == 1 ? px(4) : (count_ == 2 ? px(6) : px(2));
+            bomb->speed_x = s.count == 1 ? px(4) : (s.count == 2 ? px(6) : px(2));
         }
-        ++count_;
+        ++s.count;
     }
 
     void fall(World& world) {
@@ -222,16 +222,19 @@ class Bomber : public Enemy {
 
     void falling(World& world) {
         world.animate(*this);
-        at_ = At::kFalling;
+        s.at = At::kFalling;
     }
 
-    At at_ = At::kStart;
-    // The ticks of walking left before he looks for a Viking again, and while he throws the bombs thrown so far:
-    // one number, as in the original. So a blow between two bombs leaves their number as the ticks he then runs
-    // before he looks again.
-    std::uint16_t count_ = 0;
-    std::uint16_t steps_ = 0;
-    bool running_ = false;
+    struct Saved {
+        At at = At::kStart;
+        // The ticks of walking left before he looks for a Viking again, and while he throws the bombs thrown so far:
+        // one number, as in the original. So a blow between two bombs leaves their number as the ticks he then runs
+        // before he looks again.
+        std::uint16_t count = 0;
+        std::uint16_t steps = 0;
+        bool running = false;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // An enemy that throws: he walks, then runs, by turns, a random number of steps each; a Viking about level with
@@ -240,7 +243,7 @@ class Bomber : public Enemy {
 class StoneThrower : public Enemy {
   public:
     Looks looks() const override {
-        switch (at_) {
+        switch (s.at) {
             case At::kAppeared:
                 return {touching_one_of_the_vikings_class()};
             case At::kWalking:
@@ -255,7 +258,7 @@ class StoneThrower : public Enemy {
 
   protected:
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 return at_start(world);
             case At::kAppeared:
@@ -287,7 +290,7 @@ class StoneThrower : public Enemy {
         if (is_falling()) {
             return fall(world);
         }
-        at_ = At::kAppeared;
+        s.at = At::kAppeared;
     }
     void when_walking(World& world) {
         if (saw.wall) {
@@ -299,8 +302,8 @@ class StoneThrower : public Enemy {
         }
         stay_in_view(world);
         face_viking_behind(world);
-        if (count_ != 0) {
-            --count_;
+        if (s.count != 0) {
+            --s.count;
         } else {
             const World::Offset to = world.offset_to(*this, world.nearest_viking(*this));
             if (to.below < 64 && to.below >= -64) {
@@ -316,10 +319,10 @@ class StoneThrower : public Enemy {
         if (!on_ground(world)) {
             return fall(world);
         }
-        if (count_ == 0) {
+        if (s.count == 0) {
             return aim(world);
         }
-        --count_;
+        --s.count;
         if (!blocked(world)) {
             return set_off(world);
         }
@@ -336,7 +339,7 @@ class StoneThrower : public Enemy {
             world.play(*this, anim::kStoneThrowerWalks);
             return fall(world);
         }
-        if (count_ == 3 && sprite.packed_frame == kThrowOver) {
+        if (s.count == 3 && sprite.packed_frame == kThrowOver) {
             if (world.random() <= 32000) {  // half the time he turns round after it
                 turn_round(world, kTurnedTicks);
             }
@@ -360,7 +363,7 @@ class StoneThrower : public Enemy {
         if (told_all(world)) {
             return;
         }
-        if (count_ == 3 && sprite.packed_frame == kThrowOver) {
+        if (s.count == 3 && sprite.packed_frame == kThrowOver) {
             return lead(world, 0, Led::kAnimated);
         }
         world.animate_on_ground(*this);
@@ -396,9 +399,9 @@ class StoneThrower : public Enemy {
         speed_x = kPace;
         world.play(*this, anim::kStoneThrowerWalks);
         countdown = kTurnedTicks;
-        count_ = 15;
+        s.count = 15;
         const std::uint16_t dice = world.random();
-        steps_ = dice < 20000 ? 40 : (dice < 40000 ? 30 : 20);
+        s.steps = dice < 20000 ? 40 : (dice < 40000 ? 30 : 20);
         step(world, At::kWalking);
     }
     // He runs: for 15, 25 or 35 steps.
@@ -406,26 +409,26 @@ class StoneThrower : public Enemy {
         speed_x = px(6);
         world.play(*this, anim::kStoneThrowerRuns);
         const std::uint16_t dice = world.random();
-        steps_ = dice < 20000 ? 35 : (dice < 40000 ? 25 : 15);
+        s.steps = dice < 20000 ? 35 : (dice < 40000 ? 25 : 15);
         step(world, At::kRunning);
     }
     // After a step: the next, or the other pace when these are done.
     void next_step(World& world) {
-        if (steps_ == 0) {
-            return at_ == At::kWalking ? run(world) : set_off(world);
+        if (s.steps == 0) {
+            return s.at == At::kWalking ? run(world) : set_off(world);
         }
-        --steps_;
-        step(world, at_);
+        --s.steps;
+        step(world, s.at);
     }
     // One step on, unless something is in his way or the ground ends.
     void step(World& world, At pace) {
-        at_ = pace;
+        s.at = pace;
         // Where the ground ends he turns and goes on counting his steps, without a tick passing; a place with
         // no way on either side ends when the steps of both paces have (as in the original: bounded here).
         for (int turns = 0; turns < 4; ++turns) {
             if (blocked(world)) {
                 speed_x = 0;
-                at_ = At::kBlocked;
+                s.at = At::kBlocked;
                 world.animate(*this);
                 return;
             }
@@ -437,31 +440,31 @@ class StoneThrower : public Enemy {
                 return fall(world);
             }
             turn_round(world, kTurnedTicks);
-            if (count_ != 0) {
-                --count_;
+            if (s.count != 0) {
+                --s.count;
             }
-            if (steps_ == 0) {
-                return at_ == At::kWalking ? run(world) : set_off(world);
+            if (s.steps == 0) {
+                return s.at == At::kWalking ? run(world) : set_off(world);
             }
-            --steps_;
+            --s.steps;
         }
         world.animate_on_ground(*this);
     }
     void fall(World& world) {
         start_falling();
         world.animate(*this);
-        at_ = At::kFalling;
+        s.at = At::kFalling;
     }
     // He stops, turns to the nearest Viking, and throws.
     void aim(World& world) {
         world.play(*this, anim::kStoneThrowerThrows);
         speed_x = 0;
-        count_ = 0;
+        s.count = 0;
         if (world.offset_to(*this, world.nearest_viking(*this)).ahead <= 0) {
             turn_round(world);
         }
         world.animate(*this);
-        at_ = At::kThrowing;
+        s.at = At::kThrowing;
     }
     void throw_one(World& world) {
         Entity* thrown = world.create_by(*this, kind::kBomb, x + (facing_left() ? -8 : 8), y - 6, 1);
@@ -469,16 +472,16 @@ class StoneThrower : public Enemy {
         if (thrown != nullptr) {
             target = thrown->slot;
             thrown->speed_y = px(-8);
-            thrown->speed_x = count_ == 1 ? px(4) : (count_ == 2 ? px(6) : px(2));
+            thrown->speed_x = s.count == 1 ? px(4) : (s.count == 2 ? px(6) : px(2));
         }
-        ++count_;
+        ++s.count;
     }
 
     void led_to_attack(World& world) override {
-        count_ = 0;
+        s.count = 0;
         speed_x = 0;
         follow(world, anim::kStoneThrowerThrows, Led::kMoving);
-        at_ = At::kLedThrowing;
+        s.at = At::kLedThrowing;
     }
     void led_to_stand(World& world) override { lead(world, 0, Led::kAnimated); }
     void led_to_walk(World& world) override { lead(world, kPace, Led::kMoving); }
@@ -486,25 +489,28 @@ class StoneThrower : public Enemy {
     void lead(World& world, std::int16_t speed, Led how) {
         speed_x = speed;
         follow(world, anim::kStoneThrowerWalks, how);
-        at_ = At::kLed;
+        s.at = At::kLed;
     }
 
-    At at_ = At::kStart;
-    std::uint16_t steps_ = 0;
-    // The stones thrown while he throws, the ticks until he can throw again while he goes: one word, as in the
-    // original, so a blow between two stones leaves their number as ticks to wait.
-    std::uint16_t count_ = 0;
+    struct Saved {
+        At at = At::kStart;
+        std::uint16_t steps = 0;
+        // The stones thrown while he throws, the ticks until he can throw again while he goes: one word, as in the
+        // original, so a blow between two stones leaves their number as ticks to wait.
+        std::uint16_t count = 0;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // An enemy in a pot: he keeps down for a while (nothing but a hard blow reaches him), then comes up, turns to the
 // nearest Viking and throws something at him. A Viking who touches him while he is up is hurt.
 class PotDweller : public Enemy {
   public:
-    Looks looks() const override { return at_ == At::kUp ? Looks{touching_a_viking()} : Looks{}; }
+    Looks looks() const override { return s.at == At::kUp ? Looks{touching_a_viking()} : Looks{}; }
 
   protected:
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 appear(world, anim::kPotDwellerAppears);
                 return duck(world);
@@ -517,7 +523,7 @@ class PotDweller : public Enemy {
                     box.top -= 28;
                     hit_mask =
                         bits(hit::kHurtByFire, hit::kBombable, hit::kHurtBySword, hit::kEnemy, hit::kHurtByArrow);
-                    at_ = At::kUp;
+                    s.at = At::kUp;
                 }
                 break;
             case At::kUp:
@@ -534,7 +540,7 @@ class PotDweller : public Enemy {
                 if (animation_over()) {
                     world.spawn(*this, kind::kBomb, x + (facing_left() ? -14 : 14), y - 3);
                     world.sound(*this, effect::kPotDwellerThrows);
-                    at_ = At::kThrown;
+                    s.at = At::kThrown;
                 }
                 break;
             case At::kThrown:
@@ -558,7 +564,7 @@ class PotDweller : public Enemy {
         countdown = 50;
         box.top = box.bottom;
         hit_mask = hit::kBombable;
-        at_ = At::kDown;
+        s.at = At::kDown;
         world.animate(*this);
     }
 
@@ -589,7 +595,10 @@ class PotDweller : public Enemy {
         return false;
     }
 
-    At at_ = At::kStart;
+    struct Saved {
+        At at = At::kStart;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // A bomber's bomb: thrown in an arc, or (another kind's) straight at the nearest Viking. It bursts on a wall, the
@@ -597,15 +606,15 @@ class PotDweller : public Enemy {
 class Bomb : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kBombFlies);
                 if (argument == 0) {
                     aim(world);
-                    state_ = State::kStraight;
+                    s.state = State::kStraight;
                 } else {
                     start_falling();
-                    state_ = State::kRising;
+                    s.state = State::kRising;
                 }
                 break;
             case State::kRising:
@@ -616,7 +625,7 @@ class Bomb : public Entity {
                     return hit(world);
                 }
                 if (speed_y >= 0) {
-                    state_ = State::kFalling;
+                    s.state = State::kFalling;
                 }
                 break;
             case State::kFalling:
@@ -667,7 +676,7 @@ class Bomb : public Entity {
     Looks looks_for() const override {
         const Look shield_touched = touching_any(hit::kShield, &Saw::shield);
         const Look viking = touching_any(hit::kViking, &Saw::viking);
-        switch (state_) {
+        switch (s.state) {
             case State::kRising:
                 return {stopped_by(solid()), shield_touched, touching_any(hit::kShieldOverhead, &Saw::shield_overhead),
                         viking};
@@ -737,11 +746,14 @@ class Bomb : public Entity {
         world.play(*this, anim::kBombBursts);
         speed_x = 0;
         stop_falling();
-        state_ = State::kBurst;
+        s.state = State::kBurst;
         world.animate(*this);
     }
 
-    State state_ = State::kStart;
+    struct Saved {
+        State state = State::kStart;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 }  // namespace

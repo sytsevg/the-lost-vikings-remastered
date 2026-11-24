@@ -23,14 +23,14 @@ class Hopper : public Enemy {
     Looks looks() const override {
         const Look viking = touching_one_of_the_vikings_class();
         const Look shield_touched = touching_any(hit::kShield, &Saw::shield);
-        switch (at_) {
+        switch (s.at) {
             case At::kAppeared:
                 return {viking};
             case At::kRunning:
                 return {stopped_by(walls()), touching_an_enemy(), viking};
             case At::kStriking:  // on his way up a ceiling stops him, on his way down the ground
-                return strikes_rising_ ? Looks{stopped_above_or_below(solid()), viking}
-                                       : Looks{lands_on(ground()), viking};
+                return s.strikes_rising ? Looks{stopped_above_or_below(solid()), viking}
+                                        : Looks{lands_on(ground()), viking};
             case At::kRising:
                 return {stopped_by(walls()), stopped_above_or_below(solid()), shield_touched, viking};
             case At::kFalling:
@@ -43,7 +43,7 @@ class Hopper : public Enemy {
 
   protected:
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 return at_start(world);
             case At::kAppeared:
@@ -71,7 +71,7 @@ class Hopper : public Enemy {
         if (is_falling()) {
             return fall(world);
         }
-        at_ = At::kAppeared;
+        s.at = At::kAppeared;
     }
     void when_running(World& world) {
         if (saw.wall) {
@@ -96,23 +96,23 @@ class Hopper : public Enemy {
         } else {
             face_viking_behind(world);
         }
-        if (steps_ == 0) {
+        if (s.steps == 0) {
             return hop(world);
         }
-        --steps_;
+        --s.steps;
         return running(world);
     }
     void when_striking(World& world) {
-        if (strikes_rising_ ? saw.ceiling : saw.landed) {
+        if (s.strikes_rising ? saw.ceiling : saw.landed) {
             speed_y = 0;
-            if (!strikes_rising_) {
+            if (!s.strikes_rising) {
                 clear_flag(entity_flag::kFalls);
                 set_flag(entity_flag::kPutOnGround);
             }
         }
         if (saw.viking != kNobody) {
             target = saw.viking;
-            still_touching_ = true;
+            s.still_touching = true;
         }
         World::Offset to;
         if (sprite.packed_frame == kStrikeOver || !level_with(world, to)) {
@@ -121,7 +121,7 @@ class Hopper : public Enemy {
         if (to.ahead < 0) {
             turn_round(world);
         }
-        if (animation_over() && still_touching_) {
+        if (animation_over() && s.still_touching) {
             Entity* other = world.at(target);
             if (other != nullptr && other->kind < kVikingSlots) {
                 harm(*other, message::kStruck, 2, facing_left());
@@ -195,13 +195,13 @@ class Hopper : public Enemy {
         world.play(*this, anim::kHopperRuns);
         speed_x = kPace;
         const std::uint16_t dice = world.random();
-        steps_ = dice < 20000 ? 5 : (dice < 40000 ? 10 : 15);
+        s.steps = dice < 20000 ? 5 : (dice < 40000 ? 10 : 15);
         running(world);
     }
 
     void running(World& world) {
         world.animate_on_ground(*this);
-        at_ = At::kRunning;
+        s.at = At::kRunning;
     }
 
     void hop(World& world) {
@@ -235,19 +235,19 @@ class Hopper : public Enemy {
     void in_the_air(World& world) {
         if (speed_y < 0) {
             world.animate(*this);
-            at_ = At::kRising;
+            s.at = At::kRising;
             return;
         }
         world.play(*this, anim::kHopperComesDown);
         world.animate(*this);
-        at_ = At::kFalling;
+        s.at = At::kFalling;
     }
 
     void striking(World& world) {
-        still_touching_ = false;
-        strikes_rising_ = speed_y < 0;
+        s.still_touching = false;
+        s.strikes_rising = speed_y < 0;
         world.animate(*this);
-        at_ = At::kStriking;
+        s.at = At::kStriking;
     }
 
     // Olaf's shield, held towards him from six pixels or more ahead: he turns, and the touch doesn't count.
@@ -289,13 +289,16 @@ class Hopper : public Enemy {
     void lead(World& world, Animation animation, std::int16_t speed, bool moving) {
         speed_x = speed;
         follow(world, animation, moving ? Led::kMoving : Led::kStill);
-        at_ = At::kLed;
+        s.at = At::kLed;
     }
 
-    At at_ = At::kStart;
-    bool still_touching_ = false;
-    bool strikes_rising_ = false;
-    std::uint16_t steps_ = 0;
+    struct Saved {
+        At at = At::kStart;
+        bool still_touching = false;
+        bool strikes_rising = false;
+        std::uint16_t steps = 0;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // An enemy that by turns rolls along, armoured, and walks. Rolling, blows glance off him (he turns from sword and
@@ -304,10 +307,10 @@ class Hopper : public Enemy {
 class Roller : public Enemy {
   public:
     Looks looks() const override {
-        if (on_the_ship_) {  // the ship's scene: nothing stops him but the ground under him, and he touches nobody
-            return at_ == At::kFalling || at_ == At::kShipFalling ? Looks{lands_on(ground())} : Looks{};
+        if (s.on_the_ship) {  // the ship's scene: nothing stops him but the ground under him, and he touches nobody
+            return s.at == At::kFalling || s.at == At::kShipFalling ? Looks{lands_on(ground())} : Looks{};
         }
-        switch (at_) {
+        switch (s.at) {
             case At::kRolling:
                 return {stopped_by(walls()), stopped_by(shield(), &Saw::shield_wall), touching_a_viking()};
             case At::kWalking:
@@ -323,7 +326,7 @@ class Roller : public Enemy {
 
   protected:
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 return at_start(world);
             case At::kShipRolling:
@@ -348,7 +351,7 @@ class Roller : public Enemy {
         appear(world, anim::kRollerAppears);
         if (world.database == database::kScenes && world.scene == scene::kShip) {
             // The ship's scene: he only rolls and walks by turns, until he is led.
-            on_the_ship_ = true;
+            s.on_the_ship = true;
             world.play(*this, anim::kRollerOnTheShip);
             world.animate(*this);
             return ship_roll(world);
@@ -368,7 +371,7 @@ class Roller : public Enemy {
             if (!on_ground(world)) {
                 start_falling();
                 world.animate(*this);
-                at_ = At::kShipFalling;
+                s.at = At::kShipFalling;
                 return;
             }
             turn_round(world);
@@ -443,9 +446,9 @@ class Roller : public Enemy {
             }
             world.play(*this, anim::kRollerStrikes);
             speed_x = 0;
-            still_touching_ = false;
+            s.still_touching = false;
             world.animate(*this);
-            at_ = At::kStriking;
+            s.at = At::kStriking;
             return;
         }
         if (message != 0 && told_walking(world)) {
@@ -467,14 +470,14 @@ class Roller : public Enemy {
     void when_striking(World& world) {
         if (saw.viking != kNobody) {
             target = saw.viking;
-            still_touching_ = true;
+            s.still_touching = true;
         }
         World::Offset to;
         if (level_with(world, to)) {
             if (to.ahead < 0) {
                 turn_round(world);
             }
-            if (animation_over() && still_touching_) {
+            if (animation_over() && s.still_touching) {
                 Entity* other = world.at(target);
                 if (other != nullptr && other->kind < kVikingSlots) {
                     harm(*other, message::kStruck, 2, facing_left());
@@ -495,7 +498,7 @@ class Roller : public Enemy {
             turn_round(world);
             return roll(world);
         }
-        still_touching_ = false;
+        s.still_touching = false;
         world.animate(*this);
     }
     void when_falling(World& world) {
@@ -508,7 +511,7 @@ class Roller : public Enemy {
         world.animate(*this);
     }
     void when_led(World& world) {
-        if (led_stamps_ && sprite.packed_frame == kStrikeOver) {
+        if (s.led_stamps && sprite.packed_frame == kStrikeOver) {
             world.shake_y = {.amount = 1, .offset = 0, .ticks = 4};
         }
         if (message != 0 && told_walking(world)) {
@@ -564,13 +567,13 @@ class Roller : public Enemy {
 
     void go(World& world, At at) {
         world.animate_on_ground(*this);
-        at_ = at;
+        s.at = at;
     }
 
     void fall(World& world) {
         start_falling();
         world.animate(*this);
-        at_ = At::kFalling;
+        s.at = At::kFalling;
     }
 
     // Rolling into a Viking: he is hurt, from the side the roller is on, and the roller turns. Not Erik while
@@ -628,7 +631,7 @@ class Roller : public Enemy {
         switch (message) {
             case message::kLedAttack:
                 lead(world, anim::kRollerStrikes, 0, true);
-                led_stamps_ = true;
+                s.led_stamps = true;
                 return true;
             case message::kLedStand:
                 lead(world, anim::kRollerWalks, 0, false);
@@ -657,16 +660,19 @@ class Roller : public Enemy {
     void lead(World& world, Animation animation, std::int16_t speed, bool moving) {
         speed_x = speed;
         follow(world, animation, moving ? Led::kMoving : Led::kStill);
-        led_stamps_ = false;
-        at_ = At::kLed;
+        s.led_stamps = false;
+        s.at = At::kLed;
     }
 
     void gone(World& world) { gone_for_good(world, *this); }
 
-    bool on_the_ship_ = false;
-    At at_ = At::kStart;
-    bool still_touching_ = false;
-    bool led_stamps_ = false;
+    struct Saved {
+        bool on_the_ship = false;
+        At at = At::kStart;
+        bool still_touching = false;
+        bool led_stamps = false;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 // The charger: it stands, hops (again and again: up and forward, down, a rest), and when a Viking is ahead of it
@@ -678,7 +684,7 @@ class Charger : public Enemy {
   public:
     Looks looks() const override {
         const Look shield_touched = touching_any(hit::kShield, &Saw::shield);
-        switch (at_) {
+        switch (s.at) {
             case At::kStanding:
             case At::kLanded:
                 return {touching_a_viking()};
@@ -695,7 +701,7 @@ class Charger : public Enemy {
 
   protected:
     void turn(World& world) override {
-        switch (at_) {
+        switch (s.at) {
             case At::kStart:
                 return at_start(world);
             case At::kStanding:
@@ -727,11 +733,11 @@ class Charger : public Enemy {
         }
     }
     void at_start(World& world) {
-        looks_ = world.database == database::kSpaceship ? &anim::kSpaceshipChargerLooks : &anim::kWackyChargerLooks;
+        s.spaceships = world.database == database::kSpaceship;
         take_kept_health();
         acts_as = tile::kEnemy;
         count_down_from(kBiteTicks);
-        world.play(*this, looks_->appears);
+        world.play(*this, shown().appears);
         world.animate(*this);
         if (world.database == database::kScenes && world.scene == scene::kShip) {  // the curtain call: it walks on
             world.play(*this, anim::kChargerWalks);
@@ -782,9 +788,9 @@ class Charger : public Enemy {
         if (saw.landed) {
             stop_falling();
             speed_x = 0;
-            world.play(*this, looks_->lands);
+            world.play(*this, shown().lands);
             world.animate(*this);
-            at_ = At::kLanded;
+            s.at = At::kLanded;
             return;
         }
         if (saw.shield != kNobody) {
@@ -813,7 +819,7 @@ class Charger : public Enemy {
             const World::Offset to = world.offset_to(*this, world.nearest_viking(*this));
             if (to.ahead >= 0 && to.below < 16 && to.below >= -16) {
                 countdown = kBiteTicks;
-                world.play(*this, looks_->winds_up);
+                world.play(*this, shown().winds_up);
                 speed_x = 0;
                 return go(world, At::kWindingUp);
             }
@@ -825,7 +831,7 @@ class Charger : public Enemy {
             return;
         }
         if (animation_over()) {
-            world.play(*this, looks_->dashes);
+            world.play(*this, shown().dashes);
             speed_x = px(12);
             return go(world, At::kDashing);
         }
@@ -879,7 +885,7 @@ class Charger : public Enemy {
             return;
         }
         if (animation_over()) {
-            world.play(*this, looks_->dashes);
+            world.play(*this, shown().dashes);
             speed_x = px(12);
             return go(world, At::kLedGoing);
         }
@@ -907,10 +913,10 @@ class Charger : public Enemy {
 
     void go(World& world, At at) {
         world.animate_on_ground(*this);
-        at_ = at;
+        s.at = at;
     }
     void stand(World& world) {
-        world.play(*this, looks_->stands);
+        world.play(*this, shown().stands);
         speed_x = 0;
         go(world, At::kStanding);
     }
@@ -922,7 +928,7 @@ class Charger : public Enemy {
             return come_down(world);
         }
         speed_y = px(-8);
-        world.play(*this, looks_->jumps);
+        world.play(*this, shown().jumps);
         rise(world);
     }
     void rise(World& world) {
@@ -930,18 +936,18 @@ class Charger : public Enemy {
             return come_down(world);
         }
         world.animate(*this);
-        at_ = At::kRising;
+        s.at = At::kRising;
     }
     void come_down(World& world) {
-        world.play(*this, looks_->comes_down);
+        world.play(*this, shown().comes_down);
         world.animate(*this);
-        at_ = At::kFalling;
+        s.at = At::kFalling;
     }
     void stop(World& world) {
-        world.play(*this, looks_->stops);
+        world.play(*this, shown().stops);
         speed_x = 0;
         world.animate(*this);
-        at_ = At::kStopping;
+        s.at = At::kStopping;
     }
     // In the air against Olaf's shield, from the side it faces: it turns back, and its next touch doesn't bite.
     void bounce(World& world) {
@@ -951,18 +957,18 @@ class Charger : public Enemy {
             return;
         }
         turn_round(world);
-        bounced_ = true;
+        s.bounced = true;
     }
     void bite(World& world, int who) {
         target = who;
-        if (!bounced_ && countdown == 0) {
+        if (!s.bounced && countdown == 0) {
             if (Entity* other = world.at(who)) {
                 harm(*other, message::kShot, 2, facing_left());
             }
             world.spawn(*this, kind::kSpark, x, y, 0, entity_flag::kLargePieces);
             countdown = kBiteTicks;
         }
-        bounced_ = false;
+        s.bounced = false;
     }
     bool told_all(World& world) {
         if (world.database == database::kSpaceship) {  // no director leads the spaceship's
@@ -975,7 +981,7 @@ class Charger : public Enemy {
         switch (message) {
             case message::kLedAttack:
                 message = 0;
-                world.play(*this, looks_->winds_up);
+                world.play(*this, shown().winds_up);
                 speed_x = 0;
                 go(world, At::kLedWindingUp);
                 return true;
@@ -1012,9 +1018,15 @@ class Charger : public Enemy {
         }
     }
 
-    At at_ = At::kStart;
-    const anim::ChargerLooks* looks_ = &anim::kWackyChargerLooks;
-    bool bounced_ = false;
+    const anim::ChargerLooks& shown() const noexcept {
+        return s.spaceships ? anim::kSpaceshipChargerLooks : anim::kWackyChargerLooks;
+    }
+    struct Saved {
+        At at = At::kStart;
+        bool spaceships = false;  // which world's looks he has: the spaceship's, or the wacky world's
+        bool bounced = false;
+    } s;
+    LVR_SAVES(Enemy)
 };
 
 }  // namespace

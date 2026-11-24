@@ -24,7 +24,7 @@ bool any(std::uint16_t keys, std::uint16_t a, std::uint16_t b, std::uint16_t c =
 class GameOver : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart:
                 return at_start(world);
             case State::kWaiting:
@@ -38,7 +38,7 @@ class GameOver : public Entity {
             case State::kPasswordShown:
                 if (any(world.pressed, key::kF, key::kS) || any(world.pressed, key::kE, key::kD)) {
                     world.clear_text();
-                    state_ = State::kPasswordGoing;
+                    s.state = State::kPasswordGoing;
                 }
                 return;
             case State::kPasswordGoing:
@@ -66,7 +66,7 @@ class GameOver : public Entity {
         count_down();
         world.current_viking = 0;
         countdown = 200;
-        state_ = State::kWaiting;
+        s.state = State::kWaiting;
     }
     void when_waiting(World& world) {
         if (any(world.pressed, key::kEnter, key::kF)) {
@@ -79,36 +79,36 @@ class GameOver : public Entity {
             return;
         }
         countdown = kBlinkTicks;
-        yes_ = true;
-        lit_ = true;
+        s.yes = true;
+        s.lit = true;
         ask(world);
-        state_ = State::kAsking;
+        s.state = State::kAsking;
         return show_choice(world);
     }
     void when_asking(World& world) {
         if ((world.held & key::kLeft) != 0) {
-            yes_ = true;
+            s.yes = true;
         } else if ((world.held & key::kRight) != 0) {
-            yes_ = false;
+            s.yes = false;
         } else if (any(world.held, key::kEnter, key::kF) || world.typed == 'Y' || world.typed == 'N') {
             world.clear_text();
-            state_ = State::kAnswered;
+            s.state = State::kAnswered;
             return;
         } else if (any(world.pressed, key::kS, key::kE, key::kD)) {
             return show_password(world, true);
         } else if (countdown == 0) {
             countdown = kBlinkTicks;
-            lit_ = !lit_;
+            s.lit = !s.lit;
         }
         return show_choice(world);
     }
     void when_answered(World& world) {
-        if (world.typed == 'Y' || (world.typed != 'N' && yes_)) {
+        if (world.typed == 'Y' || (world.typed != 'N' && s.yes)) {
             return revive(world);
         }
         world.game_over_scene.letters_fall = true;
         countdown = 200;
-        state_ = State::kLeaving;
+        s.state = State::kLeaving;
     }
     void when_password_coming(World& world) {
         world.colour_boxes(0);
@@ -119,29 +119,29 @@ class GameOver : public Entity {
                        .row = 12,
                        .value = world.password.at(i)});
         }
-        state_ = State::kPasswordShown;
+        s.state = State::kPasswordShown;
     }
     void when_password_going(World& world) {
-        if (!asked_) {
-            state_ = State::kWaiting;
+        if (!s.asked) {
+            s.state = State::kWaiting;
             return;
         }
         ask(world);
-        state_ = State::kAsking;
+        s.state = State::kAsking;
         return show_choice(world);
     }
     void when_striking(World& world) {
         if (animation_over()) {
-            world.game_over_scene.kept_health.at(static_cast<std::size_t>(struck_)) = kFullHealth;
-            world.play(*this, anim::kGameOverStruck.at(static_cast<std::size_t>(struck_)));
-            state_ = State::kStruck;
+            world.game_over_scene.kept_health.at(static_cast<std::size_t>(s.struck)) = kFullHealth;
+            world.play(*this, anim::kGameOverStruck.at(static_cast<std::size_t>(s.struck)));
+            s.state = State::kStruck;
         }
         world.animate(*this);
     }
     void when_struck(World& world) {
         if (animation_over()) {
             countdown = 30;
-            state_ = State::kBetweenStrikes;
+            s.state = State::kBetweenStrikes;
             return;
         }
         world.animate(*this);
@@ -150,7 +150,7 @@ class GameOver : public Entity {
         if (countdown == 0 || any(world.pressed, key::kEnter, key::kF)) {
             world.stop_sound(*this, effect::kDirge);
             world.game_over_scene.give_up = true;
-            state_ = State::kDone;
+            s.state = State::kDone;
         }
     }
 
@@ -185,28 +185,28 @@ class GameOver : public Entity {
                 world.say(*line);
             }
         };
-        if (yes_) {
-            put(lit_ ? 5 : 6, 15);
+        if (s.yes) {
+            put(s.lit ? 5 : 6, 15);
             put(4, 21);
         } else {
             put(5, 15);
-            put(lit_ ? 4 : 6, 21);
+            put(s.lit ? 4 : 6, 21);
         }
     }
 
     void show_password(World& world, bool asked) {
-        asked_ = asked;
+        s.asked = asked;
         world.clear_text();
-        state_ = State::kPasswordComing;
+        s.state = State::kPasswordComing;
     }
 
     // The next dead Viking is struck (Baleog first, then Erik, then Olaf); with none left the level starts again.
     void revive(World& world) {
         for (const int who : {1, 0, 2}) {
             if (world.game_over_scene.kept_health.at(static_cast<std::size_t>(who)) == 0) {
-                struck_ = who;
+                s.struck = who;
                 world.play(*this, anim::kGameOverStrikes.at(static_cast<std::size_t>(who)));
-                state_ = State::kStriking;
+                s.state = State::kStriking;
                 world.animate(*this);
                 return;
             }
@@ -215,14 +215,17 @@ class GameOver : public Entity {
         // start clears them anyway.)
         world.stop_sound(*this, effect::kDirge);
         world.game_over_scene.try_again = true;
-        state_ = State::kDone;
+        s.state = State::kDone;
     }
 
-    State state_ = State::kStart;
-    bool yes_ = true;
-    bool lit_ = true;
-    bool asked_ = false;
-    int struck_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        bool yes = true;
+        bool lit = true;
+        bool asked = false;
+        int struck = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // One Viking's figure: shown while he has health, unseen while he is dead.
@@ -231,12 +234,12 @@ class Figure : public Entity {
     void update(World& world) override {
         const std::size_t who =
             kind == game_over_kind::kBaleogsFigure ? 1 : (kind == game_over_kind::kEriksFigure ? 0 : 2);
-        if (shown_) {
+        if (s.shown) {
             return;
         }
         if (world.game_over_scene.kept_health.at(who) == 0) {
-            if (!hidden_) {
-                hidden_ = true;
+            if (!s.hidden) {
+                s.hidden = true;
                 world.hide_pieces(*this);
             }
             return;
@@ -244,12 +247,15 @@ class Figure : public Entity {
         world.show_pieces(*this);
         world.play(*this, anim::kGameOverVikingStands.at(who));
         world.animate(*this);
-        shown_ = true;
+        s.shown = true;
     }
 
   private:
-    bool shown_ = false;
-    bool hidden_ = false;
+    struct Saved {
+        bool shown = false;
+        bool hidden = false;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 // A part of the burning ship that drifts away: there only when a Viking is dead.
@@ -278,7 +284,7 @@ class BurningShip : public Entity {
 class Letters : public Entity {
   public:
     void update(World& world) override {
-        switch (state_) {
+        switch (s.state) {
             case State::kStart: {
                 world.play(*this, anim::kLettersAppears);
                 world.animate(*this);
@@ -287,28 +293,28 @@ class Letters : public Entity {
                     return;
                 }
                 world.play(*this, anim::kGameOverLetters.at(argument));
-                state_ = State::kWaiting;
+                s.state = State::kWaiting;
                 break;
             }
             case State::kWaiting:
                 if (world.game_over_scene.letters_fall) {
                     start_falling();
-                    state_ = State::kFalling;
+                    s.state = State::kFalling;
                 }
                 break;
             case State::kFalling:
                 if (y >= 80) {
                     speed_y = px(-6);
-                    lands_at_ = y;
+                    s.lands_at = y;
                     thud(world);
-                    state_ = State::kBouncing;
+                    s.state = State::kBouncing;
                 }
                 break;
             case State::kBouncing:
-                if (speed_y >= 0 && static_cast<std::uint16_t>(y) >= static_cast<std::uint16_t>(lands_at_)) {
+                if (speed_y >= 0 && static_cast<std::uint16_t>(y) >= static_cast<std::uint16_t>(s.lands_at)) {
                     stop_falling();
                     thud(world);
-                    state_ = State::kLying;
+                    s.state = State::kLying;
                     return;
                 }
                 break;
@@ -323,8 +329,11 @@ class Letters : public Entity {
 
     void thud(World& world) const { world.sound(*this, effect::kThud3C); }
 
-    State state_ = State::kStart;
-    std::int16_t lands_at_ = 0;
+    struct Saved {
+        State state = State::kStart;
+        std::int16_t lands_at = 0;
+    } s;
+    LVR_SAVES(Entity)
 };
 
 }  // namespace

@@ -31,8 +31,8 @@ void Viking::act_on(World& world) {
 }
 
 void Viking::ask(World& world) {
-    target = touched_;
-    if (Entity* thing = world.at(touched_)) {
+    target = s.touched;
+    if (Entity* thing = world.at(s.touched)) {
         if (thing->kind == kind::kTeleporter) {
             return step_into(world, *thing);
         }
@@ -59,7 +59,7 @@ void Viking::after_item(World& world) {
     if (inflated) {
         return inflated_steer(world);
     }
-    switch (doing_) {
+    switch (s.doing) {
         case Doing::kHurt:
         case Doing::kHurtFalling:
             return hurt_after_item(world);
@@ -115,12 +115,12 @@ bool Viking::use_item(World& world) {
     }
     const std::uint16_t item = chosen_item(world);
     std::uint16_t& armour = world.armour.at(static_cast<std::size_t>(slot));
-    if (who_ == kind::kBaleog && item == item::kFireArrows) {
-        if (has_fire_arrows_) {
+    if (s.who == kind::kBaleog && item == item::kFireArrows) {
+        if (s.has_fire_arrows) {
             sound(world, effect::kNothingToUse);
             return false;
         }
-        has_fire_arrows_ = true;
+        s.has_fire_arrows = true;
         sound(world, effect::kItemUsed);
         used_up(world);
         return false;
@@ -182,7 +182,7 @@ bool Viking::use_item(World& world) {
                 sound(world, effect::kNothingToUse);
                 return false;
             }
-            touch_class_ = hit_class::kTaker;
+            s.touch_class = hit_class::kTaker;
             wait(At::kHandingOver, {Test::kTouchesClass});
             return true;
     }
@@ -196,7 +196,7 @@ bool Viking::use_key(World& world, std::uint16_t lock_class) {
         return false;
     }
     world.animate(*this);
-    touch_class_ = lock_class;
+    s.touch_class = lock_class;
     if (speed_y > 0) {
         wait(At::kUsingKey, {Test::kWall, Test::kFloorOrCeiling, Test::kDeadly, Test::kTouchesClass});
     } else {
@@ -206,15 +206,15 @@ bool Viking::use_key(World& world, std::uint16_t lock_class) {
 }
 
 void Viking::hand_over(World& world) {
-    target = touched_;
-    world.tell(touched_, message::kAsked);
+    target = s.touched;
+    world.tell(s.touched, message::kAsked);
     sound(world, effect::kItemUsed);
     used_up(world);
 }
 
 // A turn of using a thing: a key, an item handed over, the action key's other uses.
 void Viking::resume_acting(World& world) {
-    switch (at_) {
+    switch (s.at) {
         case At::kUsingKey:
             if (found(Test::kWall)) {
                 speed_x = 0;
@@ -231,11 +231,11 @@ void Viking::resume_acting(World& world) {
             return after_item(world);
         case At::kHandingOver:
             if (found(Test::kTouchesClass)) {
-                const Entity* taker = world.at(touched_);
+                const Entity* taker = world.at(s.touched);
                 if (taker != nullptr && taker->wanted_item == chosen_item(world)) {
                     hand_over(world);
                 } else {
-                    target = touched_;
+                    target = s.touched;
                 }
             }
             return after_item(world);

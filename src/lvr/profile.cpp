@@ -1,12 +1,16 @@
 #include "lvr/profile.hpp"
 
+#include <array>
 #include <charconv>
 #include <cstddef>
 #include <format>
 #include <fstream>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <system_error>
+
+#include "lvr/archive.hpp"
 
 namespace lvr {
 
@@ -112,16 +116,19 @@ std::expected<SeenLevels, std::string> load_seen(const std::filesystem::path& fo
     });
 }
 
-std::expected<void, std::string> save_seen(const std::filesystem::path& folder, const SeenLevels& levels) {
+namespace {
+
+// A file written beside its place and then put there, so a write cut short doesn't leave half a file.
+std::expected<void, std::string> write_file(const std::filesystem::path& folder, std::string_view name,
+                                            std::string_view contents) {
     std::error_code error;
     std::filesystem::create_directories(folder, error);
-    // Written beside it and then put in its place, so a write cut short doesn't leave half a file.
-    const std::filesystem::path path = folder / kSeenFile;
+    const std::filesystem::path path = folder / name;
     std::filesystem::path beside = path;
     beside += ".new";
     {
         std::ofstream file{beside, std::ios::binary | std::ios::trunc};
-        file << format_seen(levels);
+        file.write(contents.data(), static_cast<std::streamsize>(contents.size()));
         if (!file) {
             return std::unexpected{std::format("can't write {}", beside.string())};
         }
@@ -131,6 +138,76 @@ std::expected<void, std::string> save_seen(const std::filesystem::path& folder, 
         return std::unexpected{std::format("can't write {}: {}", path.string(), error.message())};
     }
     return {};
+}
+
+constexpr std::string_view kQuicksaveFile = "quicksave.bin";
+constexpr std::array<std::uint8_t, 4> kQuicksaveKind{'L', 'V', 'R', 'Q'};
+
+// A sum over the world's bytes (FNV-1a), written after them: a file that was damaged isn't read as a world.
+std::uint64_t sum_of(const std::vector<std::uint8_t>& bytes) noexcept {
+    constexpr std::uint64_t kPrime = 0x100000001b3ULL;
+    std::uint64_t sum = 0xcbf29ce484222325ULL;
+    for (const std::uint8_t byte : bytes) {
+        sum = (sum ^ byte) * kPrime;
+    }
+    return sum;
+}
+
+}  // namespace
+
+std::expected<void, std::string> save_seen(const std::filesystem::path& folder, const SeenLevels& levels) {
+    return write_file(folder, kSeenFile, format_seen(levels));
+}
+
+std::expected<std::optional<SavedPlay>, std::string> load_quicksave(const std::filesystem::path& folder) {
+    const std::filesystem::path path = folder / kQuicksaveFile;
+    std::ifstream file{path, std::ios::binary};
+    if (!file) {
+        return std::optional<SavedPlay>{};
+    }
+    std::stringstream text;
+    text << file.rdbuf();
+    const std::string contents = text.str();
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): the file's bytes as bytes
+    Reader from{std::span{reinterpret_cast<const std::uint8_t*>(contents.data()), contents.size()}};
+    std::array<std::uint8_t, 4> kind{};
+    std::uint32_t version = 0;
+    SavedPlay play;
+    from(kind);
+    from(version);
+    from(play.remaster);
+    from(play.scene);
+    from(play.database_entry);
+    from(play.world);
+    std::uint64_t sum = 0;
+    from(sum);
+    if (kind != kQuicksaveKind) {
+        return std::unexpected{std::format("{}: not a quicksave", path.string())};
+    }
+    if (version != kStateVersion) {
+        return std::unexpected{
+            std::format("{}: written by another version of the game (its state is version {}, "
+                        "this game's is {}): it can't be read",
+                        path.string(), version, kStateVersion)};
+    }
+    if (!from.done() || sum != sum_of(play.world)) {
+        return std::unexpected{std::format("{}: the quicksave is damaged", path.string())};
+    }
+    return play;
+}
+
+std::expected<void, std::string> save_quicksave(const std::filesystem::path& folder, const SavedPlay& play) {
+    std::vector<std::uint8_t> bytes;
+    Writer to{bytes};
+    to(kQuicksaveKind);
+    to(kStateVersion);  // first after the file's kind: read before anything else is believed
+    to(play.remaster);
+    to(play.scene);
+    to(play.database_entry);
+    to(play.world);
+    to(sum_of(play.world));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): the bytes as a file's
+    return write_file(folder, kQuicksaveFile, {reinterpret_cast<const char*>(bytes.data()), bytes.size()});
 }
 
 }  // namespace lvr

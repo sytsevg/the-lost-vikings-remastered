@@ -72,7 +72,7 @@ inline const Types& types() {
 
 class Viking : public Entity {
   public:
-    explicit Viking(std::uint16_t who) : who_{who} {}
+    explicit Viking(std::uint16_t who) { s.who = who; }
     void update(World& world) override { resume(world); }
     // The terrain tests of the place he waits at, in their order; each may push him back.
     void after_move(World& world) override;
@@ -81,8 +81,8 @@ class Viking : public Entity {
     // is his turn when the scene ends, as every entity has it then: a living one is gone before it fades out.
     void outside_active_area(World& world) override;
     // Olaf's shield asks: held up, or not held at all.
-    bool shield_up() const noexcept { return shield_up_; }
-    bool shield_away() const noexcept { return shield_away_; }
+    bool shield_up() const noexcept { return s.shield_up; }
+    bool shield_away() const noexcept { return s.shield_away; }
 
   private:
     // Where his turn ended.
@@ -176,7 +176,7 @@ class Viking : public Entity {
         kDeadly,          // moved up or down into something deadly
         kLands,           // landed, on what he can stand on
         kLandsAnywhere,
-        kTouchesClass,  // something of the hit class he looks for (touch_class_)
+        kTouchesClass,  // something of the hit class he looks for (s.touch_class)
         kTouchesEnemy,  // someone Erik's charge hits
         kTouchesThing,  // something that answers when acted on
     };
@@ -361,29 +361,32 @@ class Viking : public Entity {
     void draw_bow(World& world);
     void baleog_waits(World& world, At at);
     void baleog_goes_on(World& world);
-    std::uint16_t who_;
-    At at_ = At::kStart;
-    Doing doing_ = Doing::kStanding;
-    std::array<Test, 4> tests_{};
-    std::array<bool, 4> hit_{};
-    int touched_ = kNobody;
-    bool fall_shown_ = false;  // which animation of falling is playing
-    bool long_fall_shown_ = false;
-    bool returns_to_landing_ = false;  // dizzy from a hard landing, and nothing called since (see dizzy_after_item)
-    Animation after_step_{};           // the animation that follows the step onto a ladder
-    int crush_parts_left_ = 0;
-    TeleporterDestination teleports_to_;
-    bool beamed_ = false;              // told to go to World::beam (the ship's last level), not by a teleporter
-    std::uint16_t touch_class_ = 0;    // what Test::kTouchesClass looks for
-    bool hit_from_the_front_ = false;  // the last blow: he is knocked back; from behind, forward
-    std::size_t swing_ = 0;            // Baleog: which of his two swings
-    bool has_fire_arrows_ = false;     // Baleog used the fire arrows item
-    bool shield_up_ = false;           // Olaf: over his head, not before him
-    bool warned_ = false;              // blown up: the air is running out
-    bool deflating_ = false;           // ... or is on its way out
-    std::uint16_t crane_ = 0;          // at a crane's controls: which crane
-    bool shield_away_ = false;         // he can't hold it now: climbing, pushing, dead
-    bool glides_fast_ = false;         // which animation of gliding is playing
+    struct Saved {
+        std::uint16_t who;
+        At at = At::kStart;
+        Doing doing = Doing::kStanding;
+        std::array<Test, 4> tests{};
+        std::array<bool, 4> hit{};
+        int touched = kNobody;
+        bool fall_shown = false;  // which animation of falling is playing
+        bool long_fall_shown = false;
+        bool returns_to_landing = false;  // dizzy from a hard landing, and nothing called since (see dizzy_after_item)
+        Animation after_step{};           // the animation that follows the step onto a ladder
+        int crush_parts_left = 0;
+        TeleporterDestination teleports_to;
+        bool beamed = false;              // told to go to World::beam (the ship's last level), not by a teleporter
+        std::uint16_t touch_class = 0;    // what Test::kTouchesClass looks for
+        bool hit_from_the_front = false;  // the last blow: he is knocked back; from behind, forward
+        std::size_t swing = 0;            // Baleog: which of his two swings
+        bool has_fire_arrows = false;     // Baleog used the fire arrows item
+        bool shield_up = false;           // Olaf: over his head, not before him
+        bool warned = false;              // blown up: the air is running out
+        bool deflating = false;           // ... or is on its way out
+        std::uint16_t crane = 0;          // at a crane's controls: which crane
+        bool shield_away = false;         // he can't hold it now: climbing, pushing, dead
+        bool glides_fast = false;         // which animation of gliding is playing
+    } s;
+    LVR_SAVES(Entity)
 };
 
 }  // namespace lvr
