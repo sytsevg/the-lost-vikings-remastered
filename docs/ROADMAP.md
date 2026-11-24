@@ -16,11 +16,6 @@ The whole game under Vanilla rules, with Classic visuals and both sounds.
   MIDI through a SoundFont), swappable while playing.
 - **`vikings-remaster`:** the game in a window, keyboard and gamepad, rebindable keys.
 
-## Next: loose ends
-
-- The game in a window has been played little: the checks run it without one.
-- Squash the history before publishing ([`HANDOVER.md`](HANDOVER.md)).
-
 ## M7: QoL rules
 [`decisions.md`](decisions.md), ADR-0011.
 - Zoom-out (2× by default, 4× allowed in the configuration); the active area follows the zoomed view
