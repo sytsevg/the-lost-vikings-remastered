@@ -22,6 +22,7 @@
 #include "audio/player.hpp"
 #include "lvr/minimap.hpp"
 #include "lvr/play.hpp"
+#include "lvr/profile.hpp"
 #include "lvr/render.hpp"
 #include "lvr/sprites.hpp"
 
@@ -82,6 +83,11 @@ class Session {
     // Remaster rules' minimap, as the last step left it: the level as far as a view has shown it since the game
     // was started. None in a scene that isn't a level, under Vanilla rules, or while it is switched off.
     const Minimap* minimap() const noexcept { return minimap_on_ && !minimap_.pixels.empty() ? &minimap_ : nullptr; }
+    // The player's profile is kept in `folder` from here on (Remaster rules; Vanilla keeps none): what is there is
+    // read now, and written by save_profile() and whenever a scene is loaded. An error says what couldn't be read;
+    // the profile is used all the same, and the file that couldn't be read is written over at the next save.
+    std::expected<void, std::string> use_profile(const std::filesystem::path& folder);
+    std::expected<void, std::string> save_profile() const;
     void toggle_minimap() noexcept {
         if (!minimap_.pixels.empty()) {  // only where there is one: in a level
             minimap_on_ = !minimap_on_;
@@ -203,8 +209,9 @@ class Session {
     bool save_wanted_ = false;
     bool load_wanted_ = false;
     std::vector<std::int16_t>
-        heard_;  // live: the sound of the last ten seconds as it was heard, for hearing it backwards
-    std::map<int, std::vector<bool>> seen_;  // by level: the cells a view has shown
+        heard_;        // live: the sound of the last ten seconds as it was heard, for hearing it backwards
+    SeenLevels seen_;  // by level: what a view has shown of it (the minimap's pixels)
+    std::filesystem::path profile_;  // where the player's profile is kept; empty: nowhere
     Minimap minimap_;
     bool minimap_on_ = true;
     int zoom_pictures_ = 0;

@@ -111,6 +111,7 @@ lvr_target_defaults(lvr_engine)
 
 # --- The engine as a game to play: its pictures and sound per refresh (what a front end needs) ---
 add_library(lvr_session STATIC
+    lvr/profile.cpp
     lvr/session.cpp)
 add_library(lvr::session ALIAS lvr_session)
 target_include_directories(lvr_session PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -215,6 +216,7 @@ if(LVR_BUILD_TESTS)
         lvr/tests/test_level.cpp
         lvr/tests/test_minimap.cpp
         lvr/tests/test_movement.cpp
+        lvr/tests/test_profile.cpp
         lvr/tests/test_play.cpp
         lvr/tests/test_render.cpp
         lvr/tests/test_session.cpp

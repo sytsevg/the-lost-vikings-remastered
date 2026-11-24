@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 
 #include "lvr/play.hpp"
 #include "lvr/render.hpp"
@@ -329,4 +330,56 @@ TEST_CASE("real data: live, the sound of the rewound seconds is heard backwards"
     session.render_live(160000, rest);
     CHECK(rest.at(319998) == 0);
     CHECK(rest.at(319999) == 0);
+}
+
+TEST_CASE("real data: what the minimap has seen is kept in the profile from one run to the next", "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    const std::filesystem::path folder = std::filesystem::temp_directory_path() / "lvr-test-session-profile";
+    std::filesystem::remove_all(folder);
+    std::vector<std::uint8_t> zoomed_out;
+    {
+        auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+        REQUIRE(opened);
+        Session& session = **opened;
+        REQUIRE(session.use_profile(folder));
+        session.zoom(2);  // the larger view shows more
+        for (int step = 0; step < 30; ++step) {
+            session.step(0);
+        }
+        REQUIRE(session.minimap() != nullptr);
+        zoomed_out = session.minimap()->pixels;
+        REQUIRE(session.save_profile());
+    }
+    CHECK(std::filesystem::exists(folder / "minimap.txt"));
+    {
+        // Another run: what the last one saw is there at once, though this one's view is the original's.
+        auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+        REQUIRE(opened);
+        Session& session = **opened;
+        session.step(0);
+        REQUIRE(session.minimap() != nullptr);
+        CHECK(session.minimap()->pixels != zoomed_out);
+        REQUIRE(session.use_profile(folder));
+        REQUIRE(session.minimap() != nullptr);
+        CHECK(session.minimap()->pixels == zoomed_out);
+    }
+    {
+        // A file that can't be read: said, and the game goes on without it. Vanilla rules keep no profile.
+        std::ofstream{folder / "minimap.txt"} << "rubbish";
+        auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+        REQUIRE(opened);
+        CHECK_FALSE((*opened)->use_profile(folder));
+        (*opened)->step(0);
+        CHECK((*opened)->minimap() != nullptr);
+        REQUIRE((*opened)->save_profile());  // written over
+        auto vanilla = Session::open(LVR_ORIGINAL_DIR, 1);
+        REQUIRE(vanilla);
+        std::filesystem::remove_all(folder);
+        REQUIRE((*vanilla)->use_profile(folder));
+        REQUIRE((*vanilla)->save_profile());
+        CHECK_FALSE(std::filesystem::exists(folder));
+    }
+    std::filesystem::remove_all(folder);
 }

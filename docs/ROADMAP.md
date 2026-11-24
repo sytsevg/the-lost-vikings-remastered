@@ -22,8 +22,8 @@ The whole game under Vanilla rules, with Classic visuals and both sounds.
 ## M7: Remaster rules
 [`decisions.md`](decisions.md), ADR-0011. Zoom-out, the GPU renderer it is shown by, the minimap, the
 rewind and a quicksave (in memory) are built.
-- The player's profile on disk, and with it: the quicksave written to a file, and what the minimap has seen
-  kept from one run of the game to the next
+- The quicksave written to a file in the player's profile (the profile itself, with what the minimap has seen,
+  is built)
 
 ## M8: Modern visuals and sound
 - **Events for effects:** the moments in an animation an effect can answer to (a frame shown, a sound asked for,

@@ -188,6 +188,37 @@ Screen::Part Session::part_shown(const View& view) {
     return part;
 }
 
+std::expected<void, std::string> Session::use_profile(const std::filesystem::path& folder) {
+    if (play_.world.rules != Rules::kRemaster) {
+        return {};
+    }
+    profile_ = folder;
+    auto seen = load_seen(folder);
+    if (!seen) {
+        return std::unexpected{seen.error()};
+    }
+    // What this run has seen so far stays, with what was kept added to it where the size is the same.
+    for (auto& [level, kept] : *seen) {
+        SeenLevel& now = seen_[level];
+        if (now.seen.size() != kept.seen.size() || now.width != kept.width) {
+            now = std::move(kept);
+            continue;
+        }
+        for (std::size_t pixel = 0; pixel < now.seen.size(); ++pixel) {
+            now.seen[pixel] = now.seen[pixel] || kept.seen[pixel];
+        }
+    }
+    update_minimap();
+    return {};
+}
+
+std::expected<void, std::string> Session::save_profile() const {
+    if (profile_.empty()) {
+        return {};
+    }
+    return save_seen(profile_, seen_);
+}
+
 // After a step: what the view shows now is seen, and the minimap is drawn again.
 void Session::update_minimap() {
     const World& world = play_.world;
@@ -195,9 +226,11 @@ void Session::update_minimap() {
         minimap_ = {};
         return;
     }
-    std::vector<bool>& seen = seen_[world.level];
-    reveal(seen, world);
-    minimap_ = draw_minimap(world, seen);
+    SeenLevel& seen = seen_[world.level];
+    seen.width = world.map.width * kMinimapCell;
+    seen.height = world.map.height * kMinimapCell;
+    reveal(seen.seen, world);  // (what was kept for a map of another size is dropped there)
+    minimap_ = draw_minimap(world, seen.seen);
 }
 
 Screen Session::picture() {
@@ -480,6 +513,9 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
         last_ = shown.back();
     }
     update_minimap();
+    if (play_.scene_loaded) {  // a good moment to write the profile: nothing moves
+        (void)save_profile();
+    }
     return shown;
 }
 

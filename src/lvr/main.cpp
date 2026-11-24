@@ -5,6 +5,8 @@
 //
 //   vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] [--soundfont FILE]
 //                    [--rules vanilla|remaster] [--cheat]
+//       --profile DIR: where Remaster rules keep the player's profile (what the minimap has seen); by default
+//       the folder `profiles` beside this program.
 //       --cheat: the game's cheat on from the start, as if its password had been typed at the title: F5 and F6
 //       change the level, and under Remaster rules F7 and F8 are a quicksave and its load.
 //       play, from scene N (default 39, the first logo; 0-36 are the levels); FILE: other keys, lines
@@ -394,8 +396,9 @@ int main(int argc, char* argv[]) try {
     int steps = 0;
     Rules rules = Rules::kVanilla;
     bool cheat = false;
-    int zoom = 0;     // a dump: this many steps of zoom out ...
-    int zoom_at = 0;  // ... asked for before this step
+    std::filesystem::path profile;  // Remaster rules: where the player's profile is kept
+    int zoom = 0;                   // a dump: this many steps of zoom out ...
+    int zoom_at = 0;                // ... asked for before this step
     const std::vector<std::string_view> args(argv + 1, argv + argc);
     for (std::size_t i = 0; i < args.size(); ++i) {
         const auto value = [&](std::size_t ahead) { return i + ahead < args.size() ? args[i + ahead] : ""; };
@@ -410,6 +413,9 @@ int main(int argc, char* argv[]) try {
             ++i;
         } else if (args[i] == "--cheat") {
             cheat = true;
+        } else if (args[i] == "--profile" && i + 1 < args.size()) {
+            profile = args[i + 1];
+            ++i;
         } else if (args[i] == "--soundfont" && i + 1 < args.size()) {
             sound.soundfont = args[i + 1];
             ++i;
@@ -431,10 +437,10 @@ int main(int argc, char* argv[]) try {
             dump_to = args[i + 2];
             i += 2;
         } else {
-            std::println(
-                stderr,
-                "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] "
-                "[--soundfont FILE] [--rules vanilla|remaster] [--cheat] [--dump STEPS FILE.png [--wav FILE.wav]]");
+            std::println(stderr,
+                         "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] "
+                         "[--soundfont FILE] [--rules vanilla|remaster] [--cheat] [--profile DIR] [--dump STEPS "
+                         "FILE.png [--wav FILE.wav]]");
             return EXIT_FAILURE;
         }
     }
@@ -481,6 +487,20 @@ int main(int argc, char* argv[]) try {
     if (cheat) {
         (*session)->cheat();
     }
+    // The player's profile (Remaster rules, in a window): in the folder asked for, or `profiles` beside the game's
+    // own program, where it is found without knowing where to look.
+    if (rules == Rules::kRemaster && dump_to.empty()) {
+        if (profile.empty()) {
+            if (const char* beside = SDL_GetBasePath()) {
+                profile = std::filesystem::path{beside} / "profiles";
+            }
+        }
+        if (!profile.empty()) {
+            if (const auto used = (*session)->use_profile(profile); !used) {
+                std::println(stderr, "vikings-remaster: the profile: {}", used.error());
+            }
+        }
+    }
     if (!dump_to.empty()) {
         return dump(**session, steps, dump_to, wav, gpu.get(), zoom, zoom_at);
     }
@@ -497,6 +517,9 @@ int main(int argc, char* argv[]) try {
         bindings = std::move(*parsed);
     }
     const int status = play(**session, bindings, window, gpu.get());
+    if (const auto saved = (*session)->save_profile(); !saved) {
+        std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
+    }
     if (gpu != nullptr) {
         gpu.reset();
         SDL_DestroyWindow(window);

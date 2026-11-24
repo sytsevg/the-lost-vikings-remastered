@@ -1,0 +1,35 @@
+#pragma once
+
+// The player's profile: what is theirs and not the simulation's, kept in a folder from one run of the game to the
+// next (ADR-0011, Remaster rules). So far: how much of each level the minimap has seen.
+
+#include <expected>
+#include <filesystem>
+#include <map>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace lvr {
+
+// What the minimap has seen of a level: a flag for every pixel of the minimap, row by row (minimap.hpp).
+struct SeenLevel {
+    int width = 0;
+    int height = 0;
+    std::vector<bool> seen;
+
+    bool operator==(const SeenLevel&) const = default;
+};
+using SeenLevels = std::map<int, SeenLevel>;  // by level, 1-37
+
+// As text: a line naming the file's kind, then for each level a line with its number and the size, and a line of
+// runs: how many pixels in a row were not seen, then how many were, in turn.
+std::string format_seen(const SeenLevels& levels);
+std::expected<SeenLevels, std::string> parse_seen(std::string_view text);
+
+// The profile's files in `folder`. Reading: what there is; a file that is missing gives nothing, one that can't be
+// understood an error (and is then best left alone). Writing makes the folder if need be.
+std::expected<SeenLevels, std::string> load_seen(const std::filesystem::path& folder);
+std::expected<void, std::string> save_seen(const std::filesystem::path& folder, const SeenLevels& levels);
+
+}  // namespace lvr

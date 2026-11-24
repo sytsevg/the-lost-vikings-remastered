@@ -192,7 +192,7 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   by a column of its stone tiles to make room (it slides aside, then the minimap fades in; the other way round
   when it is put away); zoomed out the smaller HUD is clear of the corner and stays in the middle. M puts it
   away (not Tab, which is the inventory). What was seen is the player's, not the simulation's: `Session` keeps
-  it per level, for now only until the game is closed (the player's profile on disk is still to come).
+  it per level, and it is kept in the player's profile (below).
 - **Rewind** (built): while Backspace is held, time runs backwards at twice its speed, as far as the last 10
   seconds of play in levels reach; there the rewind is over and the play goes on. Let go earlier, the play goes
   on from where it is. The
@@ -210,8 +210,12 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   game is closed.
 - **No autosave and no level select** (taken out of M7): the passwords are how a level is reached, under both
   rules.
-- **For later, with the player's profile on disk:** the quicksave written to a file, and what the minimap has
-  seen kept from one run to the next.
+- **The player's profile** (built): a folder of what is the player's and not the simulation's, kept from one
+  run to the next; Vanilla rules keep none. By default the folder `profiles` beside the game's program, where it is found without knowing
+  where to look (not a folder somewhere in the user's home); or `--profile DIR`. In it so far `minimap.txt`: what the minimap has seen of each level, as text (runs of seen
+  and unseen pixels). It is read at the start and written when a scene is loaded and when the game is closed; a
+  file that can't be read is said and written over.
+- **For later:** the quicksave written to a file in the profile.
 - **An unlimited active area** is not built: one player doesn't need it. It comes back with co-op (ADR-0012),
   where several views share one world: either the active area is every view's together, or everything runs.
 

@@ -40,10 +40,10 @@ Built:
   `kOriginalPieces` are Vanilla's 20 and 128). The layer's size and its three pools are a `PieceLayout`.
 
 - **The minimap** (`minimap.*`, M): a picture of the whole level from the map's tile types, with how much of
-  it a view has shown in its alpha (`Session::seen_`, per level and per pixel of the minimap, forgotten when the
-  game is closed). The GPU renderer shows a square of it around the view in the bottom left corner
-  (`gpu_over.frag`): it adds what the view shows now and the Vikings (`Screen::level_x`, `Screen::vikings`) at
-  every refresh, and moves the HUD right for it.
+  it a view has shown in its alpha (`Session::seen_`, per level and per pixel of the minimap, kept in the
+  profile). The GPU renderer shows a square of it around the view in the bottom left corner (`gpu_over.frag`): it
+  adds what the view shows now and the Vikings (`Screen::level_x`, `Screen::vikings`) at every refresh, and moves
+  the HUD right for it.
 
 - **Rewind and quicksave** (`Session`, Backspace; F7 and F8 with the cheat on): `World` can be copied (its
   slots are `OwnedEntity`, whose copy is the entity's clone), and `Play::Snapshot` is a world with its level.
@@ -61,10 +61,10 @@ Open:
   together or everything runs (ADR-0011). Not decided.
 - **Not checked by anything but the eye:** whatever the GPU renderer shows beyond the original's view, and
   whether a level still plays well zoomed out (enemies run for longer and further; nothing resets as often).
-- **What the minimap has seen and the quicksave are the player's**, outside the simulation: they must never change
-  what a replay shows. There is no profile or configuration file yet, so the minimap's fog starts over with
-  every run and the quicksave is gone when the game is closed (both are to go to disk with the profile); the game takes command-line options only
-  (`src/lvr/main.cpp`).
+- **The quicksave on disk.** The profile (`profile.*`, `Session::use_profile`) is a folder with, so far, what
+  the minimap has seen (`minimap.txt`). The quicksave is still only in memory: a `World` can be copied but not
+  written out, and its entities are some 150 classes with state of their own. What is the player's must never
+  change what a replay shows.
 - **Input per player** was planned from the start (ADR-0012) but the engine takes one keyboard word. Not needed
   for M7; worth not making harder.
 
