@@ -454,7 +454,7 @@ class LevelEnd : public Entity {
 // Whether a Viking can be spoken to by an entity: on his feet, the one being played with the view at rest, and
 // the entity itself well in view.
 bool can_talk(const World& world, const Entity& speaker, int viking_slot) {
-    const Entity* viking = viking_slot >= 0 && viking_slot < kSlots ? world.at(viking_slot) : nullptr;
+    const Entity* viking = viking_slot >= 0 && viking_slot < world.slots() ? world.at(viking_slot) : nullptr;
     return viking != nullptr && !viking->is_falling() && world.can_be_spoken_to(*viking) && world.well_in_view(speaker);
 }
 
@@ -805,7 +805,7 @@ class Talker : public Entity {
 
   private:
     void talk(World& world) {
-        const Entity* viking = target >= 0 && target < kSlots ? world.at(target) : nullptr;
+        const Entity* viking = target >= 0 && target < world.slots() ? world.at(target) : nullptr;
         if (viking == nullptr || viking->is_falling() || !world.can_be_spoken_to(*viking) ||
             !world.well_in_view(*this)) {
             return;

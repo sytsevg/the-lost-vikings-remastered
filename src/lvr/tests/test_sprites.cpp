@@ -431,3 +431,57 @@ TEST_CASE("real data: the animation tables", "[real-data]") {
     CHECK(tables->buffer_offsets[1] > tables->buffer_offsets[0]);
     CHECK_FALSE(load_animation_tables(files->exe().first(100), files->release()));
 }
+
+TEST_CASE("pieces: Remaster rules' layer has the same three pools, larger, and a frame buffer to each middle piece") {
+    Pieces pieces{kRemasterPieces};
+    CHECK(pieces.size() == 2048);
+    CHECK(pieces.layout() == kRemasterPieces);
+    CHECK(Pieces{}.size() == kPieces);
+    // The pools in the original's order (the front one has the lowest pieces: drawn over the others), none shared.
+    Sprite front{.count = 2};
+    Sprite middle{.count = 1};
+    Sprite back{.count = 3};
+    REQUIRE(take_pieces(pieces, front, Pool::kFront, PieceStart{}));
+    REQUIRE(take_pieces(pieces, middle, Pool::kMiddle, PieceStart{}));
+    REQUIRE(take_pieces(pieces, back, Pool::kBack, PieceStart{}));
+    CHECK(front.first == 0);
+    CHECK(middle.first == 256);
+    CHECK(back.first == 512);
+    // Far more of the Vikings' and enemies' pool than the original's 16.
+    for (int taken = 1; taken < 256; ++taken) {
+        Sprite more{.count = 1};
+        REQUIRE(take_pieces(pieces, more, Pool::kMiddle, PieceStart{}));
+        CHECK(more.first == 256 + taken);
+    }
+    Sprite one_too_many{.count = 1};
+    CHECK_FALSE(take_pieces(pieces, one_too_many, Pool::kMiddle, PieceStart{}));
+
+    // Two pieces of the middle pool, each showing what was unpacked for it: a frame with one pixel, in its colours.
+    SpriteMemory memory;
+    std::vector<std::byte> set{std::byte{2}, std::byte{0}, std::byte{0x80}, std::byte{0x10}};
+    set.insert(set.end(), 127, std::byte{0});
+    memory.packed_sets = {set};
+    for (const int index : {300, 511}) {
+        pieces.at(static_cast<std::size_t>(index)) = Piece{.in_use = true,
+                                                           .shape = 2,
+                                                           .packed = true,
+                                                           .colour = static_cast<std::uint8_t>(index == 300 ? 3 : 5),
+                                                           .size = 32,
+                                                           .from = Piece::From::kUnpacked,
+                                                           .frame = 1,
+                                                           .packed_set = 0};
+    }
+    PiecePainter painter;
+    painter.unpack(pieces, Sprite{.first = 300, .count = 1, .packed_frame = 0}, memory);
+    painter.unpack(pieces, Sprite{.first = 511, .count = 1, .packed_frame = 0}, memory);
+    // A piece outside the middle pool has no buffer: nothing is unpacked for it, and it shows nothing.
+    pieces.at(600) = pieces.at(300);
+    painter.unpack(pieces, Sprite{.first = 600, .count = 1, .packed_frame = 0}, memory);
+    std::vector<int> seen;
+    for (const PiecePicture& picture : painter.pictures(pieces, memory)) {
+        if (picture.image.width == 32) {
+            seen.push_back(picture.image.at(0, 0));
+        }
+    }
+    CHECK(seen == std::vector<int>{0x80 | 0x50 | 1, 0x80 | 0x30 | 1});  // the last piece first
+}

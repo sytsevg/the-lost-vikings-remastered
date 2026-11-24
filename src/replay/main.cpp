@@ -8,6 +8,8 @@
 //                                           a new replay only (it pins what the engine does now)
 //   lv-replay --shot FILE.png REPLAY       write what the engine shows at the replay's last refresh (the picture
 //                                           tools/lockstep.py sets beside the original's in DOSBox)
+//       --gpu          the pictures drawn by the GPU renderer (lvr/gpu.hpp) instead of the Classic one: they are
+//                      to be the same
 //       --data DIR     the game's files (default gamedata/original)
 //       --out DIR      where a difference is written (default gamedata/previews/match): per replay
 //                      NAME-shown.png (the picture at the first refresh that differs) and NAME.txt (which
@@ -31,6 +33,7 @@
 
 #include "assets/graphics.hpp"
 #include "image/png.hpp"
+#include "lvr/gpu.hpp"
 #include "replay/golden.hpp"
 #include "replay/player.hpp"
 #include "replay/replay.hpp"
@@ -47,15 +50,31 @@ struct Options {
     fs::path data = "gamedata/original";
     fs::path out = "gamedata/previews/match";
     fs::path shot;
+    bool gpu = false;
     std::vector<fs::path> replays;
 };
 
 using PlayerPtr = std::expected<std::unique_ptr<Player>, std::string>;
 
+// The GPU renderer, opened when first asked for; the process ends if there is none or it fails.
+void draw_on_gpu(Screen& screen, const View& view, const SceneGraphics& scene, const SharedGraphics& shared) {
+    static const std::unique_ptr<GpuRenderer> renderer = [] {
+        auto opened = GpuRenderer::open_headless();
+        if (!opened) {
+            std::println(stderr, "the GPU renderer: {}", opened.error());
+            std::exit(EXIT_FAILURE);
+        }
+        return std::move(*opened);
+    }();
+    if (const auto drawn = renderer->draw(screen, view, scene, shared); !drawn) {
+        std::println(stderr, "the GPU renderer: {}", drawn.error());
+        std::exit(EXIT_FAILURE);
+    }
+}
+
 PlayerPtr open_engine(const Options& options, const Replay& replay) {
-    return LvrPlayer::open(options.data, replay).transform([](auto player) -> std::unique_ptr<Player> {
-        return player;
-    });
+    return LvrPlayer::open(options.data, replay, options.gpu ? Draw{draw_on_gpu} : Draw{draw})
+        .transform([](auto player) -> std::unique_ptr<Player> { return player; });
 }
 
 bool write_picture(const fs::path& path, const std::vector<std::uint8_t>& pixels, const assets::Palette& palette) {
@@ -169,7 +188,8 @@ bool run(const Options& options, const fs::path& path) {
 }
 
 void print_usage() {
-    std::println(stderr, "usage: lv-replay [--check | --record | --shot FILE.png] [--data DIR] [--out DIR] REPLAY...");
+    std::println(stderr,
+                 "usage: lv-replay [--check | --record | --shot FILE.png] [--gpu] [--data DIR] [--out DIR] REPLAY...");
 }
 
 int run_all(int argc, char** argv) {
@@ -181,6 +201,8 @@ int run_all(int argc, char** argv) {
             options.mode = Mode::kRecord;
         } else if (arg == "--check") {
             options.mode = Mode::kCheck;
+        } else if (arg == "--gpu") {
+            options.gpu = true;
         } else if (arg == "--shot" && i + 1 < args.size()) {
             options.mode = Mode::kShot;
             options.shot = args[++i];

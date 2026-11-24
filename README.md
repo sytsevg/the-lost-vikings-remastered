@@ -2,7 +2,7 @@
 
 This started as a way to learn how to remaster one of my favorite DOS games. The game is The Lost Vikings (Silicon &
 Synapse, 1993), the result is a remake with the whole game running on an engine written from transcriptions of the
-original's behavior. The reason I wanted to remaster it was because of the QoL improvements I wanted to add, and visual
+original's behavior. The reason I wanted to remaster it was because of the quality-of-life improvements I wanted to add, and visual
 changes to improve the experience.
 
 The repo has no game data in it, no art and no text. You need to provide your own copy of the original DOS game
@@ -54,8 +54,10 @@ the code is put together, start with [`docs/architecture.md`](docs/architecture.
 
 ## What's next
 
-Right now it plays the game as it was. What comes next is all optional and switchable: zooming out, a
-minimap, rewind, proper saves; smoother and prettier visuals; and co-op for three, one Viking each. The plan is
+By default it plays the game as it was. Started with `--rules remaster` it plays by its own rules on top, drawn
+on the graphics card: so far that is zooming out (`-` and `=`, or the mouse wheel) and no limit on how many
+creatures a level can have going at once. What comes next is all optional too: a minimap, rewind, proper saves;
+smoother and prettier visuals; and co-op for three, one Viking each. The plan is
 in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Building it

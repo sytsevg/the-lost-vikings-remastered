@@ -16,7 +16,8 @@ constexpr std::size_t kStartRefreshes = 145;
 }  // namespace
 
 std::expected<std::unique_ptr<Session>, std::string> Session::open(const std::filesystem::path& dir, int slot,
-                                                                   const SessionSound& sound) {
+                                                                   const SessionSound& sound, Rules rules,
+                                                                   Draw draw_with) {
     auto files = assets::GameFiles::open(dir);
     if (!files) {
         return std::unexpected{files.error()};
@@ -43,8 +44,9 @@ std::expected<std::unique_ptr<Session>, std::string> Session::open(const std::fi
         }
     }
     std::unique_ptr<Session> session{new Session{std::move(*files), std::make_unique<LoadedLevel>(std::move(*loaded)),
-                                                 std::move(*shared), slot, std::move(*classic), std::move(modern),
-                                                 std::move(gm)}};
+                                                 std::move(*shared), slot, rules, std::move(*classic),
+                                                 std::move(modern), std::move(gm)}};
+    session->draw_ = std::move(draw_with);
     session->live_ = sound.live;
     session->set_modern(sound.modern);
     // The start is shown as its last picture for as long as the original's load takes; its sounds with the last.
@@ -63,10 +65,11 @@ std::expected<std::unique_ptr<Session>, std::string> Session::open(const std::fi
 }
 
 Session::Session(assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, SharedGraphics shared, int slot,
-                 audio::SoundData sound, std::optional<audio::SoundData> modern, std::unique_ptr<audio::GmSynth> gm)
+                 Rules rules, audio::SoundData sound, std::optional<audio::SoundData> modern,
+                 std::unique_ptr<audio::GmSynth> gm)
     : files_{std::move(files)},
       shared_{std::move(shared)},
-      play_{files_, std::move(loaded), slot},
+      play_{files_, std::move(loaded), slot, rules},
       sound_{std::move(sound)},
       modern_sound_{std::move(modern)},
       gm_{std::move(gm)} {
@@ -84,6 +87,104 @@ Session::Session(assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, S
     }
 }
 
+namespace {
+
+// The views the zoom steps through: the original's, with the HUD under it; then one and a half times and twice the
+// original's whole screen (320 x 240), with the HUD laid over the view's bottom. And how many pictures a change
+// takes (a little over a quarter of a second).
+constexpr std::array<std::array<int, 2>, 3> kZoomViews{{{320, 176}, {480, 360}, {640, 480}}};
+constexpr int kZoomPictures = 20;
+
+// From `from` to `to`, slow at both ends.
+Screen::Part between(const Screen::Part& from, const Screen::Part& to, int pictures) {
+    const float linear = static_cast<float>(std::min(pictures, kZoomPictures)) / static_cast<float>(kZoomPictures);
+    const float t = linear * linear * (3.0F - (2.0F * linear));
+    const auto mix = [t](float a, float b) { return a + ((b - a) * t); };
+    return {.x = mix(from.x, to.x),
+            .y = mix(from.y, to.y),
+            .width = mix(from.width, to.width),
+            .height = mix(from.height, to.height)};
+}
+
+}  // namespace
+
+void Session::zoom(int by) noexcept {
+    if (play_.world.rules == Rules::kRemaster) {
+        zoom_ = std::clamp(zoom_ + by, 0, static_cast<int>(kZoomViews.size()) - 1);
+    }
+}
+
+// The view the zoom asks for here: never more than the level has, and only where a level is played.
+std::array<int, 2> Session::wanted_view() const {
+    const World& world = play_.world;
+    const std::array<int, 2>& original = kZoomViews.front();
+    if (world.rules != Rules::kRemaster || !play_.loaded().level.hud || world.map.cells.empty() ||
+        world.map.pixel_width() < original[0] || world.map.pixel_height() < original[1]) {
+        return {world.camera.view_width, world.camera.view_height};
+    }
+    const std::array<int, 2>& asked = kZoomViews.at(static_cast<std::size_t>(zoom_));
+    return {std::min(asked[0], world.map.pixel_width()), std::min(asked[1], world.map.pixel_height())};
+}
+
+// Before a step: the world's view becomes the wanted one. A larger one at once (its pictures then open up from
+// the old view); a smaller one when the pictures have closed in on it.
+void Session::change_view() {
+    World& world = play_.world;
+    const auto [width, height] = wanted_view();
+    const Camera& camera = world.camera;
+    if (width == camera.view_width && height == camera.view_height) {
+        shrinking_ = false;
+        return;
+    }
+    if (width > camera.view_width || height > camera.view_height) {
+        grows_from_ = Screen::Part{.x = static_cast<float>(camera.x),
+                                   .y = static_cast<float>(camera.y),
+                                   .width = static_cast<float>(camera.view_width),
+                                   .height = static_cast<float>(camera.view_height)};
+        world.set_view(width, height);
+        zoom_pictures_ = 0;
+        shrinking_ = false;
+    } else if (!shrinking_) {
+        shrinking_ = true;
+        grows_from_.reset();
+        zoom_pictures_ = 0;
+    } else if (zoom_pictures_ >= kZoomPictures) {
+        world.set_view(width, height);
+        shrinking_ = false;
+    }
+}
+
+// The part of this picture's playfield that is shown: all of it, or on the way between two views.
+Screen::Part Session::part_shown(const View& view) {
+    const Screen::Part whole{
+        .x = 0, .y = 0, .width = static_cast<float>(view.width), .height = static_cast<float>(view.height)};
+    Screen::Part part = whole;
+    if (grows_from_) {
+        const Screen::Part from{.x = grows_from_->x - static_cast<float>(view.camera_x),
+                                .y = grows_from_->y - static_cast<float>(view.camera_y),
+                                .width = grows_from_->width,
+                                .height = grows_from_->height};
+        part = between(from, whole, ++zoom_pictures_);
+        if (zoom_pictures_ >= kZoomPictures) {
+            grows_from_.reset();
+        }
+    } else if (shrinking_) {
+        const auto [width, height] = wanted_view();
+        const Camera to = play_.world.camera_for_view(width, height);
+        part = between(whole,
+                       {.x = static_cast<float>(to.x - view.camera_x),
+                        .y = static_cast<float>(to.y - view.camera_y),
+                        .width = static_cast<float>(width),
+                        .height = static_cast<float>(height)},
+                       ++zoom_pictures_);
+    }
+    part.width = std::min(part.width, whole.width);
+    part.height = std::min(part.height, whole.height);
+    part.x = std::clamp(part.x, 0.0F, whole.width - part.width);
+    part.y = std::clamp(part.y, 0.0F, whole.height - part.height);
+    return part;
+}
+
 Screen Session::picture() {
     const LoadedLevel& loaded = play_.loaded();
     // (The painter is the same from scene to scene: the original never clears the buffer its packed frames are
@@ -94,7 +195,8 @@ Screen Session::picture() {
         view.darken_all = true;
     }
     Screen screen;
-    draw(screen, view, play_.graphics(), shared_);
+    draw_(screen, view, play_.graphics(), shared_);
+    screen.part = part_shown(view);
     return screen;
 }
 
@@ -196,6 +298,7 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
     };
     cues.clear();
     play_.menu_keys = keys;
+    change_view();
     const int refreshes = play_.step(keyboard, [&] { frames.push_back({.screen = picture(), .cues = take_cues()}); });
     const std::vector<SoundCue> late = take_cues();  // asked after the step's last picture: heard with it
     const auto wanted = static_cast<std::size_t>(refreshes);

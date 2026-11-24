@@ -1,33 +1,13 @@
 #include "lvr/render.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <format>
 #include <utility>
 
 namespace lvr {
 
 namespace {
-
-constexpr int kTileSize = 8;
-constexpr int kPictureTop = 32;  // a scene's picture starts 32 rows above the level's first row
-constexpr std::size_t kPickerIcon = 19;
-
-// Where the HUD's parts are, from the HUD's top-left corner (docs/formats/level.md).
-constexpr std::array<std::array<int, 2>, 3> kPortraitAt{{{45, 19}, {117, 19}, {189, 19}}};
-constexpr std::array<std::array<int, 2>, 3> kHealthAt{{{47, 43}, {119, 43}, {191, 43}}};
-constexpr std::array<std::array<int, 2>, kSquares> kSquareAt{{{79, 18},
-                                                              {95, 18},
-                                                              {79, 34},
-                                                              {95, 34},
-                                                              {151, 18},
-                                                              {167, 18},
-                                                              {151, 34},
-                                                              {167, 34},
-                                                              {223, 18},
-                                                              {239, 18},
-                                                              {223, 34},
-                                                              {239, 34},
-                                                              {255, 18}}};
 
 // A pixel, if it is on screen above row `bottom`.
 void put(Screen& screen, int x, int y, std::uint8_t colour, int bottom) {
@@ -43,13 +23,6 @@ void blit(Screen& screen, const assets::IndexedImage& image, int x, int y, int b
             put(screen, x + static_cast<int>(ix), y + static_cast<int>(iy), image.at(ix, iy), bottom);
         }
     }
-}
-
-// The picker is drawn as its icon's corners only: 5 pixels along each edge, 2 deep, and 3 more down each side.
-constexpr bool picker_pixel(std::size_t x, std::size_t y) noexcept {
-    const bool edge_x = x < 2 || x >= 14;
-    const bool edge_y = y < 2 || y >= 14;
-    return (edge_y && (x < 5 || x >= 11)) || (edge_x && (y < 5 || y >= 11));
 }
 
 // The map's tiles in view. `foreground`: only the pixels the tileset's masks put in front of the sprites, of the
@@ -84,15 +57,8 @@ void draw_tiles(Screen& screen, const View& view, const SceneGraphics& scene, bo
                     for (std::size_t tx = 0; tx < kTileSize; ++tx) {
                         const std::size_t sx = ref.flip_h() ? kTileSize - 1 - tx : tx;
                         const std::size_t sy = ref.flip_v() ? kTileSize - 1 - ty : ty;
-                        if (foreground) {
-                            // A mask bit per pixel, in the order the tile's bytes are stored: by plane (x % 4),
-                            // then row, then x / 4; the most significant bit first.
-                            const std::size_t stored = ((sx % 4) * 16) + (sy * 2) + (sx / 4);
-                            const std::size_t at = (std::size_t{ref.tile} * 8) + (stored / 8);
-                            if (at >= scene.tile_masks.size() ||
-                                (scene.tile_masks[at] & (0x80U >> (stored % 8))) == 0) {
-                                continue;
-                            }
+                        if (foreground && !in_front(scene.tile_masks, ref.tile, sx, sy)) {
+                            continue;
                         }
                         put(screen, left + static_cast<int>(tx), top + static_cast<int>(ty), tile.at(sx, sy),
                             kPlayfieldHeight);
@@ -122,8 +88,8 @@ void draw_sprite(Screen& screen, const View& view, const DrawnSprite& sprite) {
 
 void draw_text(Screen& screen, const View& view, const SharedGraphics& shared) {
     constexpr std::uint8_t kFirstGlyph = 0x10;
-    for (int row = 0; row < kTextRows; ++row) {
-        for (int column = 0; column < kTextColumns; ++column) {
+    for (int row = 0; row < std::min(view.height / kTileSize, kTextRows); ++row) {
+        for (int column = 0; column < std::min(view.width / kTileSize, kTextColumns); ++column) {
             const std::uint8_t character =
                 view.text[(static_cast<std::size_t>(row) * kTextColumns) + static_cast<std::size_t>(column)];
             if (character < kFirstGlyph || std::size_t{character} - kFirstGlyph >= shared.font.size()) {
@@ -180,6 +146,11 @@ void draw_hud(Screen& screen, const HudView& hud, const SharedGraphics& shared) 
 }
 
 }  // namespace
+
+std::uint32_t next_graphics_id() noexcept {
+    static std::atomic<std::uint32_t> last{0};
+    return ++last;
+}
 
 std::expected<SharedGraphics, std::string> load_shared_graphics(const assets::Archive& archive) {
     constexpr std::uint16_t kFontEntry = 2;

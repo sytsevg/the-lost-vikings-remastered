@@ -16,8 +16,9 @@ constexpr std::size_t kStartRefreshes = 145;
 }  // namespace
 
 LvrPlayer::LvrPlayer(Replay replay, assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, SharedGraphics shared,
-                     int slot)
-    : replay_{std::move(replay)},
+                     int slot, Draw draw_with)
+    : draw_{std::move(draw_with)},
+      replay_{std::move(replay)},
       files_{std::move(files)},
       shared_{std::move(shared)},
       play_{files_, std::move(loaded), slot} {
@@ -33,7 +34,7 @@ LvrPlayer::LvrPlayer(Replay replay, assets::GameFiles files, std::unique_ptr<Loa
 }
 
 std::expected<std::unique_ptr<LvrPlayer>, std::string> LvrPlayer::open(const std::filesystem::path& original_dir,
-                                                                       Replay replay) {
+                                                                       Replay replay, Draw draw_with) {
     auto files = assets::GameFiles::open(original_dir);
     if (!files) {
         return std::unexpected{files.error()};
@@ -49,7 +50,7 @@ std::expected<std::unique_ptr<LvrPlayer>, std::string> LvrPlayer::open(const std
     const int slot = replay.slot;
     return std::unique_ptr<LvrPlayer>{new LvrPlayer{std::move(replay), std::move(*files),
                                                     std::make_unique<LoadedLevel>(std::move(*loaded)),
-                                                    std::move(*shared), slot}};
+                                                    std::move(*shared), slot, std::move(draw_with)}};
 }
 
 Refresh LvrPlayer::picture() {
@@ -61,7 +62,7 @@ Refresh LvrPlayer::picture() {
         view.darken = {*play_.fade, *play_.fade, *play_.fade};
         view.darken_all = true;
     }
-    draw(screen_, view, play_.graphics(), shared_);
+    draw_(screen_, view, play_.graphics(), shared_);
     return Refresh{.pixels = screen_.pixels, .palette = screen_.palette, .sounds = {}};
 }
 

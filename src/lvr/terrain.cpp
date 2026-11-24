@@ -32,8 +32,8 @@ bool is_ground(int tile_type) noexcept {
 // The engine's view of one entity among the others.
 class Surroundings {
   public:
-    Surroundings(const World& world, const Entity& self, int slots = kSlots)
-        : world_{world}, self_{self}, slots_{slots} {}
+    Surroundings(const World& world, const Entity& self) : Surroundings{world, self, world.slots()} {}
+    Surroundings(const World& world, const Entity& self, int slots) : world_{world}, self_{self}, slots_{slots} {}
 
     int type_at(int x, int y) const { return world_.map.tile_type_at(wrapped(x), wrapped(y)); }
 
@@ -247,7 +247,7 @@ bool has_slopes(const TileTypes& types) {
 
 std::optional<Found> beside_among(const World& world, const Entity& entity, Side side, const TileTypes& types,
                                   bool vikings_only) {
-    const Surroundings around{world, entity, vikings_only ? kVikingSlots : kSlots};
+    const Surroundings around{world, entity, vikings_only ? kVikingSlots : world.slots()};
     if (side == Side::kAbove || side == Side::kBelow) {
         const int row = side == Side::kAbove ? wrapped(entity.box.top - 1) : wrapped(entity.box.bottom + 1);
         const auto entities = [&] { return around.entity_in_row(entity, types, row); };

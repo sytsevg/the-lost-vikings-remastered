@@ -1,5 +1,6 @@
 #include "lvr/sprites.hpp"
 
+#include <algorithm>
 #include <format>
 #include <utility>
 
@@ -158,7 +159,7 @@ class Player {
         return u16(low | (unsigned{byte()} << 8U));
     }
 
-    Piece& piece(int index) { return pieces_.at(static_cast<std::size_t>(index) % kPieces); }
+    Piece& piece(int index) { return pieces_.at(static_cast<std::size_t>(index) % pieces_.size()); }
     Piece& first() { return piece(sprite_.first); }
 
     // The sprite's pieces. A sprite without pieces still has the instruction act on the piece where its pieces
@@ -267,12 +268,19 @@ class Player {
         }
         int index = sprite_.first;
         each([&](Piece& one) {
-            const int buffer = (index++ % kPieces) - kFirstBufferPiece;
+            const PieceLayout& layout = pieces_.layout();
+            const int place = index++ % layout.size;
+            const int buffer = place - kFirstBufferPiece;
             one.packed_set = set;
             one.from = Piece::From::kUnpacked;
-            one.frame = context_.tables != nullptr && buffer >= 0 && buffer < 16
-                            ? context_.tables->buffer_offsets.at(static_cast<std::size_t>(buffer))
-                            : std::uint16_t{0};
+            if (layout.buffer_each) {  // its own buffer, from the start of it (PiecePainter finds it by the piece)
+                one.frame =
+                    place >= layout.middle_begin && place < layout.middle_end ? std::uint16_t{1} : std::uint16_t{0};
+            } else {
+                one.frame = context_.tables != nullptr && buffer >= 0 && buffer < 16
+                                ? context_.tables->buffer_offsets.at(static_cast<std::size_t>(buffer))
+                                : std::uint16_t{0};
+            }
             one.shape |= 2U;
             one.packed = true;
             one.redraw = kChanged;
@@ -304,8 +312,10 @@ bool take_pieces(Pieces& pieces, Sprite& sprite, Pool pool, const PieceStart& st
     if (sprite.count <= 0) {
         return true;
     }
-    int at = pool == Pool::kBack ? 36 : (pool == Pool::kMiddle ? 24 : 0);
-    const int pool_end = pool == Pool::kBack ? kPieces : (pool == Pool::kMiddle ? 40 : 24);
+    const PieceLayout& layout = pieces.layout();
+    int at = pool == Pool::kBack ? layout.back_begin : (pool == Pool::kMiddle ? layout.middle_begin : 0);
+    const int pool_end =
+        pool == Pool::kBack ? layout.size : (pool == Pool::kMiddle ? layout.middle_end : layout.front_end);
     const auto free_at = [&pieces](int index) { return is_free(pieces.at(static_cast<std::size_t>(index))); };
     // The first free piece, then whether the ones after it are free too; if one isn't, on from that one.
     int first = -1;
@@ -394,7 +404,7 @@ int share_of_move(int distance, int phase) noexcept {
 void shift_pieces(Pieces& pieces, const Sprite& sprite, int dx, int dy) {
     int index = sprite.first;
     do {  // at least the piece its pieces start at, as the original
-        Piece& piece = pieces.at(static_cast<std::size_t>(index) % kPieces);
+        Piece& piece = pieces.at(static_cast<std::size_t>(index) % pieces.size());
         piece.x = s16(static_cast<std::uint16_t>(piece.x) + static_cast<unsigned>(dx));
         piece.y = s16(static_cast<std::uint16_t>(piece.y) + static_cast<unsigned>(dy));
         changed(piece);
@@ -404,14 +414,35 @@ void shift_pieces(Pieces& pieces, const Sprite& sprite, int dx, int dy) {
 
 // --- Pictures ---
 
+std::optional<std::size_t> PiecePainter::buffer_of(const Pieces& pieces, std::size_t index) {
+    const Piece& piece = pieces.at(index);
+    if (piece.frame == 0) {
+        return std::nullopt;
+    }
+    const PieceLayout& layout = pieces.layout();
+    if (!layout.buffer_each) {
+        return std::size_t{piece.frame} - 1;
+    }
+    if (std::cmp_less(index, layout.middle_begin) || std::cmp_greater_equal(index, layout.middle_end)) {
+        return std::nullopt;
+    }
+    return ((index - static_cast<std::size_t>(layout.middle_begin)) * kBufferBytes) + piece.frame - 1;
+}
+
 void PiecePainter::unpack(const Pieces& pieces, const Sprite& sprite, const SpriteMemory& memory) {
     constexpr int kGroups = 4 * 32;  // 4 planes of 32 rows: a mask byte and up to 8 pixels each
-    if (sprite.count <= 0 || sprite.packed_frame == kNoPackedFrame || sprite.first < 0 || sprite.first >= kPieces) {
+    if (sprite.count <= 0 || sprite.packed_frame == kNoPackedFrame || sprite.first < 0 ||
+        std::cmp_greater_equal(sprite.first, pieces.size())) {
         return;
     }
     const Piece& piece = pieces.at(static_cast<std::size_t>(sprite.first));
-    if (piece.from != Piece::From::kUnpacked || piece.frame == 0 || piece.packed_set >= memory.packed_sets.size()) {
+    const auto buffer = buffer_of(pieces, static_cast<std::size_t>(sprite.first));
+    if (piece.from != Piece::From::kUnpacked || !buffer || piece.packed_set >= memory.packed_sets.size()) {
         return;
+    }
+    if (const PieceLayout& layout = pieces.layout(); layout.buffer_each) {
+        buffers_.resize(std::max(buffers_.size(),
+                                 static_cast<std::size_t>(layout.middle_end - layout.middle_begin) * kBufferBytes));
     }
     // The set starts with a table of where each frame is. A frame is, per plane and row, a byte that says which
     // of 8 pixels are there, then those pixels, two to a byte (the first in the high half).
@@ -421,7 +452,7 @@ void PiecePainter::unpack(const Pieces& pieces, const Sprite& sprite, const Spri
         return;
     }
     std::size_t in = std::to_integer<std::size_t>(set[entry]) | (std::to_integer<std::size_t>(set[entry + 1]) << 8U);
-    std::size_t out = std::size_t{piece.frame} - 1;
+    std::size_t out = *buffer;
     const unsigned colours = 0x80U | (unsigned{piece.colour} << 4U);
     const auto next = [&set, &in]() { return in < set.size() ? std::to_integer<unsigned>(set[in++]) : 0U; };
     const auto store = [this, &out](unsigned value) {
@@ -471,19 +502,24 @@ std::vector<PiecePicture> PiecePainter::pictures(const Pieces& pieces, const Spr
             continue;
         }
         std::span<const std::byte> bytes = memory.sets;
+        std::size_t start = piece.frame == 0 ? 0 : std::size_t{piece.frame} - 1;
         if (piece.from == Piece::From::kUnpacked) {
             bytes = buffers_;
+            const auto buffer = buffer_of(pieces, index);
+            if (!buffer) {
+                continue;
+            }
+            start = *buffer;
         } else if (piece.from == Piece::From::kPackedSet) {
             bytes = piece.packed_set < memory.packed_sets.size()
                         ? std::span<const std::byte>{memory.packed_sets[piece.packed_set]}
                         : std::span<const std::byte>{};
         }
         const std::size_t size = width * height * 9 / 8;  // a mask byte to every 8 pixels
-        if (piece.frame == 0 || height == 0 || height > kTallest ||
-            std::size_t{piece.frame} - 1 + size > bytes.size()) {
+        if (piece.frame == 0 || height == 0 || height > kTallest || start + size > bytes.size()) {
             continue;
         }
-        auto image = assets::decode_unpacked_frame(bytes.subspan(std::size_t{piece.frame} - 1, size), width, height);
+        auto image = assets::decode_unpacked_frame(bytes.subspan(start, size), width, height);
         if (!image) {
             continue;
         }

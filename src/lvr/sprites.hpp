@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -55,7 +56,49 @@ struct Piece {
     bool operator==(const Piece&) const = default;
 };
 
-using Pieces = std::array<Piece, kPieces>;
+// How a layer is laid out: its size, and which pieces each of its three pools has (below).
+struct PieceLayout {
+    int size = 0;
+    int front_end = 0;  // the front pool: [0, front_end)
+    int middle_begin = 0;
+    int middle_end = 0;
+    int back_begin = 0;  // the back pool: [back_begin, size)
+    // The middle pool's frame buffers: the original's 16, at the places its table gives (false), or one for every
+    // piece of the pool, by its number.
+    bool buffer_each = false;
+
+    bool operator==(const PieceLayout&) const = default;
+};
+// The original's: 128 pieces; the middle and the back pool share four.
+inline constexpr PieceLayout kOriginalPieces{
+    .size = kPieces, .front_end = 24, .middle_begin = 24, .middle_end = 40, .back_begin = 36, .buffer_each = false};
+// Remaster rules': room no level fills, in the same order, so what is in front of what stays as it is.
+inline constexpr PieceLayout kRemasterPieces{
+    .size = 2048, .front_end = 256, .middle_begin = 256, .middle_end = 512, .back_begin = 512, .buffer_each = true};
+
+// The layer.
+class Pieces {
+  public:
+    explicit Pieces(const PieceLayout& layout = kOriginalPieces)
+        : layout_{layout}, all_(static_cast<std::size_t>(layout.size)) {}
+
+    const PieceLayout& layout() const noexcept { return layout_; }
+    std::size_t size() const noexcept { return all_.size(); }
+    Piece& at(std::size_t index) { return all_.at(index); }
+    const Piece& at(std::size_t index) const { return all_.at(index); }
+    Piece& operator[](std::size_t index) { return all_[index]; }
+    const Piece& operator[](std::size_t index) const { return all_[index]; }
+    auto begin() noexcept { return all_.begin(); }
+    auto end() noexcept { return all_.end(); }
+    auto begin() const noexcept { return all_.begin(); }
+    auto end() const noexcept { return all_.end(); }
+
+    bool operator==(const Pieces&) const = default;
+
+  private:
+    PieceLayout layout_;
+    std::vector<Piece> all_;
+};
 
 // An entity's pieces and the animation it is playing.
 struct Sprite {
@@ -88,9 +131,9 @@ struct Body {
 // The layer is three pools; a kind draws its pieces from one of them. A lower piece is drawn over a higher one, so
 // the pools are also what is in front of what.
 enum class Pool : std::uint8_t {
-    kBack,    // pieces 36-127: kinds with a sprite set of the level's own (doors, items, machines ...)
-    kMiddle,  // pieces 24-39: kinds drawn from packed sets (the Vikings, the enemies); each has a frame buffer
-    kFront,   // pieces 0-23
+    kBack,    // kinds with a sprite set of the level's own (doors, items, machines ...): the original's pieces 36-127
+    kMiddle,  // kinds drawn from packed sets (the Vikings, the enemies); each has a frame buffer: 24-39
+    kFront,   // 0-23
 };
 
 // How a new entity's pieces start out.
@@ -150,7 +193,12 @@ class PiecePainter {
     // The pieces in use and shown, in the order they are drawn: the last piece first, so a lower piece is on top.
     std::vector<PiecePicture> pictures(const Pieces& pieces, const SpriteMemory& memory) const;
 
+    // A frame buffer's room where every piece of the middle pool has its own: more than the largest frame needs.
+    static constexpr std::size_t kBufferBytes = 2048;
+
   private:
+    // Where a piece's unpacked frame is in the buffers; none: nowhere.
+    static std::optional<std::size_t> buffer_of(const Pieces& pieces, std::size_t index);
     std::vector<std::byte> buffers_ = std::vector<std::byte>(0x10000);
 };
 

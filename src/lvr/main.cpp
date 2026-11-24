@@ -4,9 +4,10 @@
 // (docs/original/input.md).
 //
 //   vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] [--soundfont FILE]
+//                    [--rules vanilla|remaster]
 //       play, from scene N (default 39, the first logo; 0-36 are the levels); FILE: other keys, lines
 //       "KEY NAME = action" (input/input.hpp). F12 switches between the Classic and the Modern sound.
-//   vikings-remaster [--data DIR] [--slot N] --dump STEPS FILE.png [--wav FILE.wav]
+//   vikings-remaster [--data DIR] [--slot N] --dump STEPS FILE.png [--wav FILE.wav] [--zoom BY AT_STEP]
 //       run STEPS steps without a window and without a key, write the last picture (and the sound)
 //
 // Keys: arrows, Ctrl/Home and Ins/PgUp (switch Viking), E, S, D, F/Space/Enter, Esc/P (pause; Y, N), Tab
@@ -33,6 +34,7 @@
 #include "assets/assets.hpp"
 #include "image/png.hpp"
 #include "input/input.hpp"
+#include "lvr/gpu.hpp"
 #include "lvr/render.hpp"
 #include "lvr/session.hpp"
 
@@ -42,6 +44,7 @@ namespace {
 constexpr int kWidth = kScreenWidth;
 constexpr int kHeight = kScreenHeight;
 constexpr int kInitialScale = 3;
+constexpr const char* kWindowTitle = "The Lost Vikings";
 
 bool write_wav(const std::filesystem::path& path, const std::vector<std::int16_t>& samples, std::uint32_t rate) {
     std::ofstream out(path, std::ios::binary);
@@ -69,13 +72,36 @@ bool write_wav(const std::filesystem::path& path, const std::vector<std::int16_t
     return static_cast<bool>(out);
 }
 
-// Without a window: `steps` steps with no key held, the last picture written as a PNG, the sound as a WAV.
-int dump(Session& session, int steps, const std::filesystem::path& out, const std::filesystem::path& wav) {
+// What the GPU renderer shows of `screen`, three times the original's size, as a PNG.
+bool save_shown(GpuRenderer& gpu, const Screen& screen, const std::filesystem::path& out) {
+    constexpr int kScale = 3;
+    auto pixels = gpu.shown(screen, kScale);
+    if (!pixels) {
+        std::println(stderr, "vikings-remaster: {}", pixels.error());
+        return false;
+    }
+    SDL_Surface* surface = SDL_CreateSurfaceFrom(kWidth * kScale, kHeight * kScale, SDL_PIXELFORMAT_RGBA32,
+                                                 pixels->data(), kWidth * kScale * 4);
+    const bool saved = surface != nullptr && SDL_SavePNG(surface, out.string().c_str());
+    SDL_DestroySurface(surface);
+    if (!saved) {
+        std::println(stderr, "vikings-remaster: {}: {}", out.string(), SDL_GetError());
+    }
+    return saved;
+}
+
+// Without a window: `steps` steps with no key held, the last picture written as a PNG, the sound as a WAV. With
+// `gpu` (Remaster rules) the picture is the one it shows, and `zoom` steps out are asked for before step `zoom_at`.
+int dump(Session& session, int steps, const std::filesystem::path& out, const std::filesystem::path& wav,
+         GpuRenderer* gpu, int zoom, int zoom_at) {
     Screen last = session.start_frames.empty() ? Screen{} : session.start_frames.back();
     std::vector<std::int16_t> sound = std::move(session.samples);
     session.samples.clear();
     std::size_t refreshes = session.start_frames.size();
     for (int step = 0; step < steps && !session.quit(); ++step) {
+        if (step == zoom_at) {
+            session.zoom(zoom);
+        }
         std::vector<Screen> frames = session.step(0);
         refreshes += frames.size();
         if (!frames.empty()) {
@@ -89,10 +115,16 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
         return EXIT_FAILURE;
     }
     std::println("scene {} after {} refreshes", session.scene(), refreshes);
-    const assets::IndexedImage image{.width = kScreenWidth, .height = kScreenHeight, .pixels = last.pixels};
-    if (auto saved = image::save_indexed_png(out, image, last.palette); !saved) {
-        std::println(stderr, "vikings-remaster: {}", saved.error());
-        return EXIT_FAILURE;
+    if (gpu != nullptr) {
+        if (!save_shown(*gpu, last, out)) {
+            return EXIT_FAILURE;
+        }
+    } else {
+        const assets::IndexedImage image{.width = kScreenWidth, .height = kScreenHeight, .pixels = last.pixels};
+        if (auto saved = image::save_indexed_png(out, image, last.palette); !saved) {
+            std::println(stderr, "vikings-remaster: {}", saved.error());
+            return EXIT_FAILURE;
+        }
     }
     if (!wav.empty() && !write_wav(wav, sound, Session::sample_rate())) {
         std::println(stderr, "vikings-remaster: can't write {}", wav.string());
@@ -139,20 +171,27 @@ void sound_wanted(void* userdata, SDL_AudioStream* stream, int additional, int /
     SDL_PutAudioStreamData(stream, made.data(), static_cast<int>(made.size() * sizeof(std::int16_t)));
 }
 
-int play(Session& session, const input::Bindings& bindings) {
+// The game in a window. With `gpu` (and its window), the pictures are the ones it kept and it shows them;
+// without, they are the Classic renderer's and a window is made here.
+int play(Session& session, const input::Bindings& bindings, SDL_Window* window, GpuRenderer* gpu) {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
         std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
         return EXIT_FAILURE;
     }
-    SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
-    if (!SDL_CreateWindowAndRenderer("The Lost Vikings", kWidth * kInitialScale, kHeight * kInitialScale,
-                                     SDL_WINDOW_RESIZABLE, &window, &renderer)) {
-        std::println(stderr, "SDL_CreateWindowAndRenderer failed: {}", SDL_GetError());
-        SDL_Quit();
-        return EXIT_FAILURE;
+    SDL_Texture* texture = nullptr;
+    if (gpu == nullptr) {
+        if (!SDL_CreateWindowAndRenderer(kWindowTitle, kWidth * kInitialScale, kHeight * kInitialScale,
+                                         SDL_WINDOW_RESIZABLE, &window, &renderer)) {
+            std::println(stderr, "SDL_CreateWindowAndRenderer failed: {}", SDL_GetError());
+            SDL_Quit();
+            return EXIT_FAILURE;
+        }
+        SDL_SetRenderVSync(renderer, 1);
+        SDL_SetRenderLogicalPresentation(renderer, kWidth, kHeight, SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
+        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, kWidth, kHeight);
+        SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
     }
-    SDL_SetRenderVSync(renderer, 1);
     // The sound card asks for its sound as it needs it (sound_wanted), a few milliseconds at a time.
     (void)SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "512");
     const SDL_AudioSpec spec{.format = SDL_AUDIO_S16, .channels = 2, .freq = static_cast<int>(Session::sample_rate())};
@@ -163,10 +202,6 @@ int play(Session& session, const input::Bindings& bindings) {
     } else {
         SDL_ResumeAudioStreamDevice(sound);
     }
-    SDL_SetRenderLogicalPresentation(renderer, kWidth, kHeight, SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
-    SDL_Texture* texture =
-        SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, kWidth, kHeight);
-    SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
 
     std::vector<std::uint32_t> pixels(static_cast<std::size_t>(kWidth) * kHeight);
     // The pictures still to show, and what each asks of the sound, heard as it is shown.
@@ -199,6 +234,11 @@ int play(Session& session, const input::Bindings& bindings) {
                 if (event.key.scancode == SDL_SCANCODE_M) {
                     session.key_pressed(input::typed_character(SDL_GetScancodeName(event.key.scancode)));
                 }
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       (event.key.scancode == SDL_SCANCODE_MINUS || event.key.scancode == SDL_SCANCODE_EQUALS)) {
+                session.zoom(event.key.scancode == SDL_SCANCODE_MINUS ? 1 : -1);  // Remaster rules: out, in
+            } else if (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y != 0) {
+                session.zoom(event.wheel.y < 0 ? 1 : -1);
             } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F12 &&
                        !event.key.repeat) {
                 session.set_modern(!session.modern());  // the Classic / Modern switch (ADR-0015)
@@ -240,6 +280,7 @@ int play(Session& session, const input::Bindings& bindings) {
             refreshes = due;  // far behind (a breakpoint, a slow load): don't race to catch up
         }
         const Screen* shown = nullptr;
+        static Screen last_shown;  // what the GPU renderer shows again until there is a next one
         for (; refreshes < due && running; ++refreshes) {
             while (running && next_frame >= frames.size()) {
                 const bool* held = SDL_GetKeyboardState(nullptr);
@@ -280,6 +321,17 @@ int play(Session& session, const input::Bindings& bindings) {
             }
             shown = &frames[next_frame++];
         }
+        if (gpu != nullptr) {
+            if (shown != nullptr) {
+                last_shown = *shown;
+            }
+            if (const auto done = gpu->show(last_shown); !done) {
+                std::println(stderr, "vikings-remaster: {}", done.error());
+                status = EXIT_FAILURE;
+                running = false;
+            }
+            continue;
+        }
         if (shown != nullptr) {
             for (std::size_t i = 0; i < pixels.size(); ++i) {
                 const assets::Rgb c = shown->palette.at(shown->pixels[i]);
@@ -297,10 +349,12 @@ int play(Session& session, const input::Bindings& bindings) {
     if (sound != nullptr) {
         SDL_DestroyAudioStream(sound);
     }
-    SDL_DestroyTexture(texture);
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+    if (gpu == nullptr) {  // (with one, the window and SDL are the caller's to close, after it)
+        SDL_DestroyTexture(texture);
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+    }
     return status;
 }
 
@@ -324,6 +378,9 @@ int main(int argc, char* argv[]) try {
     SessionSound sound{.modern = false, .soundfont = "gamedata/GeneralUser-GS.sf2"};
     int slot = scene::kLogo;
     int steps = 0;
+    Rules rules = Rules::kVanilla;
+    int zoom = 0;     // a dump: this many steps of zoom out ...
+    int zoom_at = 0;  // ... asked for before this step
     const std::vector<std::string_view> args(argv + 1, argv + argc);
     for (std::size_t i = 0; i < args.size(); ++i) {
         const auto value = [&](std::size_t ahead) { return i + ahead < args.size() ? args[i + ahead] : ""; };
@@ -332,6 +389,9 @@ int main(int argc, char* argv[]) try {
             ++i;
         } else if (args[i] == "--sound" && (value(1) == "classic" || value(1) == "modern")) {
             sound.modern = value(1) == "modern";
+            ++i;
+        } else if (args[i] == "--rules" && (value(1) == "vanilla" || value(1) == "remaster")) {
+            rules = value(1) == "remaster" ? Rules::kRemaster : Rules::kVanilla;
             ++i;
         } else if (args[i] == "--soundfont" && i + 1 < args.size()) {
             sound.soundfont = args[i + 1];
@@ -345,6 +405,10 @@ int main(int argc, char* argv[]) try {
         } else if (const auto number = parse_number(value(1)); number && args[i] == "--slot") {
             slot = *number;
             ++i;
+        } else if (const auto at = parse_number(value(2)); number && at && args[i] == "--zoom") {
+            zoom = *number;
+            zoom_at = *at;
+            i += 2;
         } else if (number && args[i] == "--dump" && i + 2 < args.size()) {
             steps = *number;
             dump_to = args[i + 2];
@@ -352,7 +416,7 @@ int main(int argc, char* argv[]) try {
         } else {
             std::println(stderr,
                          "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] "
-                         "[--soundfont FILE] [--dump STEPS FILE.png [--wav FILE.wav]]");
+                         "[--soundfont FILE] [--rules vanilla|remaster] [--dump STEPS FILE.png [--wav FILE.wav]]");
             return EXIT_FAILURE;
         }
     }
@@ -360,13 +424,44 @@ int main(int argc, char* argv[]) try {
         sound.soundfont.clear();  // no Modern sound; a dump renders only the version it is asked for
     }
     sound.live = dump_to.empty();  // in a window the sound card asks for the sound; a dump makes it step by step
-    auto session = Session::open(dir, slot, sound);
+    // Under Remaster rules a window's pictures are drawn by the GPU renderer (ADR-0006), which needs the window
+    // first; Vanilla rules, and a dump, have the Classic one's.
+    SDL_Window* window = nullptr;
+    std::unique_ptr<GpuRenderer> gpu;
+    Draw draw_with = draw;
+    if (rules == Rules::kRemaster) {
+        std::expected<std::unique_ptr<GpuRenderer>, std::string> opened = std::unexpected{std::string{}};
+        if (!dump_to.empty()) {
+            opened = GpuRenderer::open_headless();
+        } else if (!SDL_Init(SDL_INIT_VIDEO)) {
+            std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
+            return EXIT_FAILURE;
+        } else {
+            window =
+                SDL_CreateWindow(kWindowTitle, kWidth * kInitialScale, kHeight * kInitialScale, SDL_WINDOW_RESIZABLE);
+            opened = window != nullptr ? GpuRenderer::open_for(window)
+                                       : std::unexpected{std::string{"no window: "} + SDL_GetError()};
+        }
+        if (!opened) {
+            std::println(stderr, "vikings-remaster: the GPU renderer: {}", opened.error());
+            return EXIT_FAILURE;
+        }
+        gpu = std::move(*opened);
+        draw_with = [renderer = gpu.get()](Screen& screen, const View& view, const SceneGraphics& scene,
+                                           const SharedGraphics& shared) {
+            if (const auto kept = renderer->keep(screen, view, scene, shared); !kept) {
+                std::println(stderr, "vikings-remaster: the GPU renderer: {}", kept.error());
+                std::exit(EXIT_FAILURE);
+            }
+        };
+    }
+    auto session = Session::open(dir, slot, sound, rules, std::move(draw_with));
     if (!session) {
         std::println(stderr, "vikings-remaster: {}", session.error());
         return EXIT_FAILURE;
     }
     if (!dump_to.empty()) {
-        return dump(**session, steps, dump_to, wav);
+        return dump(**session, steps, dump_to, wav, gpu.get(), zoom, zoom_at);
     }
     input::Bindings bindings = input::default_bindings();
     if (!keys.empty()) {
@@ -380,7 +475,13 @@ int main(int argc, char* argv[]) try {
         }
         bindings = std::move(*parsed);
     }
-    return play(**session, bindings);
+    const int status = play(**session, bindings, window, gpu.get());
+    if (gpu != nullptr) {
+        gpu.reset();
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+    }
+    return status;
 } catch (const std::exception& error) {
     std::fputs("vikings-remaster: fatal: ", stderr);
     std::fputs(error.what(), stderr);

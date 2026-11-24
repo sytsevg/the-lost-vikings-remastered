@@ -18,14 +18,16 @@ comments and other docs points here). A decision that was later replaced is not 
 
 ### ADR-0005: Visuals, Rules and Sound are independent switches
 - **Visuals: Classic / Modern**, swappable at any moment. Presentation only.
-- **Rules: Vanilla / QoL**, chosen per game session. Anything that changes what the player can see or do belongs
-  to Rules. Under Vanilla rules the visible playing area is the original's, even in Modern visuals.
+- **Rules: Vanilla / Remaster**, chosen when the game is started (`--rules`) and fixed until it ends: there is no
+  switching while playing, so nothing has to be squeezed back into the original's limits. Anything that changes
+  what the player can see or do belongs to Rules. Under Vanilla rules the visible playing area is the original's,
+  even in Modern visuals.
 - **Sound: Classic / Modern** (ADR-0015), swappable at any moment.
 - Every combination is allowed. The simulation never knows which renderer or sound is active.
 
 ### ADR-0017: The game's behaviour is written by hand, and checked by pixel match
 - The original keeps its behaviour in bytecode scripts. The engine does not interpret them: every kind of entity
-  is hand-written C++, read from the scripts' listings, so the code can be read, changed and extended (QoL rules,
+  is hand-written C++, read from the scripts' listings, so the code can be read, changed and extended (Remaster rules,
   co-op).
 - **Pixel match** is the bar under Classic visuals and Vanilla rules: on the same input, the same picture
   (indexed pixels and palette) and the same sound and music requests at every refresh. The insides are free.
@@ -146,23 +148,46 @@ publishing: its author asks not to link his download files directly.
 
 ## Ahead
 
-### ADR-0006: A Classic software picture and a Modern GPU renderer
-- **Classic** (built): an 8-bit indexed picture of 320 × 240 (a 176-line playfield over a 64-line HUD), drawn on
-  the CPU from the simulation's state, the palette applied per picture, three pictures a tick with the original's
-  integer sub-steps. Scaled up by whole numbers.
-- **Modern** (ROADMAP): SDL_GPU, smooth movement between ticks at the host's rate, parallax, lights, shaders, art
-  packs that replace sprites one for one. Both read the same state.
+### ADR-0006: A Classic software picture and a GPU renderer
+- **Classic** (`render.*`): an 8-bit indexed picture of 320 × 240 (a 176-line playfield over a 64-line HUD), drawn
+  on the CPU from the simulation's state, the palette applied per picture, three pictures a tick with the
+  original's integer sub-steps. Scaled up by whole numbers. It is what Vanilla rules show and what the goldens
+  hold, and it stays: it needs no graphics card and checks every replay in under a minute.
+- **The GPU renderer** (`gpu.*`, SDL_GPU, Vulkan, shaders compiled by `glslc` at build time): what Remaster rules
+  show. Every picture of a scene sits in one atlas of palette indices; a view is drawn a pixel for a pixel into a
+  target of indices, and shown through a second pass that looks up the palette and scales. Drawn at the
+  original's view its target is the Classic picture exactly: `lv-replay --gpu` plays the replays against the same
+  goldens (all 119 matched when it was written; about five times slower on a software driver, so it is not part
+  of the routine checks). What it does beyond that (zoom, and later effects) is judged by eye.
+- **Ahead** (ROADMAP, Modern visuals): smooth movement between ticks at the host's rate, parallax, lights,
+  shaders, art packs that replace sprites one for one, on the GPU renderer.
 
-### ADR-0011: QoL rules
-Only under QoL rules (ADR-0005).
-- **Zoom-out:** up to 2× the original view by default, 4× allowed in the configuration. The active area (where
-  entities exist: the view plus 16 pixels in the original) follows the zoomed view.
-- **Unlimited active area:** a switch of its own, to try how the levels behave; no limit on the number of
-  entities.
+### ADR-0011: Remaster rules
+Only under Remaster rules (ADR-0005). First called the QoL rules.
+- **Zoom-out** (built): three steps, the original's view, one and a half times and twice it; no more. The whole
+  screen zooms as one, the HUD too: a zoomed view is as high as the screen (480 × 360, 640 × 480) and the HUD
+  lies over the middle of its bottom. The camera keeps the Viking in the middle of what is above the HUD and
+  goes 64 pixels past the level's bottom, so the HUD never hides the floor; where a Viking is low in a level
+  there is then nothing of the level beside the HUD, and it is black. (Tried and not kept: the camera staying
+  inside the level and the HUD sliding to the top of the screen while the Viking would be behind it.) A change of view takes about a
+  quarter of a second: the world's view grows at once and the picture opens up, or the picture closes in and
+  the view shrinks when it is there. A view is never larger than the level.
+- **The active area follows the zoomed view** (where entities exist: the view plus 16 pixels), and so does the
+  edge the enemies turn at. Not the whole level: that keeps the game's rhythm, an enemy starting as it comes into
+  view.
+- **Text boxes** are part of the playfield and zoom with it. One at a speaker is placed by the speaker anywhere
+  in the view; one at a fixed place (a password, a menu) is in the middle of the screen.
+- **No limit on entities** (built): 512 slots against the original's 20, and a layer of 2,048 sprite pieces
+  against its 128. The layer keeps the original's three pools in their order, so what is drawn over what stays;
+  each piece of the Vikings' and enemies' pool (256, against 16) has a frame buffer of its own. A side effect:
+  a new enemy hardly ever shows, for a moment, the frame the buffer's last owner left there.
+- **Zoom is not part of a replay.** Replays are Vanilla's.
 - **Minimap with fog of war:** only what a Viking has seen, kept in the player's profile per level. Profile data,
   not simulation state.
 - **Rewind:** up to 10 seconds, from a ring of snapshots; the minimap is not taken back.
 - **Saves:** automatic progress and a level select. Passwords keep working; Vanilla rules have only passwords.
+- **An unlimited active area** is not built: one player doesn't need it. It comes back with co-op (ADR-0012),
+  where several views share one world: either the active area is every view's together, or everything runs.
 
 ### ADR-0012: Co-op for up to three
 - One to three players; with fewer players than Vikings, a player can switch to a Viking nobody plays.

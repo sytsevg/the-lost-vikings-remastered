@@ -115,3 +115,42 @@ TEST_CASE("dialogue: text without a frame, a character, the boxes' colour") {
     layer.show(*box_at(texts, 4, 0, 1, 1), texts);
     CHECK(layer == before);
 }
+
+TEST_CASE("dialogue: a larger layer has the original's cells in its middle; resizing moves what it shows") {
+    TextLayer layer;
+    const Line letter{.kind = Line::Kind::kCharacter, .column = 3, .row = 2, .value = 'A'};
+    layer.show(letter, {});
+    CHECK(layer.cells.at((2 * kTextLayerColumns) + 3) == 'A');
+    // The view grows (to 640 x 416, say) around its middle: its corner moves 20 cells left and 15 up.
+    layer.resize(80, 52, 20, 15);
+    CHECK(layer.columns == 80);
+    CHECK(layer.rows == 52);
+    CHECK(layer.cells.at((2 * kTextLayerColumns) + 3) == 0);
+    CHECK(layer.cells.at((17 * kTextLayerColumns) + 23) == 'A');
+    // A cell of the original's is in the middle now; one worked out from a point is where it says.
+    layer.show({.kind = Line::Kind::kCharacter, .column = 0, .row = 0, .value = 'B'}, {});
+    CHECK(layer.cells.at((15 * kTextLayerColumns) + 20) == 'B');
+    layer.show({.kind = Line::Kind::kCharacter, .column = 79, .row = 51, .value = 'C', .by_point = true}, {});
+    CHECK(layer.cells.at((51 * kTextLayerColumns) + 79) == 'C');
+    // Back to the original's: what is outside it then is gone; more than there is room for is not asked for.
+    layer.resize(40, 22, -20, -15);
+    CHECK(layer.cells.at((2 * kTextLayerColumns) + 3) == 'A');
+    CHECK(layer.cells.at(0) == 'B');
+    CHECK(std::ranges::count(layer.cells, 'C') == 0);
+    layer.resize(500, 500, 0, 0);
+    CHECK(layer.columns == kTextLayerColumns);
+    CHECK(layer.rows == kTextLayerRows);
+}
+
+TEST_CASE("dialogue: a box at a point stays inside a layer of the size given") {
+    const std::vector<std::uint8_t> texts = sample_texts();
+    const auto near = box_at_point(texts, 0, 1, 600, 400, 0, 0, 80, 52);
+    REQUIRE(near);
+    CHECK(near->by_point);
+    CHECK(near->column > 40);
+    CHECK(near->row > 22);
+    const auto original = box_at_point(texts, 0, 1, 600, 400, 0, 0);
+    REQUIRE(original);
+    CHECK(original->column < 40);
+    CHECK(original->row < 22);
+}

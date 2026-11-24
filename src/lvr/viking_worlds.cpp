@@ -195,7 +195,7 @@ void Viking::at_controls(World& world, bool first) {
     if (found(Test::kTouchesThing)) {
         target = touched_;
     }
-    const Entity* panel = target >= 0 && target < kSlots ? world.at(target) : nullptr;
+    const Entity* panel = target >= 0 && target < world.slots() ? world.at(target) : nullptr;
     if (first) {
         if (panel != nullptr) {
             face(world, panel->facing_left());

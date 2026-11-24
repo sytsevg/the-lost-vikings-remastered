@@ -13,7 +13,7 @@
   [`original/input.md`](original/input.md#keyboard-handler-00006440-irq-1)
 - **A tap between two input reads is lost.** The handler sets a bit at the press and clears it at the release; the
   game looks 20 times a second. A key pressed and released within one tick never reaches it. Kept (a latch for it is a
-  candidate for the QoL rules).
+  candidate for the Remaster rules).
 - **The passwords have no vowels, and neither has the keyboard.** Every key press leaves "the typed character" in
   a script variable, from a table that has the digits and the consonants only. So the password screen can't be
   typed a vowel, the title menu has hidden hot keys (`N`, `P`, `Q`), and any other key press wipes the last

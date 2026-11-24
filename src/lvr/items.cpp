@@ -280,7 +280,7 @@ class FlashBomb : public Entity {
                 world.shake_y = {.amount = 2, .offset = 0, .ticks = 8};
             }
         } else if (step_ == kSteps.size() + 1) {
-            for (int other = kVikingSlots; other < kSlots; ++other) {
+            for (int other = kVikingSlots; other < world.slots(); ++other) {
                 target = other;
                 Entity* enemy = world.at(other);
                 if (enemy != nullptr && enemy->hit_class == hit_class::kEnemy) {

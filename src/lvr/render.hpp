@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -21,14 +22,66 @@ namespace lvr {
 inline constexpr int kScreenWidth = 320;
 inline constexpr int kScreenHeight = 240;
 inline constexpr int kPlayfieldHeight = 176;  // above the HUD
-inline constexpr int kTextColumns = 40;       // the text layer: cells of 8 x 8 pixels
-inline constexpr int kTextRows = 22;
+// The text layer: cells of 8 x 8 pixels over the playfield, as many as the view has (the original's: 40 x 22).
+// A view's `text` has room for the largest view; a row of it is always kTextColumns cells.
+inline constexpr int kTextColumns = 80;
+inline constexpr int kTextRows = 60;
 inline constexpr int kSquares = 13;  // the inventory's squares: four per Viking, then the trash can
+
+// Where things are on the picture, for whatever draws it.
+inline constexpr int kTileSize = 8;
+inline constexpr int kPictureTop = 32;  // a scene's picture starts 32 rows above the level's first row
+inline constexpr std::size_t kPickerIcon = 19;
+// The HUD's parts, from the HUD's top-left corner (docs/formats/level.md).
+inline constexpr std::array<std::array<int, 2>, 3> kPortraitAt{{{45, 19}, {117, 19}, {189, 19}}};
+inline constexpr std::array<std::array<int, 2>, 3> kHealthAt{{{47, 43}, {119, 43}, {191, 43}}};
+inline constexpr std::array<std::array<int, 2>, kSquares> kSquareAt{{{79, 18},
+                                                                     {95, 18},
+                                                                     {79, 34},
+                                                                     {95, 34},
+                                                                     {151, 18},
+                                                                     {167, 18},
+                                                                     {151, 34},
+                                                                     {167, 34},
+                                                                     {223, 18},
+                                                                     {239, 18},
+                                                                     {223, 34},
+                                                                     {239, 34},
+                                                                     {255, 18}}};
+// The picker is drawn as its icon's corners only: 5 pixels along each edge, 2 deep, and 3 more down each side.
+constexpr bool picker_pixel(std::size_t x, std::size_t y) noexcept {
+    const bool edge_x = x < 2 || x >= 14;
+    const bool edge_y = y < 2 || y >= 14;
+    return (edge_y && (x < 5 || x >= 11)) || (edge_x && (y < 5 || y >= 11));
+}
+// Whether the tileset's masks put pixel (x, y) of `tile` in front of the sprites. A mask bit per pixel, in the
+// order the tile's bytes are stored: by plane (x % 4), then row, then x / 4; the most significant bit first.
+inline bool in_front(const std::vector<std::uint8_t>& masks, std::size_t tile, std::size_t x, std::size_t y) {
+    const std::size_t stored = ((x % 4) * 16) + (y * 2) + (x / 4);
+    const std::size_t at = (tile * 8) + (stored / 8);
+    return at < masks.size() && (masks[at] & (0x80U >> (stored % 8))) != 0;
+}
 
 struct Screen {
     std::vector<std::uint8_t> pixels = std::vector<std::uint8_t>(std::size_t{kScreenWidth} * kScreenHeight);
     assets::Palette palette{};
+    int kept = -1;  // drawn by a renderer that keeps its pictures itself (lvr/gpu.hpp): which one; no pixels here
+    // The part of the playfield that is shown, scaled to the playfield's place on screen: all of the original's
+    // view, or (Remaster rules' zoom) of a larger one, or a part of it while the zoom changes.
+    struct Part {
+        float x = 0;
+        float y = 0;
+        float width = kScreenWidth;
+        float height = kPlayfieldHeight;
+        bool operator==(const Part&) const = default;
+    } part;
 };
+
+// What draws a view: draw() below, or something that is to make the same picture.
+struct View;
+struct SceneGraphics;
+struct SharedGraphics;
+using Draw = std::function<void(Screen&, const View&, const SceneGraphics&, const SharedGraphics&)>;
 
 // The pictures every scene shares, loaded once.
 struct SharedGraphics {
@@ -43,12 +96,17 @@ std::expected<SharedGraphics, std::string> load_shared_graphics(const assets::Ar
 
 // What a level or cutscene is drawn from.
 struct SceneGraphics {
+    // Which pictures these are: another number whenever they are others (next_graphics_id), so that what is kept
+    // of them elsewhere (the GPU renderer's atlas) knows. 0: not said; nothing is kept.
+    std::uint32_t id = 0;
     std::vector<assets::IndexedImage> tileset;        // 8 x 8 tiles
     std::vector<std::uint8_t> tile_masks;             // 8 bytes a tile: the pixels drawn in front of the sprites
     std::vector<assets::Metatile> metatiles;          // a cell's picture: 2 x 2 tiles
     std::optional<assets::IndexedImage> picture;      // a scene without a map: its screen
     std::optional<assets::IndexedImage> hud_picture;  // in the HUD's place (the title, the starfield, the ship)
 };
+
+std::uint32_t next_graphics_id() noexcept;
 
 // One piece of a sprite, as drawn.
 struct DrawnSprite {
@@ -76,6 +134,9 @@ struct HudView {
 struct View {
     int camera_x = 0;  // the view's top-left corner in the level, the shake included
     int camera_y = 0;
+    // How much of the level the playfield shows. Only the GPU renderer draws another size than the original's.
+    int width = kScreenWidth;
+    int height = kPlayfieldHeight;
     int text_x = 0;  // where the text layer's first cell is on screen (it moves with the camera's last 3 bits)
     int text_y = 0;
     const Map* map = nullptr;          // none: a scene that is one picture

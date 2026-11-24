@@ -6,6 +6,7 @@
 #include <deque>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -25,7 +26,7 @@ class LvrPlayer : public Player {
   public:
     // Starts `replay`. So far only replays that start in a level (slots 0-36) can be played.
     static std::expected<std::unique_ptr<LvrPlayer>, std::string> open(const std::filesystem::path& original_dir,
-                                                                       Replay replay);
+                                                                       Replay replay, Draw draw_with = draw);
 
     // The level's start is shown as its last picture for as long as the original's load takes; then three
     // refreshes a step: a tick's three pictures.
@@ -34,11 +35,12 @@ class LvrPlayer : public Player {
 
   private:
     LvrPlayer(Replay replay, assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, SharedGraphics shared,
-              int slot);
+              int slot, Draw draw_with);
     Refresh picture();
     std::vector<Sound> take_sounds();
     void play_step();
 
+    Draw draw_;
     Replay replay_;
     assets::GameFiles files_;  // the scenes the play goes on to are loaded from them
     SharedGraphics shared_;

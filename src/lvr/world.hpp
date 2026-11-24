@@ -25,7 +25,12 @@
 
 namespace lvr {
 
-inline constexpr int kSlots = 20;       // Vanilla rules: the original's 20 entities at a time
+// The rules a game is played by (ADR-0005). Vanilla: the original's, exactly. Remaster: ours on top of them (ADR-0011).
+enum class Rules : std::uint8_t { kVanilla, kRemaster };
+
+inline constexpr int kSlots = 20;  // Vanilla rules: the original's 20 entities at a time
+// Remaster rules: no limit a level could reach (the largest has 83 placements, and what they create).
+inline constexpr int kRemasterSlots = 512;
 inline constexpr int kVikingSlots = 3;  // the Vikings are in the first three
 inline constexpr std::size_t kKinds = assets::kObjectTypeCount;
 inline constexpr std::size_t kMostPlacements = 128;
@@ -76,23 +81,32 @@ enum class ViewPart : std::uint8_t { kWhole, kLeft, kRight, kBottom, kTop };
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding): its members are grouped by meaning, not by size
 class World {
   public:
-    Map map;              // the level's, as the entities have changed it
-    Cell cleared_cell{};  // what a cell becomes where a wall is broken away: the world's empty cell
+    Rules rules = Rules::kVanilla;  // a game's, not a scene's: it goes on from scene to scene
+    Map map;                        // the level's, as the entities have changed it
+    Cell cleared_cell{};            // what a cell becomes where a wall is broken away: the world's empty cell
     Cell filled_cell{.metatile = 0, .tile_type = tile::kGround};  // and where a floor is built: its solid cell
     std::uint16_t broken_picture = 0;  // the picture of a cell where a target was shot away: the world's
     std::uint16_t shot_picture = 0;    // and where another kind of target was (the wacky world's)
     // An entity is created in the lowest free slot; they are updated and drawn in slot order.
-    std::array<std::unique_ptr<Entity>, kSlots> entities;
+    // As many slots as the rules give (set_rules); they are not added to while a world runs.
+    std::vector<std::unique_ptr<Entity>> entities = std::vector<std::unique_ptr<Entity>>(kSlots);
+    int slots() const noexcept { return static_cast<int>(entities.size()); }
     // The entity in a slot; nullptr if the slot is empty, or is no slot (kNobody).
     Entity* at(int slot) noexcept {
-        return slot >= 0 && slot < kSlots ? entities[static_cast<std::size_t>(slot)].get() : nullptr;
+        return slot >= 0 && slot < slots() ? entities[static_cast<std::size_t>(slot)].get() : nullptr;
     }
     const Entity* at(int slot) const noexcept {
-        return slot >= 0 && slot < kSlots ? entities[static_cast<std::size_t>(slot)].get() : nullptr;
+        return slot >= 0 && slot < slots() ? entities[static_cast<std::size_t>(slot)].get() : nullptr;
     }
-    Pieces pieces{};
+    // The rules, and the room for entities and sprite pieces they give. Before anything is created.
+    void set_rules(Rules now) {
+        rules = now;
+        entities.resize(now == Rules::kRemaster ? kRemasterSlots : kSlots);
+        pieces = Pieces{now == Rules::kRemaster ? kRemasterPieces : kOriginalPieces};
+    }
+    Pieces pieces;  // as many, laid out, as the rules give (set_rules)
     // The piece of a number; the numbers go round (a sprite's pieces may wrap past the last).
-    Piece& piece_at(int index) { return pieces.at(static_cast<std::size_t>(index) % kPieces); }
+    Piece& piece_at(int index) { return pieces.at(static_cast<std::size_t>(index) % pieces.size()); }
     Camera camera;
     // The height of a slope's surface at each of a cell's 16 columns, by slope (tile type - 0x30): from VIKINGS.EXE.
     std::array<std::uint8_t, 256> slope_heights{};
@@ -387,6 +401,12 @@ class World {
     void create_always_active();
     // The placements in that part of the view that have no entity yet.
     void create_in_view(ViewPart part);
+    // Remaster rules' zoom: the view shows `width` x `height` pixels of the level from now on. A larger view
+    // grows around the middle of the one before; a smaller one has the Viking being played in its middle. Both
+    // within the level, which must be at least that large.
+    void set_view(int width, int height);
+    // Where the camera is put by that, without doing it.
+    Camera camera_for_view(int width, int height) const noexcept;
     // When the camera has crossed a cell's edge since the last time: the placements in the strip that came in.
     void create_scrolled_in();
     // Entities from the fourth slot on that are outside the active area, and not always active, are told so.

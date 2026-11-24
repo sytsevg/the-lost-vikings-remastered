@@ -9,13 +9,16 @@ Target `lvr::engine`, plain C++ on `lvr::assets`.
   dumps every level and cutscene from it ([`docs/formats/level.md`](../../docs/formats/level.md#exported-output)).
 - `render.*`: the Classic renderer: a `View` (what one picture shows) drawn into a 320 × 240 `Screen`. It draws;
   it decides nothing.
-- `sprites.*`: sprite pieces (`Piece`, 128 to a layer in three pools), an entity's `Sprite`, taking and letting go
+- `gpu.*`, `gpu_quad.*`, `gpu_show.*`: the GPU renderer (target `lvr::gpu`, on SDL_GPU) and its shaders: the same
+  `View` drawn on the graphics card, at any view size, kept there and shown scaled. What Remaster rules show.
+- `sprites.*`: sprite pieces (`Piece`, 128 to a layer in three pools; 2,048 under Remaster rules), an entity's `Sprite`, taking and letting go
   of pieces, the animation player (the original's animation programs, imported and played as they are), and the
   pieces made into pictures for the renderer (`PiecePainter`).
-- `camera.*`: the camera: its limits, where it starts, how it follows the Viking being played.
+- `camera.*`: the camera: its limits, where it starts, how it follows the Viking being played; the size of the
+  view (the original's, or a zoomed one).
 - `entity.hpp`: `Entity`, the base class of every kind (ADR-0018): what the engine reads and moves of each.
 - `movement.*`: speed and gravity into a tick's push, and the move itself.
-- `world.*`: `World`: the map, the 20 entity slots, the pieces, the camera; kinds' records, creating and removing
+- `world.*`: `World`: the map, the entity slots (20, or 512 under Remaster rules), the pieces, the camera; kinds' records, creating and removing
   entities, placements and the active area. Grows with the engine.
 - `terrain.*`: what an entity finds around it and how the map stops it (walls, floors, slopes, the ground).
 - `hits.*`: which entities touch which, and who stands on or hangs under an entity.

@@ -201,7 +201,7 @@ class Magnet : public Entity {
 
     void let_go(World& world) {
         let_go_of_olaf(world);
-        for (int slot_of = kVikingSlots; slot_of < kSlots - 1; ++slot_of) {
+        for (int slot_of = kVikingSlots; slot_of < world.slots() - 1; ++slot_of) {
             Entity* crate = world.at(slot_of);
             if (crate == nullptr || (crate->hit_mask & hit::kWeight) == 0 || !crate->held || y >= crate->box.bottom ||
                 crate->box.top >= box.bottom + 64) {
@@ -270,7 +270,7 @@ class Magnet : public Entity {
     }
 
     void pull_crates(World& world) {
-        for (int slot_of = kVikingSlots; slot_of < kSlots - 1; ++slot_of) {
+        for (int slot_of = kVikingSlots; slot_of < world.slots() - 1; ++slot_of) {
             Entity* crate = world.at(slot_of);
             if (crate == nullptr || (crate->hit_mask & hit::kWeight) == 0) {
                 continue;

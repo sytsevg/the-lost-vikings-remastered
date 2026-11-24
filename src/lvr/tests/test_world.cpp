@@ -391,3 +391,16 @@ TEST_CASE("remove: the slot is free at once, the removed one is still there unti
     CHECK(t.world.at(0) != nullptr);
     CHECK(t.world.at(1) != nullptr);
 }
+
+TEST_CASE("world: Vanilla rules have the original's 20 slots; Remaster rules have room no level fills") {
+    World world;
+    CHECK(world.slots() == kSlots);
+    CHECK(world.at(kSlots) == nullptr);
+    world.set_rules(Rules::kRemaster);
+    CHECK(world.rules == Rules::kRemaster);
+    CHECK(world.slots() == kRemasterSlots);
+    CHECK(world.at(kRemasterSlots - 1) == nullptr);
+    CHECK(world.at(kRemasterSlots) == nullptr);
+    world.set_rules(Rules::kVanilla);
+    CHECK(world.slots() == kSlots);
+}

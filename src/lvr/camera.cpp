@@ -9,10 +9,10 @@ namespace lvr {
 
 namespace {
 
-constexpr int kBoxLeft = 144;  // the box the followed entity can move in without the camera moving
-constexpr int kBoxRight = 176;
-constexpr int kBoxTop = 80;
-constexpr int kBoxBottom = 96;
+// The box in the view's middle that the followed entity can move in without the camera moving: this far either
+// side of the middle.
+constexpr int kBoxAcross = 16;
+constexpr int kBoxDown = 8;
 constexpr int kMostPerTick = 16;
 
 // Positions are 16-bit words in the original; a level is far smaller, but a map narrower than the view gives a
@@ -67,22 +67,24 @@ int start(int position, int half_view, int limit) noexcept {
 }  // namespace
 
 void set_camera_limits(Camera& camera, int map_width, int map_height) noexcept {
-    camera.max_x = wrapped((map_width * kCellSize) - kViewWidth);
-    camera.max_y = wrapped((map_height * kCellSize) - kViewHeight);
+    camera.max_x = wrapped((map_width * kCellSize) - camera.view_width);
+    camera.max_y = wrapped((map_height * kCellSize) - camera.view_height + camera.covered);
 }
 
 void start_camera(Camera& camera, int x, int y) noexcept {
-    camera.x = start(x, kViewWidth / 2, camera.max_x);
-    camera.y = start(y, kViewHeight / 2, camera.max_y);
+    camera.x = start(x, camera.view_width / 2, camera.max_x);
+    camera.y = start(y, (camera.view_height - camera.covered) / 2, camera.max_y);
 }
 
 void follow(Camera& camera, int x, int y, int picture) noexcept {
     if (picture == 0) {
         camera.moved_x = camera.moved_y = 0;
-        camera.out_left = past(camera.x + kBoxLeft, x);
-        camera.out_right = camera.out_left != 0 ? 0 : past(x - camera.x, kBoxRight);
-        camera.out_up = past(camera.y + kBoxTop, y);
-        camera.out_down = camera.out_up != 0 ? 0 : past(y - camera.y, kBoxBottom);
+        const int middle_x = camera.view_width / 2;
+        const int middle_y = (camera.view_height - camera.covered) / 2;
+        camera.out_left = past(camera.x + middle_x - kBoxAcross, x);
+        camera.out_right = camera.out_left != 0 ? 0 : past(x - camera.x, middle_x + kBoxAcross);
+        camera.out_up = past(camera.y + middle_y - kBoxDown, y);
+        camera.out_down = camera.out_up != 0 ? 0 : past(y - camera.y, middle_y + kBoxDown);
     }
     // The same split as a moving sprite's: 7 is 3, 2, 2.
     if (camera.out_left != 0) {

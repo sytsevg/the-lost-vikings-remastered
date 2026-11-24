@@ -1,5 +1,9 @@
 #include "lvr/dialogue.hpp"
 
+#include <algorithm>
+#include <type_traits>
+#include <utility>
+
 #include "lvr/names.hpp"
 
 namespace lvr {
@@ -19,8 +23,6 @@ constexpr std::uint8_t kTailDown = 0x1A;
 constexpr std::uint8_t kTailUp = 0x1B;
 constexpr std::uint8_t kSpace = 0x20;
 constexpr std::uint8_t kNewLine = 0x0D;
-constexpr int kLastColumn = 39;  // a box stays left of this column and above this row
-constexpr int kLastRow = 22;
 
 // Where text `number` starts.
 std::optional<std::uint16_t> offset_of(Texts texts, int number) {
@@ -59,13 +61,15 @@ Size anchor_cell(int anchor, Size box) {
     return cell;
 }
 
-Line box(std::uint16_t offset, int anchor, int column, int row, Size size) {
-    // Kept inside the screen's cells.
-    if (wrapped(column + size.width) >= kLastColumn) {
-        column = kLastColumn - 1 - size.width;
+Line box(std::uint16_t offset, int anchor, int column, int row, Size size, int columns = kOriginalTextColumns,
+         int rows = kOriginalTextRows) {
+    // Kept inside the screen's cells: left of the last column, and above the row after the last.
+    const int last_column = columns - 1;
+    if (wrapped(column + size.width) >= last_column) {
+        column = last_column - 1 - size.width;
     }
-    if (wrapped(row + size.height) >= kLastRow) {
-        row = kLastRow - 1 - size.height;
+    if (wrapped(row + size.height) >= rows) {
+        row = rows - 1 - size.height;
     }
     return Line{.kind = Line::Kind::kBox,
                 .column = static_cast<std::uint16_t>(column),
@@ -85,7 +89,8 @@ std::optional<Line> box_at(Texts texts, int number, int anchor, int column, int 
     return box(*offset, anchor, column, row, *size);
 }
 
-std::optional<Line> box_at_point(Texts texts, int number, int anchor, int x, int y, int camera_x, int camera_y) {
+std::optional<Line> box_at_point(Texts texts, int number, int anchor, int x, int y, int camera_x, int camera_y,
+                                 int columns, int rows) {
     const auto offset = offset_of(texts, number);
     const auto size = offset ? size_at(texts, *offset) : std::nullopt;
     if (!size) {
@@ -101,7 +106,10 @@ std::optional<Line> box_at_point(Texts texts, int number, int anchor, int x, int
         const int at = wrapped((static_cast<std::uint16_t>(on_screen) >> 3U) - anchor_at);
         return at < 2 ? 2 : at;
     };
-    return box(*offset, anchor, cells(x, camera_x, cell.width), cells(y, camera_y, cell.height), *size);
+    Line line =
+        box(*offset, anchor, cells(x, camera_x, cell.width), cells(y, camera_y, cell.height), *size, columns, rows);
+    line.by_point = true;
+    return line;
 }
 
 std::optional<Line> text_at(Texts texts, int number, int column, int row) {
@@ -116,7 +124,7 @@ std::optional<Line> text_at(Texts texts, int number, int column, int row) {
 }
 
 void TextLayer::put(std::size_t column, std::size_t row, std::uint8_t character) {
-    if (column < kTextLayerColumns && row < kTextLayerRows) {
+    if (std::cmp_less(column, columns) && std::cmp_less(row, rows)) {
         cells.at((row * kTextLayerColumns) + column) = character;
     }
 }
@@ -154,7 +162,37 @@ void TextLayer::show(const Line& line, Texts texts) {
     draw();
 }
 
-void TextLayer::put_line(const Line& line, Texts texts) {
+void TextLayer::resize(int columns_now, int rows_now, int across, int down) {
+    columns_now = std::clamp(columns_now, 0, kTextLayerColumns);
+    rows_now = std::clamp(rows_now, 0, kTextLayerRows);
+    const auto moved = [&](const auto& from) {
+        std::remove_cvref_t<decltype(from)> to{};
+        for (int row = 0; row < rows; ++row) {
+            for (int column = 0; column < columns; ++column) {
+                const int to_column = column + across;
+                const int to_row = row + down;
+                if (to_column >= 0 && to_column < columns_now && to_row >= 0 && to_row < rows_now) {
+                    to.at((static_cast<std::size_t>(to_row) * kTextLayerColumns) +
+                          static_cast<std::size_t>(to_column)) =
+                        from.at((static_cast<std::size_t>(row) * kTextLayerColumns) + static_cast<std::size_t>(column));
+                }
+            }
+        }
+        return to;
+    };
+    cells = moved(cells);
+    shown = moved(shown);
+    columns = columns_now;
+    rows = rows_now;
+}
+
+void TextLayer::put_line(const Line& given, Texts texts) {
+    // A cell of the original's 40 x 22 is in the middle of a larger layer.
+    Line line = given;
+    if (!line.by_point) {
+        line.column = static_cast<std::uint16_t>(line.column + ((columns - kOriginalTextColumns) / 2));
+        line.row = static_cast<std::uint16_t>(line.row + ((rows - kOriginalTextRows) / 2));
+    }
     if (line.kind == Line::Kind::kBox || line.kind == Line::Kind::kText || line.kind == Line::Kind::kCharacter) {
         pending = true;
     }

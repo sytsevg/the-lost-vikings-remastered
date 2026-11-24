@@ -52,7 +52,7 @@ Entity* World::create(const Creation& creation) {
     }
     int slot = 0;
     while (entities.at(static_cast<std::size_t>(slot))) {
-        if (++slot == kSlots) {
+        if (++slot == slots()) {
             return nullptr;
         }
     }
@@ -124,9 +124,9 @@ void World::remove(int slot) {
     if (!ending && entity->placement >= 0 && entity->has_flag(entity_flag::kCreatedAgainAtOnce)) {
         const Entity* again =
             create_if_in(entity->placement, View{.left = wrapped(camera.x - kMargin),
-                                                 .right = wrapped(camera.x + kViewWidth + kMargin),
+                                                 .right = wrapped(camera.x + camera.view_width + kMargin),
                                                  .top = wrapped(camera.y - kMargin),
-                                                 .bottom = wrapped(camera.y + kViewHeight + kMargin)});
+                                                 .bottom = wrapped(camera.y + camera.view_height + kMargin)});
         // Created in the slot of the one whose turn it is (it removed itself), or below it: the tick's turns have
         // passed it by, and it has its first one after the tick's moves (where the others look at what they ran
         // into): it is there and shows, but doesn't move yet.
@@ -167,7 +167,7 @@ Entity* World::create_if_in(int index, const View& view) {
         wrapped(placement.y + half_height) < view.top || wrapped(placement.y - half_height) >= view.bottom) {
         return nullptr;
     }
-    for (int slot = first_placed_slot; slot < kSlots; ++slot) {
+    for (int slot = first_placed_slot; slot < slots(); ++slot) {
         const Entity* entity = at(slot);
         if (entity != nullptr && entity->placement == index) {
             return nullptr;  // it is there already
@@ -178,9 +178,9 @@ Entity* World::create_if_in(int index, const View& view) {
 
 void World::create_in_view(ViewPart part) {
     View view{.left = wrapped(camera.x - kMargin),
-              .right = wrapped(camera.x + kViewWidth + kMargin),
+              .right = wrapped(camera.x + camera.view_width + kMargin),
               .top = wrapped(camera.y - kMargin),
-              .bottom = wrapped(camera.y + kViewHeight + kMargin)};
+              .bottom = wrapped(camera.y + camera.view_height + kMargin)};
     // A strip: the 32 pixels at that edge of the active area.
     switch (part) {
         case ViewPart::kWhole:
@@ -189,10 +189,10 @@ void World::create_in_view(ViewPart part) {
             view.right = wrapped(camera.x + kMargin);
             break;
         case ViewPart::kRight:
-            view.left = wrapped(camera.x + kViewWidth - kMargin);
+            view.left = wrapped(camera.x + camera.view_width - kMargin);
             break;
         case ViewPart::kBottom:
-            view.top = wrapped(camera.y + kViewHeight - kMargin);
+            view.top = wrapped(camera.y + camera.view_height - kMargin);
             break;
         case ViewPart::kTop:
             view.bottom = wrapped(camera.y + kMargin);
@@ -204,6 +204,35 @@ void World::create_in_view(ViewPart part) {
     for (std::size_t index = 0; index < placements.size(); ++index) {
         (void)create_if_in(static_cast<int>(index), view);
     }
+}
+
+Camera World::camera_for_view(int width, int height) const noexcept {
+    Camera placed = camera;
+    const bool larger = width > camera.view_width || height > camera.view_height;
+    placed.view_width = width;
+    placed.view_height = height;
+    placed.covered = height > kViewHeight ? kHudRows : 0;  // a larger view has the HUD over its bottom
+    set_camera_limits(placed, map.width, map.height);
+    const Entity* viking = current_viking != kNobody ? at(current_viking) : nullptr;
+    if (larger || viking == nullptr) {
+        start_camera(placed, camera.x + (camera.view_width / 2),
+                     camera.y + ((camera.view_height - camera.covered) / 2));
+    } else {
+        start_camera(placed, viking->x, viking->y);
+    }
+    return placed;
+}
+
+void World::set_view(int width, int height) {
+    constexpr int kTextCell = 8;
+    const Camera before = camera;
+    camera = camera_for_view(width, height);
+    // The text stays where it is in the level, as nearly as its cells allow.
+    text.resize(width / kTextCell, height / kTextCell, (before.x / kTextCell) - (camera.x / kTextCell),
+                (before.y / kTextCell) - (camera.y / kTextCell));
+    strip_x = cell_of(camera.x);
+    strip_y = cell_of(camera.y);
+    create_in_view(ViewPart::kWhole);
 }
 
 void World::create_scrolled_in() {
@@ -322,12 +351,11 @@ void World::read_keys(std::uint16_t keys) noexcept {
 }
 
 bool World::well_in_view(const Entity& entity) const noexcept {
-    constexpr int kInset = 31;    // this far from the view's left and top edges ...
-    constexpr int kAcross = 258;  // ... and within this much across and down from there
-    constexpr int kDown = 114;
+    constexpr int kInset = 31;  // this far inside the view on every side (258 across and 114 down in the original's)
     const int left = wrapped(camera.x + kInset);
     const int top = wrapped(camera.y + kInset);
-    return left < entity.x && wrapped(left + kAcross) >= entity.x && top < entity.y && wrapped(top + kDown) >= entity.y;
+    return left < entity.x && wrapped(left + camera.view_width - (2 * kInset)) >= entity.x && top < entity.y &&
+           wrapped(top + camera.view_height - (2 * kInset)) >= entity.y;
 }
 
 bool World::can_be_spoken_to(const Entity& entity) const noexcept {
@@ -337,7 +365,7 @@ bool World::can_be_spoken_to(const Entity& entity) const noexcept {
 }
 
 void World::say_at_point(int number, int anchor, int x, int y) {
-    if (const auto line = box_at_point(texts, number, anchor, x, y, camera.x, camera.y)) {
+    if (const auto line = box_at_point(texts, number, anchor, x, y, camera.x, camera.y, text.columns, text.rows)) {
         lines.push_back(*line);
     }
 }
@@ -435,7 +463,7 @@ void World::run(int part, bool starting) {
         }
         created_below.clear();
         created_late.clear();
-        for (int slot = 0; slot < kSlots; ++slot) {
+        for (int slot = 0; slot < slots(); ++slot) {
             turn(slot);
             // The list may grow as they take their turns.
             // NOLINTNEXTLINE(modernize-loop-convert)
@@ -455,7 +483,7 @@ void World::run(int part, bool starting) {
                 put_on_ground(*this, *entity);
             }
         }
-        for (int slot = 0; slot < kSlots; ++slot) {
+        for (int slot = 0; slot < slots(); ++slot) {
             if (std::ranges::find(created_late, slot) != created_late.end()) {
                 turn(slot);
                 continue;
@@ -471,7 +499,7 @@ void World::run(int part, bool starting) {
         if (has_vikings && !starting) {
             fall_back_viking();
         }
-        for (int slot = 0; slot < kSlots; ++slot) {
+        for (int slot = 0; slot < slots(); ++slot) {
             if (Entity* entity = at(slot)) {
                 entity->check_hits(*this);
             }
@@ -572,7 +600,7 @@ constexpr int kJustSwitched = 5;  // what the camera's last move is set to when 
 
 // The first piece of a Viking's sprite shown again after a blink.
 void show(Pieces& pieces, const Entity& viking, bool erased_too) {
-    Piece& piece = pieces.at(static_cast<std::size_t>(viking.sprite.first) % kPieces);
+    Piece& piece = pieces.at(static_cast<std::size_t>(viking.sprite.first) % pieces.size());
     piece.blinked_off = false;
     piece.redraw = 2;
     if (erased_too) {
@@ -626,8 +654,8 @@ void World::switch_viking() {
             break;
         }
     }
-    Piece& piece =
-        pieces.at(static_cast<std::size_t>(entities.at(static_cast<std::size_t>(viking))->sprite.first) % kPieces);
+    Piece& piece = pieces.at(static_cast<std::size_t>(entities.at(static_cast<std::size_t>(viking))->sprite.first) %
+                             pieces.size());
     piece.blinked_off = false;
     piece.redraw = 2;
     current_viking = viking;
@@ -644,10 +672,10 @@ void World::check_viking_in_view() {
         return;
     }
     // 12 pixels of slack on every side; while the camera is at the top, nothing is too high or too low.
-    const bool in_view =
-        wrapped(viking->x - camera.x + kSlack) >= 0 && wrapped(camera.x + kViewWidth + kSlack - viking->x) >= 0 &&
-        (camera.y == 0 ||
-         (wrapped(viking->y - camera.y + kSlack) >= 0 && wrapped(camera.y + kViewHeight - viking->y) >= 0));
+    const bool in_view = wrapped(viking->x - camera.x + kSlack) >= 0 &&
+                         wrapped(camera.x + camera.view_width + kSlack - viking->x) >= 0 &&
+                         (camera.y == 0 || (wrapped(viking->y - camera.y + kSlack) >= 0 &&
+                                            wrapped(camera.y + camera.view_height - viking->y) >= 0));
     if (!in_view) {
         held = pressed = 0;
         return;
@@ -753,7 +781,8 @@ void World::move_attached() {
         Entity& entity = *owned;
         if (entity.moved_by >= kMovedFreely) {
             shift(entity, entity.push_x, entity.push_y);
-        } else if (const Entity* carrier = entities.at(static_cast<std::size_t>(entity.moved_by) % kSlots).get()) {
+        } else if (const Entity* carrier =
+                       entities.at(static_cast<std::size_t>(entity.moved_by) % entities.size()).get()) {
             if (carrier->facing_left() != entity.facing_left()) {
                 flip_across(entity);
             }
@@ -788,11 +817,12 @@ void World::mark_outside_active_area() {
     // The area's left and top edges stop at the level's; its right edge is measured from where the left edge
     // would be without that, its bottom edge from the top edge as stopped.
     const int unclamped_left = wrapped(camera.x - kMargin);
-    const View area{.left = std::max(unclamped_left, 0),
-                    .right = wrapped(unclamped_left + kViewWidth + (2 * kMargin)),
-                    .top = std::max<int>(wrapped(camera.y - kMargin), 0),
-                    .bottom = wrapped(std::max<int>(wrapped(camera.y - kMargin), 0) + kViewHeight + (2 * kMargin))};
-    for (int slot = kVikingSlots; slot < kSlots; ++slot) {
+    const View area{
+        .left = std::max(unclamped_left, 0),
+        .right = wrapped(unclamped_left + camera.view_width + (2 * kMargin)),
+        .top = std::max<int>(wrapped(camera.y - kMargin), 0),
+        .bottom = wrapped(std::max<int>(wrapped(camera.y - kMargin), 0) + camera.view_height + (2 * kMargin))};
+    for (int slot = kVikingSlots; slot < slots(); ++slot) {
         Entity* entity = at(slot);
         if (entity == nullptr || entity->stays_active()) {
             continue;

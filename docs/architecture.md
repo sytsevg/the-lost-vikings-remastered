@@ -11,6 +11,7 @@ the project is and what is open: [`HANDOVER.md`](HANDOVER.md).
 | `src/lvr/` (`lvr::engine`) | The engine: a level or scene as a world of entities, run a tick at a time and drawn. Every kind of entity. Plain C++. | assets |
 | `src/audio/` (`lvr::audio`) | The XMIDI sequencer, the OPL3 driver's behaviour on ymfm (Classic), General MIDI on TinySoundFont (Modern). | assets |
 | `src/lvr/session.*`, `main.cpp` | The game: the scenes one after another, a picture and the sound for every refresh (`Session`), and `vikings-remaster`, the window and devices (SDL3). | engine, audio, input, image |
+| `src/lvr/gpu.*` (`lvr::gpu`) | The GPU renderer, what Remaster rules are shown by (SDL_GPU; its shaders are `gpu_*.vert` and `gpu_*.frag`). | engine |
 | `src/input/`, `src/image/` | Keys and gamepad into the original's keyboard word, with rebinding; indexed PNG through SDL3. | assets |
 | `src/replay/` | Replays, goldens, and `lv-replay`, which plays one against the other. | engine |
 | `src/exporter/` | `lv-export`, a development tool: the game's data as PNG and JSON, the scripts as listings. | assets, engine |
@@ -174,8 +175,9 @@ class Dispenser : public Entity {
   save written so puzzles stay as the player left them (an elevator stays up, a switch stays thrown, an enemy
   stays where it was pushed). It also gives the game its rhythm: an enemy starts its behaviour as it comes on
   screen, never off it.
-- **In the engine:** under Vanilla rules this is reproduced. Under QoL rules the active area follows the zoomed
-  view, or is unlimited ([`decisions.md`](decisions.md), ADR-0011).
+- **In the engine:** under Vanilla rules this is reproduced. Under Remaster rules it works the same way around a
+  larger view: the active area, and the edge the enemies turn at, follow the zoomed view
+  ([`decisions.md`](decisions.md), ADR-0011), and there are 512 slots instead of 20.
 
 ## Sprites and animations
 
@@ -193,6 +195,19 @@ class Dispenser : public Entity {
 picture of palette indices. It draws the whole picture every time and decides nothing. The original's hardware
 tricks (panning, page flips, restoring under sprites) are not copied; where they left something visible that is
 part of the game it is modelled, and two accidents are deliberately not ([`quirks.md`](quirks.md), "Drawing").
+
+Under Remaster rules the window's pictures are drawn by `gpu.*` instead (ADR-0006), from the same `View`:
+- **Drawing:** everything a scene is made of is in one atlas of palette indices (the shared pictures once, the
+  scene's when the scene changes, a sprite's picture the first time it is shown). A picture is a list of
+  rectangles of the atlas, drawn in the Classic renderer's order into a texture of indices as large as the view, with the HUD's
+  rows under it. The last 512 pictures are kept on the card, since a step can make 150 of them before the first
+  is shown.
+- **Showing:** a second pass looks each index up in the palette and scales: the playfield's part, then the HUD,
+  at one scale. Shown smaller than it is, a pixel is the mean of the pixels it covers.
+- **The view is the world's** (`Camera::view_width`, `view_height`): the camera's limits and follow box, the
+  active area, "in view" for the kinds and the text layer's size all read it. `Session` owns the zoom: which
+  view is wanted, `World::set_view`, and the part of each picture that is shown while the view changes
+  (`Screen::part`).
 
 ## Sound
 

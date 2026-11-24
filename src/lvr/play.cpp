@@ -40,6 +40,7 @@ std::expected<LoadedLevel, std::string> load_with(const assets::GameFiles& files
     for (std::size_t colour = 16; colour < loaded.level.palette.size(); colour += 16) {
         loaded.level.palette.at(colour) = assets::Rgb{};
     }
+    loaded.graphics.id = next_graphics_id();
     loaded.graphics.tileset = loaded.level.tileset;
     loaded.graphics.metatiles = loaded.level.metatiles;
     if (header.is_tiled()) {
@@ -198,9 +199,10 @@ std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files
     return loaded;
 }
 
-World prepare_world(const LoadedLevel& loaded, const Map* map_before) {
+World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rules) {
     const Level& level = loaded.level;
     World world;
+    world.set_rules(rules);
     // A scene that is one picture has no map of its own: the one before it stays (and with it the camera's limits).
     world.map = level.map.cells.empty() && map_before != nullptr ? *map_before : level.map;
     world.placements = level.placements;
@@ -265,8 +267,8 @@ World prepare_world(const LoadedLevel& loaded, const Map* map_before) {
     return world;
 }
 
-World start_world(const LoadedLevel& loaded) {
-    World world = prepare_world(loaded);
+World start_world(const LoadedLevel& loaded, Rules rules) {
+    World world = prepare_world(loaded, nullptr, rules);
     for (int part = 0; part < 3; ++part) {
         world.run(part, true);
     }
@@ -402,7 +404,7 @@ int Play::change_scene(const std::function<void()>& picture) {
     world.cues.push_back(SoundCue{
         .kind = SoundCue::Kind::kMusicAction, .value = leaving_level.music.at_end, .tune = leaving_level.music.tune});
     world.ending = true;
-    for (int slot = 0; slot < kSlots; ++slot) {
+    for (int slot = 0; slot < world.slots(); ++slot) {
         if (Entity* entity = world.at(slot)) {
             world.updating = slot;
             entity->outside_active_area(world);
@@ -441,7 +443,7 @@ int Play::change_scene(const std::function<void()>& picture) {
         return kFadeSteps;
     }
     auto loaded = std::make_unique<LoadedLevel>(std::move(*next));
-    World started = prepare_world(*loaded, &world.map);
+    World started = prepare_world(*loaded, &world.map, world.rules);
     started.cues.front().value = leaving_level.music.at_end == 1 ? 1 : 0;  // what plays stops, or the music stays
     // What goes on from scene to scene.
     started.seed = world.seed;
@@ -501,6 +503,8 @@ View view_of(const World& world, const LoadedLevel& loaded, PiecePainter& painte
     View view;
     view.camera_x = shaken(world.camera.x, world.shake_x, world.camera.max_x);
     view.camera_y = shaken(world.camera.y, world.shake_y, world.camera.max_y);
+    view.width = world.camera.view_width;
+    view.height = world.camera.view_height;
     // The text layer scrolls with the camera's last three bits, and shakes with the view.
     view.text_x = -static_cast<int>(static_cast<std::uint16_t>(world.camera.x) & 7U) - (view.camera_x - world.camera.x);
     view.text_y = -static_cast<int>(static_cast<std::uint16_t>(world.camera.y) & 7U) - (view.camera_y - world.camera.y);
@@ -589,6 +593,7 @@ const SceneGraphics& Play::graphics() {
                 }
             }
         }
+        cleared_->id = next_graphics_id();
         cleared_->picture = std::move(screen);
         cleared_->hud_picture.reset();
     }

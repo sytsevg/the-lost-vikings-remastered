@@ -636,7 +636,7 @@ class Plate : public Entity {
             }
             from = who + 1;
         }
-        for (int from = 0; from < kSlots;) {
+        for (int from = 0; from < world.slots();) {
             const int who = find_in_row(world, *this, Row::kAbove, solid(), false, from);
             if (who == kNobody) {
                 break;

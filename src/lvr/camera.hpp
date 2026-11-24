@@ -9,9 +9,21 @@
 
 namespace lvr {
 
+inline constexpr int kViewWidth = 320;  // the original's view: Vanilla rules never have another
+inline constexpr int kViewHeight = 176;
+inline constexpr int kHudRows = 64;  // the HUD's height
+
 struct Camera {
     int x = 0;
     int y = 0;
+    // How much of the level the view shows. What follows from it follows it: the camera's limits and the box in
+    // its middle, the active area, and what the kinds take for "in view".
+    int view_width = kViewWidth;
+    int view_height = kViewHeight;
+    // Rows at the view's bottom that something lies over (Remaster rules' zoom: the HUD). The followed entity is
+    // kept in the middle of what is above them, and the camera goes that far past the level's bottom, so the
+    // level's last rows can be seen.
+    int covered = 0;
     int max_x = 0;  // the furthest it goes: the map's size less the view's
     int max_y = 0;
     bool locked_x = false;  // it doesn't move across ...
@@ -28,9 +40,6 @@ struct Camera {
     bool operator==(const Camera&) const = default;
 };
 
-inline constexpr int kViewWidth = 320;
-inline constexpr int kViewHeight = 176;
-
 // The limits for a map of this size, in cells.
 void set_camera_limits(Camera& camera, int map_width, int map_height) noexcept;
 
@@ -38,7 +47,8 @@ void set_camera_limits(Camera& camera, int map_width, int map_height) noexcept;
 void start_camera(Camera& camera, int x, int y) noexcept;
 
 // One picture's share of following the entity at (x, y). Picture 0 of a tick measures how far it is out of the box
-// (144-176 across, 80-96 down, from the view's corner); pictures 1 and 2 take the rest of that.
+// (the 32 by 16 pixels in the view's middle: 144-176 across, 80-96 down in the original's view); pictures 1 and 2 take
+// the rest of that.
 void follow(Camera& camera, int x, int y, int picture) noexcept;
 
 }  // namespace lvr

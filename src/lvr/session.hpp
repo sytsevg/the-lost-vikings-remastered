@@ -41,8 +41,12 @@ struct SessionSound {
 class Session {
   public:
     // The game from `dir`, started in scene `slot` (0-36 the levels, 39 the first logo: the game's own start).
+    // The rules are the whole session's, and so is what draws its pictures.
     static std::expected<std::unique_ptr<Session>, std::string> open(const std::filesystem::path& dir, int slot,
-                                                                     const SessionSound& sound = {});
+                                                                     const SessionSound& sound = {},
+                                                                     Rules rules = Rules::kVanilla,
+                                                                     Draw draw_with = draw);
+    Rules rules() const noexcept { return play_.world.rules; }
 
     // One step of input: the pictures of the refreshes it takes (three for a tick or a wait's pass, one in the
     // inventory, 145 more for a change of scene; none when a menu only opens). Their sound is added to `samples`;
@@ -69,6 +73,10 @@ class Session {
     bool scene_loaded() const noexcept { return play_.scene_loaded; }
     int scene() const noexcept { return play_.world.scene; }
 
+    // Remaster rules' zoom (ADR-0011): a step out (`by` > 0) or back in, between the original's view and twice
+    // it. The next step's world has the view; the pictures go from the one to the other over a moment.
+    void zoom(int by) noexcept;
+
     static std::uint32_t sample_rate() noexcept { return audio::Opl3::kSampleRate; }
     bool has_modern() const noexcept { return modern_ != nullptr; }
     bool modern() const noexcept { return modern_on_; }
@@ -83,7 +91,7 @@ class Session {
     std::vector<std::vector<SoundCue>> cues;
 
   private:
-    Session(assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, SharedGraphics shared, int slot,
+    Session(assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, SharedGraphics shared, int slot, Rules rules,
             audio::SoundData sound, std::optional<audio::SoundData> modern, std::unique_ptr<audio::GmSynth> gm);
     Screen picture();
     void hear(const std::vector<SoundCue>& asked);
@@ -118,6 +126,7 @@ class Session {
     assets::GameFiles files_;
     SharedGraphics shared_;
     Play play_;
+    Draw draw_ = draw;
     PiecePainter painter_;
     std::vector<PiecePicture> pictures_;
     std::optional<Screen> last_;     // the last picture shown: a step that shows fewer than its refreshes
@@ -140,6 +149,15 @@ class Session {
     std::vector<std::int16_t> unheard_;  // the version not heard: rendered all the same, and dropped
     bool modern_on_ = false;
     bool live_ = false;
+    // The zoom: which view is wanted; while the view changes, how many pictures into that it is, and (growing)
+    // the view it grows from, in the level. A view that is to shrink does so when its pictures have closed in.
+    std::array<int, 2> wanted_view() const;
+    void change_view();
+    Screen::Part part_shown(const View& view);
+    int zoom_ = 0;
+    int zoom_pictures_ = 0;
+    std::optional<Screen::Part> grows_from_;
+    bool shrinking_ = false;
     std::mutex sound_mutex_;              // live: the players, between the front end and the sound card
     std::vector<std::int16_t> rendered_;  // live: sound made past what was asked for (up to half a refresh)
 };

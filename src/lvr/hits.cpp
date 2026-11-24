@@ -14,7 +14,7 @@ bool overlap(const Box& a, const Box& b) noexcept {
 
 template <typename Matches>
 int first_touching(const World& world, const Entity& entity, bool vikings_only, const Matches& matches) {
-    const int slots = vikings_only ? kVikingSlots : kSlots;
+    const int slots = vikings_only ? kVikingSlots : world.slots();
     for (int slot = 0; slot < slots; ++slot) {
         const Entity* other = world.at(slot);
         if (other != nullptr && other != &entity && matches(*other) && overlap(entity.box, other->box)) {
@@ -39,7 +39,7 @@ int find_touching_any(const World& world, const Entity& entity, std::uint16_t ma
 int find_in_row(const World& world, const Entity& entity, Row row, const TileTypes& types, bool vikings_only,
                 int from) {
     const int at = row == Row::kAbove ? wrapped(entity.box.top - 1) : wrapped(entity.box.bottom + 1);
-    const int slots = vikings_only ? kVikingSlots : kSlots;
+    const int slots = vikings_only ? kVikingSlots : world.slots();
     for (int slot = from < 0 ? 0 : from; slot < slots; ++slot) {
         const Entity* other = world.at(slot);
         if (other == nullptr || other == &entity || !types.test(std::size_t{other->acts_as} & 0xffU)) {

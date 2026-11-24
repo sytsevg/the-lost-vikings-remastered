@@ -23,6 +23,7 @@ TEST_CASE("real data: a session shows a picture a refresh and renders their soun
     CHECK_FALSE(session.has_modern());  // no SoundFont was named
     session.set_modern(true);
     CHECK_FALSE(session.modern());
+    CHECK(session.rules() == Rules::kVanilla);
     CHECK(session.scene() == 1);
     CHECK_FALSE(session.demo());
 
@@ -101,14 +102,55 @@ TEST_CASE("real data: a session started at the game's own start goes from the lo
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
-    auto opened = Session::open(LVR_ORIGINAL_DIR, scene::kLogo);
+    // Under Remaster rules, which a session keeps from scene to scene.
+    auto opened = Session::open(LVR_ORIGINAL_DIR, scene::kLogo, {}, Rules::kRemaster);
     REQUIRE(opened);
     Session& session = **opened;
+    CHECK(session.rules() == Rules::kRemaster);
     std::size_t refreshes = 0;
     for (int step = 0; step < 200 && session.scene() != scene::kTitle; ++step) {
         refreshes += session.step(0).size();
     }
     CHECK(session.scene() == scene::kTitle);
     CHECK(refreshes > 2 * 145);  // two changes of scene on the way
+    CHECK(session.rules() == Rules::kRemaster);
     CHECK_FALSE(session.quit());
+}
+
+TEST_CASE("real data: Remaster rules' zoom widens the view over a moment and closes it again; Vanilla has none",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    const Screen::Part original{};
+    const auto part_after = [](Session& session, int steps) {
+        Screen::Part part;
+        for (int step = 0; step < steps; ++step) {
+            for (const Screen& screen : session.step(0)) {
+                part = screen.part;
+            }
+        }
+        return part;
+    };
+    auto vanilla = Session::open(LVR_ORIGINAL_DIR, 1);
+    REQUIRE(vanilla);
+    (*vanilla)->zoom(2);
+    CHECK(part_after(**vanilla, 10) == original);
+
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+    REQUIRE(opened);
+    Session& session = **opened;
+    CHECK(part_after(session, 2) == original);
+    session.zoom(5);  // as far out as it goes: twice the original's view
+    const Screen::Part opening = part_after(session, 2);
+    CHECK(opening.width > original.width);
+    CHECK(opening.width < 640);
+    CHECK(part_after(session, 30) == Screen::Part{.x = 0, .y = 0, .width = 640, .height = 480});
+    session.zoom(-1);
+    const Screen::Part closing = part_after(session, 2);
+    CHECK(closing.width < 640);
+    CHECK(closing.width > 480);
+    CHECK(part_after(session, 30) == Screen::Part{.x = 0, .y = 0, .width = 480, .height = 360});
+    session.zoom(-5);
+    CHECK(part_after(session, 30) == original);
 }

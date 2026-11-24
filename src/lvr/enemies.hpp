@@ -51,7 +51,6 @@ class Enemy : public Entity {
   protected:
     static constexpr std::uint16_t kTurnedTicks = 10;  // before he turns again
     static constexpr int kViewMargin = 16;
-    static constexpr int kViewWidth = 320;
     static constexpr std::int16_t kThrownForward = px(3);
     static constexpr std::int16_t kThrownBack = px(-4);
 
@@ -92,8 +91,8 @@ class Enemy : public Entity {
     // He turns before he walks out of the view (16 pixels of slack either side).
     void stay_in_view(World& world) {
         const bool to_the_right = (speed_x >= 0) != facing_left();
-        const auto edge = static_cast<std::int16_t>(
-            static_cast<std::uint16_t>(world.camera.x + (to_the_right ? kViewWidth + kViewMargin : -kViewMargin)));
+        const auto edge = static_cast<std::int16_t>(static_cast<std::uint16_t>(
+            world.camera.x + (to_the_right ? world.camera.view_width + kViewMargin : -kViewMargin)));
         if (to_the_right ? x >= edge : x < edge) {
             world.flip_across(*this);
         }

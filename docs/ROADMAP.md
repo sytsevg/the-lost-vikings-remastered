@@ -15,11 +15,11 @@ The whole game under Vanilla rules, with Classic visuals and both sounds.
 - **Sound:** Classic (OPL3 as the original's driver played it, matching its register writes) and Modern (General
   MIDI through a SoundFont), swappable while playing.
 - **`vikings-remaster`:** the game in a window, keyboard and gamepad, rebindable keys.
+- **Remaster rules, so far** (`--rules remaster`; M7 below): the window on the GPU renderer, zoom-out in three
+  steps with the HUD laid over the view, text boxes that follow the view, no limit on entities or sprite pieces.
 
-## M7: QoL rules
-[`decisions.md`](decisions.md), ADR-0011.
-- Zoom-out (2× by default, 4× allowed in the configuration); the active area follows the zoomed view
-- An unlimited active area, as a switch of its own (to try how the levels behave)
+## M7: Remaster rules
+[`decisions.md`](decisions.md), ADR-0011. Zoom-out and the GPU renderer it is shown by are built.
 - Minimap with persistent fog of war
 - 10-second rewind
 - Autosave and a level select
@@ -29,7 +29,7 @@ The whole game under Vanilla rules, with Classic visuals and both sounds.
   its end), named beside the animation in `animations.hpp` and reported by the engine
 - **Effects on those events:** sparks where electricity strikes, a small burst where a bullet lands; shaders or
   particles, in the Modern visuals only
-- An SDL_GPU renderer, swappable with Classic at any moment; smooth movement between ticks
+- On the GPU renderer (built for Remaster rules, ADR-0006): smooth movement between ticks
 - Parallax layers, light sources that affect sprites, shaders (a CRT look, for one). The SNES backdrops are decoded
   (`src/assets/snes.*`, [`formats/snes.md`](formats/snes.md)) and wait for this renderer to draw them
 - If wanted: the three scenes' own SNES backdrops (the village's sky, the ship, game over), where the DOS game
@@ -45,7 +45,8 @@ The whole game under Vanilla rules, with Classic visuals and both sounds.
 
 ## M9: Co-op
 [`decisions.md`](decisions.md), ADR-0012.
-- Local, 2–3 players, a split screen that merges when everyone fits; an active area per player's view
+- Local, 2–3 players, a split screen that merges when everyone fits; an active area per player's view, or
+  everything running (to be decided: ADR-0011)
 - Online (lockstep or rollback), a full screen each
 
 ## Later

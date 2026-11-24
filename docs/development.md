@@ -4,6 +4,7 @@
 `dev-env/Dockerfile` is Debian trixie (`node:22-trixie-slim`, for Claude Code) plus:
 - LLVM **23** from apt.llvm.org: clang, clang-tidy, clang-format, clangd, lld, lldb, libc++, sanitizer and libFuzzer runtimes. Change it with the `LLVM_VERSION` build argument.
 - CMake, Ninja, ccache, and SDL3's build dependencies: Wayland (no X11, see ADR-0013), EGL/GLES, ALSA/PulseAudio/PipeWire, udev, D-Bus.
+- For the GPU renderer (ADR-0006): `glslc`, which compiles its shaders when the game is built, and a software Vulkan driver (Mesa's lavapipe) with `vulkan-tools`, so its pictures can be made and compared in the container.
 - The `node` base image is just Debian trixie with Node.js added, which Claude Code needs. The project itself doesn't use Node.
 
 On the host:
@@ -18,7 +19,7 @@ The image is built the first time any of them runs.
 Claude Code starts in auto mode (`--permission-mode auto`), not with `--dangerously-skip-permissions`.
 
 ### Headless
-The container has no display, audio or GPU: `run-dev-env.sh` binds no Wayland or PipeWire socket and no `/dev/dri`. Everything in it runs headless (the tests, and DOSBox-X with SDL's dummy drivers, see `docs/dosbox.md`). Run the game itself on the host, from `build/<preset>/bin/`; so `tools/dosbox.py --window` doesn't work in the container either.
+The container has no display, audio or GPU: `run-dev-env.sh` binds no Wayland or PipeWire socket and no `/dev/dri`. Everything in it runs headless (the tests, and DOSBox-X with SDL's dummy drivers, see `docs/dosbox.md`). The GPU renderer runs there on the software Vulkan driver, without a window; `LP_NUM_THREADS=0` keeps that driver to one thread when many run side by side. Run the game itself on the host, from `build/<preset>/bin/`; so `tools/dosbox.py --window` doesn't work in the container either.
 
 The Wayland, EGL/GLES and audio `-dev` packages stay in the Dockerfile: SDL3 only compiles a backend in when its headers are there, and the binary that runs on the host needs them.
 
@@ -39,11 +40,17 @@ ctest --preset asan-ubsan
 the engine and compares each refresh with its golden (`replays/README.md`), in under a minute: run both before a
 commit that touches the engine.
 
+After a change to the GPU renderer's drawing, `lv-replay --check --gpu REPLAY...` plays replays with it in the
+Classic renderer's place, against the same goldens (all of them take about five minutes on the software driver;
+one or two are enough for most changes). What it shows when zoomed has no golden: under Remaster rules
+`vikings-remaster --dump STEPS FILE.png --zoom BY AT_STEP` writes what the window would show, to look at.
+
 ## Playing
 The game reads your own copy of the original files from `gamedata/original/` (or `--data DIR`):
 
 ```sh
 ./build/release/bin/vikings-remaster    # --data DIR for the game's files elsewhere
+./build/release/bin/vikings-remaster --rules remaster    # Remaster rules: - and = (or the wheel) zoom out and in
 ```
 
 | Preset | Purpose |

@@ -13,42 +13,49 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
 - **It is published:** one initial commit on `main`, MIT, at
   <https://github.com/sytsevg/the-lost-vikings-remastered>. From here on, history is kept: new work is new
   commits.
-- **Next is M7, the QoL rules.** Nothing of it is started.
+- **M7, the Remaster rules, is under way.** Built: the Rules switch, the GPU renderer, zoom-out, no limit on
+  entities. The rest of it is below.
 
-## Starting M7
+## M7: where it stands
 
 The list and the decisions are in [`ROADMAP.md`](ROADMAP.md) and [`decisions.md`](decisions.md) (ADR-0005,
-ADR-0011): zoom-out, an unlimited active area as its own switch, a minimap with fog of war, a 10-second rewind,
-autosave and a level select. All of it only under QoL rules; Vanilla rules must stay exactly what they are, and
-the replays are what proves that.
+ADR-0006, ADR-0011). All of it only under Remaster rules (first called the QoL rules); Vanilla rules must stay
+exactly what they are, and the replays are what proves that.
 
-What the code has and hasn't, as a starting point:
+Built:
 
-- **There is no Rules switch yet.** Nothing in `Play`, `World` or `Session` knows about Vanilla and QoL. The first
-  piece of M7 is that setting, chosen per session, and a rule for every change after it: with Vanilla chosen, all
-  119 replays still match.
-- **The view is a constant.** `kViewWidth` and `kViewHeight` (320 × 176, `src/lvr/camera.hpp`) are used directly in
-  about thirty places: the camera's limits, the active area, the renderer, "in view" tests in the kinds
-  (`Enemy::stay_in_view`, `World::well_in_view`), text boxes. Zoom-out means the view becomes a value of the world.
-  `src/lvr/enemies.hpp` has a second `kViewWidth` of its own.
-- **The active area** is `World::mark_outside_active_area` (`src/lvr/world.cpp`): the view plus a margin, by
-  which entities are removed and created again. Zoom-out moves it with the view; the unlimited switch turns it
-  off. The 20 entity slots (`kSlots`) and the 128 sprite pieces are Vanilla's limits and are kept there on
-  purpose (ADR-0018); QoL rules need more of both, and the draw order they imply decided another way.
-- **A world can't be copied yet.** Every entity can (`Entity::clone`, set up by `make_entity`), and the simulation
-  is deterministic and integer-only, but `World` itself holds its entities by pointer and has no copy. Rewind
-  needs that copy first: a ring of about 200 worlds for 10 seconds. What carries between scenes is listed in
-  `Play::change_scene`.
-- **Input per player** was planned from the start (ADR-0012) but the engine takes one keyboard word. Not needed
-  for M7; worth not making harder.
+- **The Rules switch:** `--rules vanilla|remaster`, for the whole run (`World::rules`, set as a world is made). It
+  is never changed while playing.
+- **The GPU renderer** (`src/lvr/gpu.*`): what a Remaster window shows. At the original's view it makes the
+  Classic picture exactly (`lv-replay --gpu`, against the same goldens). The Classic renderer stays for Vanilla
+  rules and the checks.
+- **Zoom-out:** `-` and `=`, or the mouse wheel; the original's view, one and a half times and twice it. The view
+  is a value of the camera (`view_width`, `view_height`), and everything that was 320 × 176 reads it. `Session`
+  owns the zoom and its transition; `World::set_view` changes the world's view. A zoomed view is as high as the
+  screen with the HUD over its bottom; the camera goes 64 pixels past the level's bottom so the HUD never hides
+  the floor (`Camera::covered`).
+- **The text layer** is as large as the view; a box at a speaker is placed in it as it is, one at a fixed cell in
+  its middle (`Line::by_point`).
+- **512 entity slots and 2,048 sprite pieces** under Remaster rules (`World::set_rules`; `kSlots` and
+  `kOriginalPieces` are Vanilla's 20 and 128). The layer's size and its three pools are a `PieceLayout`.
+
+Open:
+
+- **A sprite's picture is known to the GPU renderer only by what it looks like:** it is put into the atlas the
+  first time it is shown and found again by a hash of its pixels. Art packs that replace sprites one for one
+  (M8) need a piece named by the frame it shows instead.
+- **Co-op and the active area:** with several views of one world, either the active area is all the views
+  together or everything runs (ADR-0011). Not decided.
+- **Not checked by anything but the eye:** whatever the GPU renderer shows beyond the original's view, and
+  whether a level still plays well zoomed out (enemies run for longer and further; nothing resets as often).
+- **Rewind** needs a world that can be copied: every entity can (`Entity::clone`), and the simulation is
+  deterministic and integer-only, but `World` holds its entities by pointer and has no copy. A ring of about 200
+  worlds for 10 seconds. What carries between scenes is listed in `Play::change_scene`.
 - **The minimap and the saves are profile data**, outside the simulation: they must never change what a replay
   shows. There is no profile or configuration file yet; the game takes command-line options only
   (`src/lvr/main.cpp`).
-- **Drawing** is one Classic picture of 320 × 240 (`src/lvr/render.*`). A zoomed view is a bigger playfield; how
-  it is shown (scaled down, or a larger window) is undecided.
-
-Decide with the user before building: the order of the five features, how zoom is shown, and the keys for the
-new things.
+- **Input per player** was planned from the start (ADR-0012) but the engine takes one keyboard word. Not needed
+  for M7; worth not making harder.
 
 ## The layout
 
@@ -71,7 +78,8 @@ new things.
   coverage of at least 80%). Commit when both pass. After a change that is only formatting, comments or docs
   neither needs running again. On the host, `./run-dev-env.sh test` does both in the container.
 - **The game itself runs on the host**, not in the container (no display or sound there):
-  `./build/release/bin/vikings-remaster --slot 0 --sound modern`. Rebuild the release preset before asking the
+  `./build/release/bin/vikings-remaster --slot 0 --sound modern`, with `--rules remaster` for the Remaster rules.
+  What a Remaster window would show can be written as a picture in the container (`--dump`, with `--zoom`). Rebuild the release preset before asking the
   user to try something: `goldens.sh` only builds the replay tool.
 - **A golden is never recorded again to make a difference go away.** There is no oracle left to record from: a
   difference is a change of behaviour until shown otherwise. `lv-replay` writes what the engine shows at the

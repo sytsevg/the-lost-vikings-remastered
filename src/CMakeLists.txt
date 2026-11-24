@@ -148,13 +148,34 @@ if(LVR_BUILD_APPS)
     target_link_libraries(lv-export PRIVATE lvr::assets lvr::engine lvr::level_dump lvr::image glaze::glaze)
     lvr_target_defaults(lv-export)
 
+    # --- The GPU renderer (ADR-0006), on SDL_GPU. Its shaders are compiled to SPIR-V here (glslc) and built in. ---
+    find_program(LVR_GLSLC glslc REQUIRED)
+    set(lvr_shader_dir ${CMAKE_CURRENT_BINARY_DIR}/shaders)
+    file(MAKE_DIRECTORY ${lvr_shader_dir})
+    foreach(shader gpu_quad.vert gpu_quad.frag gpu_show.vert gpu_show.frag)
+        add_custom_command(
+            OUTPUT ${lvr_shader_dir}/${shader}.inc
+            COMMAND ${LVR_GLSLC} -O -mfmt=c -o ${lvr_shader_dir}/${shader}.inc
+                    ${CMAKE_CURRENT_SOURCE_DIR}/lvr/${shader}
+            DEPENDS lvr/${shader}
+            VERBATIM)
+        list(APPEND lvr_shaders ${lvr_shader_dir}/${shader}.inc)
+    endforeach()
+    add_library(lvr_gpu STATIC
+        lvr/gpu.cpp
+        ${lvr_shaders})
+    add_library(lvr::gpu ALIAS lvr_gpu)
+    target_include_directories(lvr_gpu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE ${lvr_shader_dir})
+    target_link_libraries(lvr_gpu PUBLIC lvr::engine PRIVATE SDL3::SDL3)
+    lvr_target_defaults(lvr_gpu)
+
     add_executable(lv-replay replay/main.cpp)
-    target_link_libraries(lv-replay PRIVATE lvr::replay lvr::image)
+    target_link_libraries(lv-replay PRIVATE lvr::replay lvr::image lvr::gpu)
     lvr_target_defaults(lv-replay)
 
     # --- vikings-remaster: the game on the engine ---
     add_executable(vikings-remaster lvr/main.cpp)
-    target_link_libraries(vikings-remaster PRIVATE lvr::session lvr::input lvr::image SDL3::SDL3)
+    target_link_libraries(vikings-remaster PRIVATE lvr::session lvr::input lvr::image lvr::gpu SDL3::SDL3)
     lvr_target_defaults(vikings-remaster)
 
 endif()
@@ -208,8 +229,8 @@ if(LVR_BUILD_TESTS)
     lvr_target_warnings(lvr_tests)
     # SDL3-backed code is only built with LVR_BUILD_APPS.
     if(LVR_BUILD_APPS)
-        target_sources(lvr_tests PRIVATE image/tests/test_png.cpp)
-        target_link_libraries(lvr_tests PRIVATE lvr::image)
+        target_sources(lvr_tests PRIVATE image/tests/test_png.cpp lvr/tests/test_gpu.cpp)
+        target_link_libraries(lvr_tests PRIVATE lvr::image lvr::gpu)
     endif()
     include(Catch)
     # Catch2's tags become CTest labels.

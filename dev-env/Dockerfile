@@ -17,6 +17,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libudev-dev libdbus-1-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# The GPU renderer (ADR-0006): a software Vulkan driver (lavapipe) so its pictures can be made and compared here
+# without a graphics card or a window, and the compiler for its shaders.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libvulkan1 mesa-vulkan-drivers vulkan-tools glslc \
+    && rm -rf /var/lib/apt/lists/*
+
 # DOSBox-X build dependencies (development tool only, ADR-0016; built by tools/dosbox/ into build/dosbox/).
 # It brings its own SDL2; curses is for the debugger build, gcc because DOSBox-X is built and tested with it.
 RUN apt-get update && apt-get install -y --no-install-recommends \

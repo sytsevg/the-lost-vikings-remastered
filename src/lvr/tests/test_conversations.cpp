@@ -88,11 +88,11 @@ TEST_CASE("conversation: lines are shown up to a wait; an action key goes on; th
 
     CHECK(world.show_lines(0));
     CHECK(world.waiting_for_key);
-    CHECK(world.text.cells[(6 * 40) + 11] == 'T');
+    CHECK(world.text.cells[(6 * kTextLayerColumns) + 11] == 'T');
     CHECK(world.text.colour3.has_value());
     CHECK(world.next_line == 3);
     CHECK_FALSE(world.show_lines(0));  // the rest: the clear
-    CHECK(world.text.cells[(6 * 40) + 11] == 0);
+    CHECK(world.text.cells[(6 * kTextLayerColumns) + 11] == 0);
     CHECK(world.lines.empty());
     CHECK(world.next_line == 0);
 }
@@ -109,7 +109,7 @@ TEST_CASE("play: a tick is three pictures; a conversation holds the game until a
     CHECK(world.lines[1].column == 0x0f);
     CHECK(world.lines[1].row == 0x0a);
     CHECK(world.show_lines(0));
-    CHECK(world.text.cells[(0x0c * 40) + 0x13] == 'L');
+    CHECK(world.text.cells[(0x0c * kTextLayerColumns) + 0x13] == 'L');
     // The Vikings start the level with three points of health each.
     CHECK(world.entities[0]->health == 6);
     CHECK(world.entities[2]->health == 6);
