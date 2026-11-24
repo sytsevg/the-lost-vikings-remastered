@@ -201,8 +201,8 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   lies over the middle of its bottom. The camera keeps the Viking in the middle of what is above the HUD and
   goes 64 pixels past the level's bottom, so the HUD never hides the floor; where a Viking is low in a level
   there is then nothing of the level beside the HUD, and it is black. (Tried and not kept: the camera staying
-  inside the level and the HUD sliding to the top of the screen while the Viking would be behind it.) A change of view takes about a
-  quarter of a second: the world's view grows at once and the picture opens up, or the picture closes in and
+  inside the level and the HUD sliding to the top of the screen while the Viking would be behind it.) A change of view takes a third
+  of a second: the world's view grows at once and the picture opens up, or the picture closes in and
   the view shrinks when it is there. A view is never larger than the level.
 - **The active area follows the zoomed view** (where entities exist: the view plus 16 pixels), and so does the
   edge the enemies turn at. Not the whole level: that keeps the game's rhythm, an enemy starting as it comes into

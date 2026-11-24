@@ -91,12 +91,13 @@ namespace {
 
 // The views the zoom steps through: the original's, with the HUD under it; then one and a half times and twice the
 // original's whole screen (320 x 240), with the HUD laid over the view's bottom. And how many pictures a change
-// takes (a little over a quarter of a second).
+// takes (a third of a second).
 constexpr std::array<std::array<int, 2>, 3> kZoomViews{{{320, 176}, {480, 360}, {640, 480}}};
 constexpr int kZoomPictures = 20;
-// The rewind reaches this far back: in seconds, and in steps (a step is a tick, three refreshes of the display).
+// The rewind reaches this far back: in seconds, and in steps (a step is a tick: three refreshes of the display,
+// which shows 59.7 a second).
 constexpr std::size_t kRewindSeconds = 10;
-constexpr std::size_t kRewindSteps = 233;
+constexpr std::size_t kRewindSteps = 199;
 
 // From `from` to `to`, slow at both ends.
 Screen::Part between(const Screen::Part& from, const Screen::Part& to, int pictures) {
