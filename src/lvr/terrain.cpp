@@ -19,6 +19,12 @@ int cell_end(int value) noexcept {
 bool is_slope(int tile_type) noexcept {
     return tile_type >= int{tile::kFirstSlope};
 }
+
+// How far into a slope `bottom` is at column x: below its surface is positive.
+int slope_depth(const World& world, int slope, int x, int bottom) {
+    const std::size_t index = ((static_cast<unsigned>(slope) & 0xfU) << 4U) + (static_cast<unsigned>(x) & 0xfU);
+    return in_cell(bottom) - in_cell(world.slope_heights.at(index));
+}
 bool is_one_of(int tile_type, std::initializer_list<std::uint8_t> types) noexcept {
     return std::ranges::any_of(types, [tile_type](std::uint8_t type) { return tile_type == int{type}; });
 }
@@ -38,10 +44,7 @@ class Surroundings {
     int type_at(int x, int y) const { return world_.map.tile_type_at(wrapped(x), wrapped(y)); }
 
     // How far into a slope the entity's feet are at column x: below its surface is positive.
-    int slope_depth(int slope, int x, int bottom) const {
-        const std::size_t index = ((static_cast<unsigned>(slope) & 0xfU) << 4U) + (static_cast<unsigned>(x) & 0xfU);
-        return in_cell(bottom) - in_cell(world_.slope_heights.at(index));
-    }
+    int slope_depth(int slope, int x, int bottom) const { return lvr::slope_depth(world_, slope, x, bottom); }
 
     // --- Cells ---
 
@@ -291,6 +294,14 @@ std::optional<Found> find_ahead_below(const World& world, const Entity& entity, 
 std::optional<Found> find_at(const World& world, const Entity& entity, int x, int y, const TileTypes& types) {
     const Surroundings around{world, entity};
     return or_else(around.cells_in_row(types, y, x, x), [&] { return around.entity_at(types, x, y); });
+}
+
+bool under_slope(const World& world, int x, int y) {
+    const int type = world.map.tile_type_at(wrapped(x), wrapped(y));
+    if (!is_slope(type)) {
+        return false;
+    }
+    return slope_depth(world, type, x, y) > 0;
 }
 
 bool can_walk_on(const World& world, const Entity& entity) {

@@ -416,6 +416,10 @@ class World : public WorldState {
     void set_view(int width, int height);
     // Where the camera is put by that, without doing it.
     Camera camera_for_view(int width, int height) const noexcept;
+    // The view a zoom that asks for `asked` gives here (Remaster rules, ADR-0011): in a level (not a scene with
+    // a map of its own: the village) as large as the original's view at least, never more than the level;
+    // elsewhere the view as it is.
+    std::array<int, 2> view_for(std::array<int, 2> asked) const noexcept;
     // When the camera has crossed a cell's edge since the last time: the placements in the strip that came in.
     void create_scrolled_in();
     // Entities from the fourth slot on that are outside the active area, and not always active, are told so.

@@ -191,6 +191,13 @@ class Session {
     void change_view();
     Screen::Part part_shown(const View& view);
     int zoom_ = 0;
+    // Smooth movement: where the camera was at the end of the last tick, and the view's size then. None after
+    // what wasn't a plain tick.
+    struct Scrolled {
+        std::array<int, 2> scroll{};
+        std::array<int, 2> view{};
+    };
+    std::optional<Scrolled> scrolled_;
     void update_minimap();
     // Rewind and quicksave.
     bool level_played() const;

@@ -5,6 +5,8 @@
 #include <format>
 #include <utility>
 
+#include "lvr/sprites.hpp"
+
 namespace lvr {
 
 namespace {
@@ -191,6 +193,29 @@ std::expected<SharedGraphics, std::string> load_shared_graphics(const assets::Ar
         shared.portraits.push_back(std::move(portrait->front()));
     }
     return shared;
+}
+
+float moved_since(int by, int phase, float between) noexcept {
+    if (phase < 0 || phase > 2) {
+        return 0;
+    }
+    int shifted = 0;  // what the tick's pictures up to this one moved it by
+    for (int picture = 0; picture <= phase; ++picture) {
+        shifted += share_of_move(by, picture);
+    }
+    return (static_cast<float>(by) * (static_cast<float>(phase) + between) / 3.0F) - static_cast<float>(shifted);
+}
+
+std::array<float, 2> camera_moved(const Motion& motion, float between) noexcept {
+    if (motion.phase < 0 || motion.phase > 2 || !motion.scroll_from) {
+        return {};
+    }
+    const float share = (static_cast<float>(motion.phase) + between) / 3.0F;
+    const auto axis = [share](int from, int to, int now) {
+        return static_cast<float>(from) + (static_cast<float>(to - from) * share) - static_cast<float>(now);
+    };
+    const auto& [from_x, from_y] = *motion.scroll_from;
+    return {axis(from_x, motion.scroll_to[0], motion.scroll[0]), axis(from_y, motion.scroll_to[1], motion.scroll[1])};
 }
 
 assets::Palette darkened(const assets::Palette& palette, std::array<std::uint8_t, 3> by, bool all) {

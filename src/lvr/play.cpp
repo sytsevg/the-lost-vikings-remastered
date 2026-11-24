@@ -169,7 +169,12 @@ std::expected<LoadedLevel, std::string> load_game_over(const assets::GameFiles& 
     if (!data || !starts) {
         return std::unexpected{!data ? data.error() : starts.error()};
     }
-    return load_with(files, data->header, make_cutscene(*data, *starts), static_cast<std::uint16_t>(database_entry), 0);
+    auto loaded =
+        load_with(files, data->header, make_cutscene(*data, *starts), static_cast<std::uint16_t>(database_entry), 0);
+    if (loaded) {
+        loaded->slot = scene::kGameOver;
+    }
+    return loaded;
 }
 
 std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files, int slot, int database_entry) {
@@ -199,7 +204,7 @@ std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files
     return loaded;
 }
 
-World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rules) {
+World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rules, std::array<int, 2> view) {
     const Level& level = loaded.level;
     World world;
     world.set_rules(rules);
@@ -219,6 +224,11 @@ World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rule
     world.level_push = level.push;
     world.level = level.number;
     world.scene = level.number > 0 ? level.number - 1 : loaded.slot;
+    if (rules == Rules::kRemaster && world.scene == scene::kGameOver) {
+        // The letters that drop in are drawn over everything, the Vikings they land on too. (The original takes
+        // their pieces from the middle pool, as the Vikings' figures, and they end up under them.)
+        world.kinds.at(game_over_kind::kLetters).pool = Pool::kFront;
+    }
     world.has_hud = level.hud;
     world.cleared_cell = loaded.cleared_cell;
     world.filled_cell = loaded.filled_cell;
@@ -264,6 +274,10 @@ World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rule
     world.strip_y = cell_of(world.camera.y);
     world.create_always_active();
     world.create_in_view(ViewPart::kWhole);
+    if (const auto [width, height] = world.view_for(view);
+        width != world.camera.view_width || height != world.camera.view_height) {
+        world.set_view(width, height);  // (Remaster rules: as zoomed out as the player has it)
+    }
     return world;
 }
 
@@ -295,6 +309,10 @@ bool Play::restore(const Snapshot& from) {
     world = from.world;
     loaded_ = from.loaded;
     owned_ = from.owner;
+    if (const auto [width, height] = world.view_for(view);
+        width != world.camera.view_width || height != world.camera.view_height) {
+        world.set_view(width, height);
+    }
     cleared_.reset();
     fade.reset();
     menu_ = Menu::kNone;
@@ -462,7 +480,7 @@ int Play::change_scene(const std::function<void()>& picture) {
         return kFadeSteps;
     }
     auto loaded = std::make_unique<LoadedLevel>(std::move(*next));
-    World started = prepare_world(*loaded, &world.map, world.rules);
+    World started = prepare_world(*loaded, &world.map, world.rules, view);
     started.cues.front().value = leaving_level.music.at_end == 1 ? 1 : 0;  // what plays stops, or the music stays
     // What goes on from scene to scene.
     started.seed = world.seed;
@@ -534,12 +552,25 @@ View view_of(const World& world, const LoadedLevel& loaded, PiecePainter& painte
         }
     }
     pictures = painter.pictures(world.pieces, loaded.sprites);
+    // How far each piece's entity moves in the tick: what shift_sprites moves its pieces by, a share a picture.
+    std::vector<std::array<int, 2>> moves(world.pieces.size());
+    for (const auto& entity : world.entities) {
+        if (!entity || entity->sprite.count == 0 || moves.empty()) {
+            continue;
+        }
+        for (int piece = entity->sprite.first; piece < entity->sprite.first + entity->sprite.count; ++piece) {
+            moves.at(static_cast<std::size_t>(piece) % moves.size()) = {wrapped(entity->x - entity->previous_x),
+                                                                        wrapped(entity->y - entity->previous_y)};
+        }
+    }
     for (const PiecePicture& picture : pictures) {
-        view.sprites.push_back(DrawnSprite{.image = &picture.image,
-                                           .x = picture.x,
-                                           .y = picture.y,
-                                           .mirrored = picture.mirrored,
-                                           .flipped = picture.flipped});
+        view.sprites.push_back(
+            DrawnSprite{.image = &picture.image,
+                        .x = picture.x,
+                        .y = picture.y,
+                        .mirrored = picture.mirrored,
+                        .flipped = picture.flipped,
+                        .moves = picture.piece < moves.size() ? moves[picture.piece] : std::array<int, 2>{}});
     }
     view.text = world.text.seen();
     view.colour3 = world.text.colour3;

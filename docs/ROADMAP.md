@@ -28,7 +28,8 @@ rewind, a quicksave, and the player's profile on disk that keeps the last two ar
   its end), named beside the animation in `animations.hpp` and reported by the engine
 - **Effects on those events:** sparks where electricity strikes, a small burst where a bullet lands; shaders or
   particles, in the Modern visuals only
-- On the GPU renderer (built for Remaster rules, ADR-0006): smooth movement between ticks
+- On the GPU renderer (built for Remaster rules, ADR-0006): smooth movement between ticks (built; Remaster rules show
+  the Modern visuals, ADR-0005)
 - Parallax layers, light sources that affect sprites, shaders (a CRT look, for one). The SNES backdrops are decoded
   (`src/assets/snes.*`, [`formats/snes.md`](formats/snes.md)) and wait for this renderer to draw them
 - If wanted: the three scenes' own SNES backdrops (the village's sky, the ship, game over), where the DOS game

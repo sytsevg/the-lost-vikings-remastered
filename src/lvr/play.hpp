@@ -56,7 +56,9 @@ inline constexpr int kSceneSlots = 48;
 std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files, int slot, int database_entry);
 
 // The level's world before its first tick.
-World prepare_world(const LoadedLevel& loaded, const Map* map_before = nullptr, Rules rules = Rules::kVanilla);
+// Under Remaster rules a level's world is made with the view the zoom asks for (`view`, World::view_for).
+World prepare_world(const LoadedLevel& loaded, const Map* map_before = nullptr, Rules rules = Rules::kVanilla,
+                    std::array<int, 2> view = {kViewWidth, kViewHeight});
 
 // The level's world as it starts: the Vikings where they start, the camera on the first, the placements that are
 // always active or in view, and the one tick the original runs before the first picture. `loaded` must outlive it.
@@ -139,6 +141,7 @@ class Play {
                 // held is read again in the next step, and is newly pressed there if a wait for a key read
                 // the empty keyboard in between.
                 keys = 0;
+                menu_keys.previous_level = menu_keys.next_level = false;
             }
             if (world.inventory.open || inventory_wanted(world)) {
                 // The inventory screen holds the tick: a pass and a picture a step, one refresh each. Opening
@@ -195,9 +198,12 @@ class Play {
         std::shared_ptr<LoadedLevel> owner;
     };
     Snapshot snapshot() const { return {.world = world, .loaded = loaded_, .owner = owned_}; }
-    // Back to a snapshot. True if it is of another scene than the one played now: the caller then has that
-    // scene's sound start again (scene_sound) once it is where it stays.
+    // Back to a snapshot, with the view `view` asks for (the zoom isn't part of the play). True if it is of
+    // another scene than the one played now: the caller then has that scene's sound start again (scene_sound)
+    // once it is where it stays.
     bool restore(const Snapshot& from);
+    // Remaster rules' zoom: the view asked for, which a level is started with and a snapshot brought back to.
+    std::array<int, 2> view{kViewWidth, kViewHeight};
     // What is heard stops and the scene's music starts, as when the scene was loaded; the step counts as one that
     // loaded a scene.
     void scene_sound();

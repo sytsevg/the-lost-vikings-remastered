@@ -527,7 +527,8 @@ std::vector<PiecePicture> PiecePainter::pictures(const Pieces& pieces, const Spr
                                      .x = piece.x,
                                      .y = piece.y,
                                      .mirrored = piece.mirrored,
-                                     .flipped = piece.flipped});
+                                     .flipped = piece.flipped,
+                                     .piece = index});
     }
     return drawn;
 }

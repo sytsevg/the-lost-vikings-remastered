@@ -4,15 +4,20 @@
 // (docs/original/input.md).
 //
 //   vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] [--soundfont FILE]
-//                    [--rules vanilla|remaster] [--cheat]
+//                    [--rules vanilla|remaster] [--cheat] [--slow-frames]
 //       --profile DIR: where Remaster rules keep the player's profile (what the minimap has seen); by default
 //       the folder `profiles` beside this program.
+//       --slow-frames: a step or a picture's showing that takes long is reported on the error output
 //       --cheat: the game's cheat on from the start, as if its password had been typed at the title: F5 and F6
 //       change the level, and under Remaster rules F7 and F8 are a quicksave and its load.
 //       play, from scene N (default 39, the first logo; 0-36 are the levels); FILE: other keys, lines
 //       "KEY NAME = action" (input/input.hpp). F12 switches between the Classic and the Modern sound.
 //   vikings-remaster [--data DIR] [--slot N] --dump STEPS FILE.png [--wav FILE.wav] [--zoom BY AT_STEP]
-//       run STEPS steps without a window and without a key, write the last picture (and the sound)
+//                    [--hold KEY] [--tap KEY AT_STEP] [--moments N]
+//       run STEPS steps without a window and without a key (or with KEY held, a name as in a keys file; and the
+//       key of --tap alone at step AT_STEP, for what waits for a key to be pressed: a level's password), write
+//       the last picture (and the sound). Under Remaster rules, --moments: the last step's pictures each at N
+//       moments of its refresh as well, FILE-P-M.png, for what moves between ticks
 //
 // Keys: arrows, Ctrl/Home and Ins/PgUp (switch Viking), E, S, D, F/Space/Enter, Esc/P (pause; Y, N), Tab
 // (inventory), Alt+X, Alt+Q, F10 (quit) as in the original; a gamepad as the original's joystick (A/B/X/Y: F, D, E,
@@ -26,6 +31,7 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <optional>
 #include <print>
@@ -49,6 +55,10 @@ constexpr int kWidth = kScreenWidth;
 constexpr int kHeight = kScreenHeight;
 constexpr int kInitialScale = 3;
 constexpr const char* kWindowTitle = "The Lost Vikings";
+// --slow-frames: a step longer than this is reported (it holds up the window's next picture), and a picture's
+// showing longer than the other (which includes the wait for the screen's refresh: up to a 60 Hz one's).
+constexpr double kSlowStepMilliseconds = 8;
+constexpr double kSlowShowMilliseconds = 20;
 
 bool write_wav(const std::filesystem::path& path, const std::vector<std::int16_t>& samples, std::uint32_t rate) {
     std::ofstream out(path, std::ios::binary);
@@ -77,9 +87,10 @@ bool write_wav(const std::filesystem::path& path, const std::vector<std::int16_t
 }
 
 // What the GPU renderer shows of `screen`, three times the original's size, as a PNG.
-bool save_shown(GpuRenderer& gpu, const Screen& screen, const Minimap* minimap, const std::filesystem::path& out) {
+bool save_shown(GpuRenderer& gpu, const Screen& screen, const Minimap* minimap, const std::filesystem::path& out,
+                float between = 0) {
     constexpr int kScale = 3;
-    auto pixels = gpu.shown(screen, kScale, minimap);
+    auto pixels = gpu.shown(screen, kScale, minimap, between);
     if (!pixels) {
         std::println(stderr, "vikings-remaster: {}", pixels.error());
         return false;
@@ -96,20 +107,30 @@ bool save_shown(GpuRenderer& gpu, const Screen& screen, const Minimap* minimap, 
 
 // Without a window: `steps` steps with no key held, the last picture written as a PNG, the sound as a WAV. With
 // `gpu` (Remaster rules) the picture is the one it shows, and `zoom` steps out are asked for before step `zoom_at`.
+struct DumpOptions {
+    int zoom = 0;     // this many steps of zoom out ...
+    int zoom_at = 0;  // ... asked for before this step
+    std::uint16_t held = 0;
+    std::uint16_t tapped = 0;
+    int tap_at = -1;
+    int moments = 0;
+};
+
 int dump(Session& session, int steps, const std::filesystem::path& out, const std::filesystem::path& wav,
-         GpuRenderer* gpu, int zoom, int zoom_at) {
+         GpuRenderer* gpu, const DumpOptions& options) {
     Screen last = session.start_frames.empty() ? Screen{} : session.start_frames.back();
     std::vector<std::int16_t> sound = std::move(session.samples);
     session.samples.clear();
     std::size_t refreshes = session.start_frames.size();
+    std::vector<Screen> frames;
     for (int step = 0; step < steps && !session.quit(); ++step) {
-        if (step == zoom_at) {
-            session.zoom(zoom);
+        if (step == options.zoom_at) {
+            session.zoom(options.zoom);
         }
-        std::vector<Screen> frames = session.step(0);
+        frames = session.step(step == options.tap_at ? options.tapped : options.held);
         refreshes += frames.size();
         if (!frames.empty()) {
-            last = std::move(frames.back());
+            last = frames.back();
         }
         sound.insert(sound.end(), session.samples.begin(), session.samples.end());
         session.samples.clear();
@@ -122,6 +143,17 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
     if (gpu != nullptr) {
         if (!save_shown(*gpu, last, session.minimap(), out)) {
             return EXIT_FAILURE;
+        }
+        for (std::size_t picture = 0; picture < frames.size() && options.moments > 0; ++picture) {
+            for (int moment = 0; moment < options.moments; ++moment) {
+                std::filesystem::path each = out;
+                each.replace_filename(
+                    std::format("{}-{}-{}{}", out.stem().string(), picture, moment, out.extension().string()));
+                const float between = static_cast<float>(moment) / static_cast<float>(options.moments);
+                if (!save_shown(*gpu, frames[picture], session.minimap(), each, between)) {
+                    return EXIT_FAILURE;
+                }
+            }
         }
     } else {
         const assets::IndexedImage image{.width = kScreenWidth, .height = kScreenHeight, .pixels = last.pixels};
@@ -177,7 +209,7 @@ void sound_wanted(void* userdata, SDL_AudioStream* stream, int additional, int /
 
 // The game in a window. With `gpu` (and its window), the pictures are the ones it kept and it shows them;
 // without, they are the Classic renderer's and a window is made here.
-int play(Session& session, const input::Bindings& bindings, SDL_Window* window, GpuRenderer* gpu) {
+int play(Session& session, const input::Bindings& bindings, SDL_Window* window, GpuRenderer* gpu, bool report_slow) {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
         std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
         return EXIT_FAILURE;
@@ -305,6 +337,8 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
                 }
                 const bool alt = held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT];
                 session.rewind(held[SDL_SCANCODE_BACKSPACE]);  // Remaster rules: back in time while it is held
+                const std::uint64_t step_began = SDL_GetPerformanceCounter();
+                const std::size_t pages_before = gpu != nullptr ? gpu->pages_set_up() : 0;
                 frames = session.step(static_cast<std::uint16_t>(keyboard | pad),
                                       Play::MenuKeys{.yes = held[SDL_SCANCODE_Y],
                                                      .no = held[SDL_SCANCODE_N],
@@ -314,6 +348,16 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
                                                      .music = sound_keys.music,
                                                      .previous_level = held[SDL_SCANCODE_F5],
                                                      .next_level = held[SDL_SCANCODE_F6]});
+                if (report_slow) {
+                    const double took = static_cast<double>(SDL_GetPerformanceCounter() - step_began) * 1000.0 /
+                                        static_cast<double>(frequency);
+                    if (took > kSlowStepMilliseconds) {
+                        std::println(
+                            stderr, "slow: a step took {:.1f} ms ({} pictures{}{})", took, frames.size(),
+                            session.scene_loaded() ? ", a scene loaded" : "",
+                            gpu != nullptr && gpu->pages_set_up() != pages_before ? ", an atlas page set up" : "");
+                    }
+                }
                 sound_keys.effects = session.menu_keys().effects;
                 sound_keys.music = session.menu_keys().music;
                 if (session.scene_loaded()) {
@@ -341,7 +385,33 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
             if (shown != nullptr) {
                 last_shown = *shown;
             }
-            if (const auto done = gpu->show(last_shown, session.minimap()); !done) {
+            // How far into its refresh the picture is shown (the window's own refreshes come at another rate):
+            // what moves between ticks is shown that much further on.
+            const double into = (static_cast<double>(SDL_GetPerformanceCounter() - start) /
+                                 static_cast<double>(frequency) * kDisplayHz) -
+                                static_cast<double>(refreshes);
+            const auto between = static_cast<float>(std::clamp(into, 0.0, 1.0));
+            const Minimap* minimap = last_shown.fading ? nullptr : session.minimap();  // when the level is there
+            const std::uint64_t show_began = SDL_GetPerformanceCounter();
+            const auto done = gpu->show(last_shown, minimap, between);
+            if (report_slow) {
+                const double took = static_cast<double>(SDL_GetPerformanceCounter() - show_began) * 1000.0 /
+                                    static_cast<double>(frequency);
+                if (took > kSlowShowMilliseconds) {
+                    const GpuRenderer::ShowTimes& times = gpu->show_times();
+                    std::println(
+                        stderr,
+                        "slow: showing a picture took {:.1f} ms: {:.1f} waiting for the window, {:.1f} "
+                        "recording, {:.1f} handing over; drawn {}x into {}x{} for a window of {}x{}, {} "
+                        "sample(s) a side{}{}; since the picture before: {} kept, {} sending {} KB to the atlas",
+                        took, times.waiting, times.recording, times.handing_over, times.drawn_scale, times.width,
+                        times.height, times.window_width, times.window_height, times.samples,
+                        times.remade ? ", its texture made anew" : "",
+                        times.redrawn ? "" : ", not drawn anew (as the show before)", times.kept, times.uploads,
+                        times.uploaded_bytes / 1024);
+                }
+            }
+            if (!done) {
                 std::println(stderr, "vikings-remaster: {}", done.error());
                 status = EXIT_FAILURE;
                 running = false;
@@ -396,9 +466,11 @@ int main(int argc, char* argv[]) try {
     int steps = 0;
     Rules rules = Rules::kVanilla;
     bool cheat = false;
+    bool report_slow = false;       // --slow-frames
     std::filesystem::path profile;  // Remaster rules: where the player's profile is kept
-    int zoom = 0;                   // a dump: this many steps of zoom out ...
-    int zoom_at = 0;                // ... asked for before this step
+    DumpOptions dumping;
+    std::string held;    // a dump: the key held
+    std::string tapped;  // and the one pressed once
     const std::vector<std::string_view> args(argv + 1, argv + argc);
     for (std::size_t i = 0; i < args.size(); ++i) {
         const auto value = [&](std::size_t ahead) { return i + ahead < args.size() ? args[i + ahead] : ""; };
@@ -413,6 +485,8 @@ int main(int argc, char* argv[]) try {
             ++i;
         } else if (args[i] == "--cheat") {
             cheat = true;
+        } else if (args[i] == "--slow-frames") {
+            report_slow = true;
         } else if (args[i] == "--profile" && i + 1 < args.size()) {
             profile = args[i + 1];
             ++i;
@@ -429,18 +503,30 @@ int main(int argc, char* argv[]) try {
             slot = *number;
             ++i;
         } else if (const auto at = parse_number(value(2)); number && at && args[i] == "--zoom") {
-            zoom = *number;
-            zoom_at = *at;
+            dumping.zoom = *number;
+            dumping.zoom_at = *at;
             i += 2;
+        } else if (number && args[i] == "--moments") {
+            dumping.moments = *number;
+            ++i;
+        } else if (const auto step = parse_number(value(2)); step && args[i] == "--tap") {
+            tapped = args[i + 1];
+            dumping.tap_at = *step;
+            i += 2;
+        } else if (args[i] == "--hold" && i + 1 < args.size()) {
+            held = args[i + 1];
+            ++i;
         } else if (number && args[i] == "--dump" && i + 2 < args.size()) {
             steps = *number;
             dump_to = args[i + 2];
             i += 2;
         } else {
-            std::println(stderr,
-                         "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] "
-                         "[--soundfont FILE] [--rules vanilla|remaster] [--cheat] [--profile DIR] [--dump STEPS "
-                         "FILE.png [--wav FILE.wav]]");
+            std::println(
+                stderr,
+                "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] "
+                "[--soundfont FILE] [--rules vanilla|remaster] [--cheat] [--slow-frames] [--profile DIR] "
+                "[--dump STEPS "
+                "FILE.png [--wav FILE.wav] [--zoom BY AT_STEP] [--hold KEY] [--tap KEY AT_STEP] [--moments N]]");
             return EXIT_FAILURE;
         }
     }
@@ -479,6 +565,9 @@ int main(int argc, char* argv[]) try {
             }
         };
     }
+    if (gpu != nullptr && report_slow) {
+        std::println(stderr, "the GPU renderer draws on {}", gpu->device_name());
+    }
     auto session = Session::open(dir, slot, sound, rules, std::move(draw_with));
     if (!session) {
         std::println(stderr, "vikings-remaster: {}", session.error());
@@ -502,7 +591,9 @@ int main(int argc, char* argv[]) try {
         }
     }
     if (!dump_to.empty()) {
-        return dump(**session, steps, dump_to, wav, gpu.get(), zoom, zoom_at);
+        dumping.held = input::key_bits(input::default_bindings(), held);
+        dumping.tapped = input::key_bits(input::default_bindings(), tapped);
+        return dump(**session, steps, dump_to, wav, gpu.get(), dumping);
     }
     input::Bindings bindings = input::default_bindings();
     if (!keys.empty()) {
@@ -516,7 +607,7 @@ int main(int argc, char* argv[]) try {
         }
         bindings = std::move(*parsed);
     }
-    const int status = play(**session, bindings, window, gpu.get());
+    const int status = play(**session, bindings, window, gpu.get(), report_slow);
     if (const auto saved = (*session)->save_profile(); !saved) {
         std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
     }

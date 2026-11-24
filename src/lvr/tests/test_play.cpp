@@ -211,6 +211,29 @@ TEST_CASE("real data: giving up in the pause menu leads to the game-over scene w
         std::ranges::none_of(play.world.game_over_scene.kept_health, [](std::uint16_t health) { return health == 0; }));
 }
 
+TEST_CASE("real data: the game-over scene knows its slot; under Remaster rules its letters are drawn in front",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    const auto files = assets::GameFiles::open(LVR_ORIGINAL_DIR);
+    REQUIRE(files);
+    // It keeps the database of the level lost: each level's.
+    for (int level = 1; level <= scene::kLastLevel + 1; ++level) {
+        const auto lost = load_level(*files, level);
+        REQUIRE(lost);
+        const auto loaded = load_slot(*files, scene::kGameOver, lost->database_entry);
+        REQUIRE(loaded);
+        CHECK(loaded->slot == scene::kGameOver);
+        const World vanilla = start_world(*loaded);
+        CHECK(vanilla.scene == scene::kGameOver);
+        CHECK(vanilla.kinds.at(game_over_kind::kLetters).pool == Pool::kMiddle);
+        const World remaster = start_world(*loaded, Rules::kRemaster);
+        CHECK(remaster.scene == scene::kGameOver);
+        CHECK(remaster.kinds.at(game_over_kind::kLetters).pool == Pool::kFront);
+    }
+}
+
 TEST_CASE("real data: a scene that is one picture takes the camera's limits from its own header", "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");

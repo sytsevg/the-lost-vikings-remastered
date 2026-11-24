@@ -249,6 +249,14 @@ bool World::load(Reader& from) {
     return from.ok();
 }
 
+std::array<int, 2> World::view_for(std::array<int, 2> asked) const noexcept {
+    if (rules != Rules::kRemaster || scene > scene::kLastLevel || !has_hud || map.cells.empty() ||
+        map.pixel_width() < kViewWidth || map.pixel_height() < kViewHeight) {
+        return {camera.view_width, camera.view_height};
+    }
+    return {std::min(asked[0], map.pixel_width()), std::min(asked[1], map.pixel_height())};
+}
+
 Camera World::camera_for_view(int width, int height) const noexcept {
     Camera placed = camera;
     const bool larger = width > camera.view_width || height > camera.view_height;

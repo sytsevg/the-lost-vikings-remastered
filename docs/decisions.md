@@ -16,14 +16,17 @@ comments and other docs points here). A decision that was later replaced is not 
 - Other people's work: a project built from decompiled code, or under a licence that isn't permissive, may be
   read and run to compare, never copied, linked or shipped. CC0 material (RyanMallon's notes) may be used freely.
 
-### ADR-0005: Visuals, Rules and Sound are independent switches
-- **Visuals: Classic / Modern**, swappable at any moment. Presentation only.
+### ADR-0005: Rules and Sound are switches; the visuals go with the rules
+- **Visuals: Classic / Modern**, first planned as a switch of its own, swappable at any moment. Decided at the
+  start of M8 (2026-11-24): the visuals go with the rules, chosen at launch, nothing switched while playing.
+  Vanilla rules show the Classic picture (the CPU renderer); Remaster rules the Modern one (the GPU renderer, with
+  smooth movement and what M8 adds after it). Presentation only all the same: the simulation doesn't know.
 - **Rules: Vanilla / Remaster**, chosen when the game is started (`--rules`) and fixed until it ends: there is no
   switching while playing, so nothing has to be squeezed back into the original's limits. Anything that changes
   what the player can see or do belongs to Rules. Under Vanilla rules the visible playing area is the original's,
   even in Modern visuals.
 - **Sound: Classic / Modern** (ADR-0015), swappable at any moment.
-- Every combination is allowed. The simulation never knows which renderer or sound is active.
+- Every combination of rules and sound is allowed. The simulation never knows which renderer or sound is active.
 
 ### ADR-0017: The game's behaviour is written by hand, and checked by pixel match
 - The original keeps its behaviour in bytecode scripts. The engine does not interpret them: every kind of entity
@@ -191,8 +194,17 @@ publishing: its author asks not to link his download files directly.
   original's view its target is the Classic picture exactly: `lv-replay --gpu` plays the replays against the same
   goldens (all 119 matched when it was written; about five times slower on a software driver, so it is not part
   of the routine checks). What it does beyond that (zoom, and later effects) is judged by eye.
-- **Ahead** (ROADMAP, Modern visuals): smooth movement between ticks at the host's rate, parallax, lights,
-  shaders, art packs that replace sprites one for one, on the GPU renderer.
+- **Kept as lists, drawn when shown** (M8): a picture for the window is kept as its rectangles of the atlas, not
+  as pixels, and drawn when it is shown, as many pixels a pixel as it is shown at. That is what lets something
+  stop between the original's pixels and be shown at the moment of the screen's own refresh.
+- **Smooth movement** (built, Remaster rules): the original moves a tick's distance in three whole-pixel shares
+  (3, 2, 2 of 7). Shown smoothly, every entity's pieces and the camera go evenly over the tick, a third of a tick
+  behind where the original's picture has them (so nothing has to be known of the next tick: input is as
+  prompt as before). Only that split is evened out; a new frame, a flip, a jump are shown as the game makes
+  them. The pieces an animation moves itself, the HUD, and pictures that aren't a tick's (a scene's start, the
+  inventory, a menu, rewind) aren't moved.
+- **Ahead** (ROADMAP, Modern visuals): parallax, lights, shaders, art packs that replace sprites one for one,
+  on the GPU renderer.
 
 ### ADR-0011: Remaster rules
 Only under Remaster rules (ADR-0005). First called the QoL rules.
@@ -203,7 +215,10 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   there is then nothing of the level beside the HUD, and it is black. (Tried and not kept: the camera staying
   inside the level and the HUD sliding to the top of the screen while the Viking would be behind it.) A change of view takes a third
   of a second: the world's view grows at once and the picture opens up, or the picture closes in and
-  the view shrinks when it is there. A view is never larger than the level.
+  the view shrinks when it is there. A view is never larger than the level. A level is started with the zoom
+  the player has (no change of view to show as it comes in). A view less high than the screen (a level that
+  low) is in the middle of what is above the HUD. Only the 37 levels zoom (not the village, which has a map and
+  the Vikings too).
 - **The active area follows the zoomed view** (where entities exist: the view plus 16 pixels), and so does the
   edge the enemies turn at. Not the whole level: that keeps the game's rhythm, an enemy starting as it comes into
   view.
@@ -224,7 +239,12 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   by a column of its stone tiles to make room (it slides aside, then the minimap fades in; the other way round
   when it is put away); zoomed out the smaller HUD is clear of the corner and stays in the middle. M puts it
   away (not Tab, which is the inventory). What was seen is the player's, not the simulation's: `Session` keeps
-  it per level, and it is kept in the player's profile (below).
+  it per level, and it is kept in the player's profile (below). Only in the 37 levels, and not while a scene
+  fades in or out.
+- **Shots stop at a slope** (Remaster rules): the original's straight shots (the gunners', the troopers')
+  stop at walls only and fly on through a slope's ground; zoomed out that is seen, so they burst there.
+- **The game-over letters drop in front of the Vikings** (Remaster rules): their pieces come from the front
+  pool instead of the middle one, where they end up under the Vikings' figures in the original.
 - **Rewind** (built): while Backspace is held, time runs backwards at twice its speed, as far as the last 10
   seconds of play in levels reach; there the rewind is over and the play goes on. Let go earlier, the play goes
   on from where it is. The
@@ -232,7 +252,10 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   its snapshot with the keys it had, for its pictures. It crosses scenes: from the game-over scene back into
   the level. The sound of those seconds is heard backwards meanwhile, twice as fast (the last 10 seconds of
   what was played are kept), and the music then goes on from where it was. Two triangles flash in the
-  screen's top right corner while it runs. The minimap is not taken back.
+  screen's top right corner while it runs. The minimap is not taken back. Only the 37 levels have it (and the
+  game-over scene, back into the level): anywhere else (the title, the village, a demo) what was kept is let
+  go. The zoom is the player's, not the play's: a step brought back keeps the view the zoom has, and so does a
+  quicksave brought back.
 - **A world can be copied**, which is what rewind and quicksave are: a snapshot is a copy of the `World` (each
   entity its own copy) with the level it belongs to. The rewind keeps one before every step. That a copy keeps
   everything is checked on the replays: `lv-replay --copies` replaces the world by a copy of itself before

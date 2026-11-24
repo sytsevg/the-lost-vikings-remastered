@@ -192,6 +192,7 @@ struct PiecePicture {
     int y = 0;
     bool mirrored = false;
     bool flipped = false;
+    std::size_t piece = 0;  // which of the layer's pieces it is
 };
 
 // Makes the pictures of the pieces. It keeps the buffers that packed frames are unpacked into, which a piece

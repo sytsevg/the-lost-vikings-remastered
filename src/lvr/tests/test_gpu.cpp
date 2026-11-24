@@ -336,3 +336,126 @@ TEST_CASE("gpu: a kept picture is shown with its colours looked up") {
     REQUIRE(without);
     CHECK(*without == *shown);
 }
+
+TEST_CASE("gpu: a kept picture is drawn as it is shown: what moves between ticks, as large as it is shown") {
+    auto opened = GpuRenderer::open_headless();
+    if (!opened) {
+        SKIP("no graphics device: " << opened.error());
+    }
+    GpuRenderer& gpu = **opened;
+    const SharedGraphics shared = sample_shared();
+    SceneGraphics scene = sample_scene();
+    scene.id = next_graphics_id();
+    Map map{.width = 30, .height = 20, .cells = std::vector<Cell>(600)};  // nothing in front of the sprites
+    const assets::IndexedImage piece = assets::make_image(8, 8);
+    assets::IndexedImage white = piece;
+    std::ranges::fill(white.pixels, std::uint8_t{255});
+    View view;
+    view.map = &map;
+    view.camera_x = 40;
+    view.palette[255] = {.r = 255, .g = 255, .b = 255};
+    view.sprites = {{.image = &white, .x = 100, .y = 60, .moves = {6, 0}}};
+    Screen screen;
+    REQUIRE(gpu.keep(screen, view, scene, shared));
+    const auto pixel = [](std::size_t x, std::size_t y, int scale) {
+        return ((y * kScreenWidth * static_cast<std::size_t>(scale)) + x) * 4;
+    };
+    // The sprite's left edge on row 62, `scale` pixels a pixel: the first white pixel from where it would be
+    // 4 pixels further left.
+    const auto left_edge = [&](const std::vector<std::uint8_t>& shown, int scale) {
+        const auto row = static_cast<std::size_t>(62 * scale);
+        for (auto x = static_cast<std::size_t>(56 * scale); x < static_cast<std::size_t>(72 * scale); ++x) {
+            const std::size_t at = pixel(x, row, scale);
+            if (shown[at] == 255 && shown[at + 1] == 255 && shown[at + 2] == 255) {
+                return static_cast<int>(x);
+            }
+        }
+        return -1;
+    };
+    // Not a tick's picture: as the picture has it, at any moment.
+    const auto still = gpu.shown(screen, 3, nullptr, 0.5F);
+    REQUIRE(still);
+    CHECK(left_edge(*still, 3) == 60 * 3);
+    CHECK(gpu.show_times().redrawn);
+    // Shown again (the window refreshes faster than pictures come), and in other colours (a fade): not drawn anew.
+    REQUIRE(gpu.shown(screen, 3, nullptr, 0.9F));
+    CHECK_FALSE(gpu.show_times().redrawn);
+    Screen faded = screen;
+    faded.palette[255] = {.r = 255, .g = 0, .b = 0};
+    const auto red = gpu.shown(faded, 3, nullptr, 0.0F);
+    REQUIRE(red);
+    CHECK_FALSE(gpu.show_times().redrawn);
+    const std::size_t on_sprite = pixel(static_cast<std::size_t>(62 * 3), static_cast<std::size_t>(62 * 3), 3);
+    CHECK((*red)[on_sprite] == 255);
+    CHECK((*red)[on_sprite + 1] == 0);
+    // At another size it is.
+    REQUIRE(gpu.shown(screen, 2, nullptr, 0.0F));
+    CHECK(gpu.show_times().redrawn);
+    REQUIRE(gpu.shown(screen, 3, nullptr, 0.0F));
+    CHECK(gpu.show_times().redrawn);
+    // The tick's first picture, which has moved it its first share (2 of 6): shown a third of a tick behind, where
+    // the tick before left it, and from there a pixel more every half refresh: in thirds of a pixel at 3 times.
+    screen.motion.phase = 0;
+    screen.motion.sprites = {{6, 0}};
+    for (const auto& [between, at] :
+         {std::pair{0.0F, 58 * 3}, std::pair{0.5F, (58 * 3) + 3}, std::pair{0.25F, (58 * 3) + 2}}) {
+        INFO("between " << between);
+        const auto moved = gpu.shown(screen, 3, nullptr, between);
+        REQUIRE(moved);
+        CHECK(left_edge(*moved, 3) == at);
+        CHECK(gpu.show_times().redrawn);  // a tick's picture is drawn anew every time: it moves
+    }
+    // The camera as well, once it is known where the tick before left it: everything goes the other way.
+    screen.motion.scroll = {40, 0};
+    screen.motion.scroll_to = {46, 0};
+    screen.motion.scroll_from = {{40, 0}};
+    const auto both = gpu.shown(screen, 3, nullptr, 0.5F);
+    REQUIRE(both);
+    // The camera's share at the first picture was 2 of its 6 too (40 is where the step left it: pretend so);
+    // half a refresh in it is 1 pixel further, the sprite 1 pixel further as well: no move on the screen.
+    CHECK(left_edge(*both, 3) == (58 * 3) + 3 - 3);
+}
+
+TEST_CASE("gpu: pictures kept on pages: a scene's pictures stay for the pictures kept of it") {
+    auto opened = GpuRenderer::open_headless();
+    if (!opened) {
+        SKIP("no graphics device: " << opened.error());
+    }
+    GpuRenderer& gpu = **opened;
+    const SharedGraphics shared = sample_shared();
+    SceneGraphics one;
+    one.id = next_graphics_id();
+    one.picture = patterned(320, 200, 30);
+    SceneGraphics two;
+    two.id = next_graphics_id();
+    two.picture = patterned(320, 200, 140);
+    View view;
+    for (std::size_t i = 0; i < view.palette.size(); ++i) {
+        view.palette.at(i) = {.r = static_cast<std::uint8_t>(i), .g = 0, .b = 0};
+    }
+    // Kept of the one scene, then the same picture again (a fade: kept once), then of the other scene: shown
+    // after all were kept, each is its own scene's.
+    Screen first;
+    Screen again;
+    Screen second;
+    REQUIRE(gpu.keep(first, view, one, shared));
+    REQUIRE(gpu.keep(again, view, one, shared));
+    REQUIRE(gpu.keep(second, view, two, shared));
+    const auto shows = [&gpu](const Screen& screen, std::uint8_t colour) {
+        const auto shown = gpu.shown(screen);
+        REQUIRE(shown);
+        CHECK(shown->at(std::size_t{kPictureTop} * kScreenWidth * 4) == colour);  // the picture's first pixel
+    };
+    shows(first, 30);
+    shows(again, 30);
+    shows(second, 140);
+    // Many scenes, each kept once and shown at once: the pages are used again.
+    for (int i = 0; i < 12; ++i) {
+        SceneGraphics each;
+        each.id = next_graphics_id();
+        each.picture = patterned(320, 200, static_cast<std::uint8_t>(10 * i));
+        Screen screen;
+        REQUIRE(gpu.keep(screen, view, each, shared));
+        shows(screen, static_cast<std::uint8_t>(10 * i));
+    }
+}

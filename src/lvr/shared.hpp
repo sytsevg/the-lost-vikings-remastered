@@ -343,6 +343,9 @@ class StraightShot : public Entity {
                 if (saw.wall) {
                     return burst(world);
                 }
+                if (world.rules == Rules::kRemaster && under_slope(world, x, y)) {
+                    return burst(world);  // (zoomed out, a shot is seen to fly on into a hill)
+                }
                 still_flying(world);
                 break;
             case State::kEnding:

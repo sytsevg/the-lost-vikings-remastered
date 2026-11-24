@@ -199,11 +199,20 @@ tricks (panning, page flips, restoring under sprites) are not copied; where they
 part of the game it is modelled, and two accidents are deliberately not ([`quirks.md`](quirks.md), "Drawing").
 
 Under Remaster rules the window's pictures are drawn by `gpu.*` instead (ADR-0006), from the same `View`:
-- **Drawing:** everything a scene is made of is in one atlas of palette indices (the shared pictures once, the
-  scene's when the scene changes, a sprite's picture the first time it is shown). A picture is a list of
-  rectangles of the atlas, drawn in the Classic renderer's order into a texture of indices as large as the view, with the HUD's
-  rows under it. The last 512 pictures are kept on the card, since a step can make 150 of them before the first
-  is shown.
+- **Drawing:** everything a scene is made of is in an atlas of palette indices (the shared pictures, the
+  scene's, a sprite's picture the first time it is shown). A picture is a list of rectangles of the atlas,
+  drawn in the Classic renderer's order into a texture of indices as large as the view, with the HUD's rows
+  under it.
+- **Kept, then drawn when shown:** for the window a picture is kept as that list (the last 512, since a step
+  can make 150 of them before the first is shown; a fade's identical ones once) and drawn when it is shown, as
+  many pixels a pixel as the window shows it at; one that doesn't move between ticks is drawn once, however
+  many times the window refreshes while it is shown (a fade's colours are applied after). The atlas has pages: a scene's pictures stay on theirs while
+  a kept picture is drawn from it, and a new scene (or a page full of sprites) takes a free one.
+- **Smooth movement:** each picture carries its `Motion` (`render.hpp`): which of a tick's three it is, each
+  sprite's entity's movement in the tick (`DrawnSprite::moves`, from `view_of`), and where the camera was at the
+  end of the tick before and is at this one's (`Session::step`). Shown `between` (0 to 1) into its refresh,
+  each rectangle is moved by the difference between an even movement and the original's shares
+  (`moved_since`, `camera_moved`). The window passes `between` from its clock, at the screen's own rate.
 - **Showing:** a second pass looks each index up in the palette and scales: the playfield's part, then the HUD,
   at one scale. Shown smaller than it is, a pixel is the mean of the pixels it covers.
 - **The view is the world's** (`Camera::view_width`, `view_height`): the camera's limits and follow box, the

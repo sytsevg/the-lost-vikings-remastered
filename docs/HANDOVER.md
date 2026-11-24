@@ -15,8 +15,7 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
 - **M7, the Remaster rules, is built** (`--rules remaster`): the GPU renderer, zoom-out, no limit on entities,
   a minimap, rewind, a quicksave, a profile on disk, and the game's state written out and read back. What each
   is and where it lives is in the next section.
-- **Next is M8, the visuals**, before co-op (M9). Nothing of it is started. "Starting M8" below says what the
-  code has for it and what has to be decided first.
+- **M8, the visuals**, is under way, before co-op (M9): smooth movement is built (below, "M8").
 
 ## What the Remaster rules have
 
@@ -27,7 +26,7 @@ only under Remaster rules; Vanilla rules must stay exactly what they are, and th
   is never changed while playing.
 - **The GPU renderer** (`src/lvr/gpu.*`, SDL_GPU on Vulkan, shaders `gpu_*.vert` and `gpu_*.frag` compiled by
   `glslc` into the build): what a Remaster window shows. Vanilla rules and every check use the Classic renderer
-  (`render.*`), which stays. How the GPU one works is under "Starting M8".
+  (`render.*`), which stays. How the GPU one works is under "M8".
 - **Zoom-out:** `-` and `=`, or the mouse wheel; the original's view, one and a half times and twice it. The view
   is a value of the camera (`view_width`, `view_height`), and everything that was 320 × 176 reads it. `Session`
   owns the zoom and its transition; `World::set_view` changes the world's view. A zoomed view is as high as the
@@ -55,57 +54,58 @@ only under Remaster rules; Vanilla rules must stay exactly what they are, and th
 - **The profile** (`profile.*`): the folder `profiles` beside the game's program, or `--profile DIR`. In it
   `minimap.txt` and `quicksave.bin`. What the game writes goes there, not into the user's home.
 
-## Starting M8: the visuals
+## M8: the visuals
 
-The list is in [`ROADMAP.md`](ROADMAP.md): smooth movement between ticks, parallax with the SNES backdrops,
-events in animations and effects on them, lights and shaders, art packs, sound placed by position. What the code
-has for it:
+Decided with the user (2026-11-24): the visuals go with the rules, chosen at launch (ADR-0005): Vanilla rules
+show the Classic picture, Remaster rules the Modern one. At the original's view under Vanilla rules the GPU
+renderer must still make the Classic picture; under Remaster rules a visual may differ. Smooth movement first.
+The rest of the list is in [`ROADMAP.md`](ROADMAP.md): parallax with the SNES backdrops, events in animations and
+effects on them, lights and shaders, art packs, sound placed by position.
 
-- **How a picture gets to the window today.** A step of the game (`Session::step`) is a tick: three pictures,
-  each a `View` (the camera, the sprites' pieces in order, the text layer, the HUD, the palette) made by
-  `view_of` and drawn at once. The Classic renderer draws it into a `Screen` of palette indices. The GPU
-  renderer (`GpuRenderer::keep`) draws the same `View` into a texture of indices on the card and the `Screen`
-  only says which one (`Screen::kept`, of the last 512) with the palette; the window shows one kept picture a
-  refresh (`GpuRenderer::show`: palette lookup and scaling in `gpu_show.frag`, then the minimap and the
-  rewind's mark over it). The display's rate is the original's, 59.7 a second (`kDisplayHz`); the window's loop
-  in `main.cpp` shows a picture for every refresh that is due.
-- **The atlas.** Everything a scene is drawn from is in one texture of palette indices: the shared pictures
-  (font, HUD), the scene's (tileset, the tiles' masks, its full pictures), and the sprites' pieces, each put
-  there the first time it is shown and found again by a hash of its pixels (`GpuRenderer::State::place_pieces`).
-  A picture is a list of rectangles of the atlas (`Quad`), drawn in the Classic renderer's order.
-- **What smooth movement runs into.** A kept picture is already drawn: there is nothing left to move. Movement
-  between ticks at the screen's own rate needs the window to draw from what a `View` describes, at the time it
-  is shown, between two of them; and for that a sprite's piece has to be the same piece in both (today a `View`
-  is a list with no names in it, and it points into data that is gone after the step: the world's map, the
-  painter's pictures). A piece's place in the layer (its number) is the natural name. The game's own three
-  pictures a tick already move sprites and camera in thirds (`share_of_move`).
+- **Smooth movement (built; the user judges it on the host).** The GPU renderer keeps a picture as its list of
+  atlas rectangles and draws it when it is shown, as large as it is shown (`GpuRenderer::keep`, `show`), with
+  every entity's pieces and the camera moved evenly over the tick instead of in the original's three
+  whole-pixel shares, a third of a tick behind (`Motion` in `render.hpp`, ADR-0006). The window's loop passes
+  how far into its refresh each show is, at the screen's own rate.
+- **How a picture gets to the window.** A step of the game (`Session::step`) is a tick: three pictures, each a
+  `View` (the camera, the sprites' pieces in order, the text layer, the HUD, the palette) made by `view_of`. The
+  Classic renderer draws it into a `Screen` of palette indices at once. The GPU renderer keeps its list and
+  the `Screen` only says which one (`Screen::kept`, of the last 512), with the palette and the `Motion`; the
+  window shows one a refresh of its own (`gpu_show.frag` looks up the palette and scales, then the minimap and
+  the rewind's mark go over it).
+- **The atlas** has pages (`GpuRenderer::State::Page`): the shared pictures, the scene's (tileset, the tiles'
+  masks, its full pictures) and the sprites' pieces, each put there the first time it is shown and found again
+  by a hash of its pixels. A kept picture is drawn from one page; a page is used again only when no kept
+  picture is drawn from it.
 - **What parallax has.** The SNES version's backdrops are decoded (`src/assets/snes.*`,
   [`formats/snes.md`](formats/snes.md); `lv-export assets` writes all 37) and nothing draws them. In the DOS
   game the background is part of the level's tiles, so drawing something behind it needs to know which tiles are
   background: the roadmap's note on the collision map (free cells are background) is the plan. The backdrops
-  have colours of their own, outside the level's palette of 256.
+  have colours of their own, outside the level's palette of 256. Since pictures are drawn when shown, a
+  backdrop can scroll at its own rate with the camera's smooth position.
 - **What effects have.** Animations are the original's programs, played as they are (`sprites.*`); a program
   reports only the sounds it asks for. The roadmap's "events" (a frame shown, a sound asked for, an end), named
   beside the animations in `animations.hpp`, don't exist yet.
 - **Art packs** need a piece named by the frame it shows (which set, which frame, which colours), not by its
   pixels' hash.
-- **Visuals as a switch.** ADR-0005 has Visuals (Classic, Modern) as a switch of its own, changed at any moment.
-  Today there is no such switch: the GPU renderer comes with Remaster rules, and it shows the Classic look. Whether
-  Modern visuals are a switch within Remaster rules, or their own, is to be decided before the first of them is
-  built.
-- **How visuals are checked.** At the original's view the GPU renderer must still make the Classic picture
-  (`lv-replay --check --gpu`; one or two replays are enough for most changes, all of them take five minutes on
-  the container's software driver). Everything beyond that has no golden: under Remaster rules
-  `vikings-remaster --dump STEPS FILE.png --zoom BY AT_STEP` writes what the window would show (three times the
-  size) for looking at in the container, and the user judges motion on the host. Timings in the renderer are
-  counted in pictures (a zoom change takes 20, a third of a second).
-
-Decide with the user before building: the order of the M8 items, the Visuals switch, and whether a visual that
-changes what is seen where (a backdrop, a light) may differ from the original's picture at the original's view,
-which today's check forbids.
+- **How visuals are checked.** `lv-replay --check --gpu` (one or two replays are enough for most changes, all of
+  them take five minutes on the container's software driver) draws the kept list at the original's size with
+  nothing moved: it must be the Classic picture. Everything beyond that has no golden: under Remaster rules
+  `vikings-remaster --dump STEPS FILE.png` writes what the window would show (three times the size) for looking
+  at in the container; `--zoom BY AT_STEP` zooms out, `--hold KEY` holds a key, `--tap KEY AT_STEP` presses one
+  (a level's password box waits for F), and `--moments N` writes the last step's pictures at N moments of their
+  refresh each. The user judges motion on the host. Timings in the renderer are counted in pictures (a zoom
+  change takes 20, a third of a second).
 
 ## Open
 
+- **A jumble of tiles or pixels at the top left as a level loads** (seen by the user in the M8 window, 2026-11-24;
+  not seen in dumps of a level change, either renderer, zoomed or not). Wants a screenshot; to come back to.
+- **Frames now and then a refresh or more late** in the window (the user's AMD Radeon 890M, RADV), mostly noticed
+  while moving. `--slow-frames` shows the time is spent waiting for the window's next picture (the card or the
+  compositor holding frames), not in the game's step, its drawing, or its uploads; it was there before smooth
+  movement too, and mailbox presenting or a third frame in flight didn't change it. Likely the system (the
+  GPU's power management); not confirmed (vkcube, a fixed clock).
 - **Co-op and the active area:** with several views of one world, either the active area is all the views
   together or everything runs (ADR-0011). Not decided.
 - **Co-op's snapshots.** What is written of a world (ADR-0020) is all of it, 25 to 90 KB. Sent over a network

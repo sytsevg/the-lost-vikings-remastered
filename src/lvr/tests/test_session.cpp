@@ -1,5 +1,6 @@
 // Tests for src/lvr/session.*: the engine as a game to play, a picture and its sound for every refresh.
 #include <algorithm>
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
 #include <cstdint>
@@ -7,7 +8,9 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <vector>
 
+#include "lvr/names.hpp"
 #include "lvr/play.hpp"
 #include "lvr/render.hpp"
 #include "lvr/session.hpp"
@@ -166,6 +169,45 @@ TEST_CASE("real data: Remaster rules' zoom widens the view over a moment and clo
     CHECK(part_after(session, 30) == Screen::Part{.x = 0, .y = 0, .width = 480, .height = 360});
     session.zoom(-5);
     CHECK(part_after(session, 30) == original);
+}
+
+TEST_CASE("real data: Remaster rules' pictures say what moves between ticks; Vanilla's don't", "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    // Level 2: the password's box waits for a key; then Erik runs right.
+    const auto run = [](Session& session) {
+        std::vector<Screen> shown;
+        for (int step = 0; step < 28; ++step) {
+            shown = session.step(step == 16 ? key::kF : step > 16 ? key::kRight : std::uint16_t{0});
+        }
+        return shown;
+    };
+    auto vanilla = Session::open(LVR_ORIGINAL_DIR, 1);
+    REQUIRE(vanilla);
+    for (const Screen& screen : run(**vanilla)) {
+        CHECK(screen.motion.phase == -1);
+    }
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+    REQUIRE(opened);
+    Session& session = **opened;
+    // Waiting for the key: no tick, nothing moves.
+    for (int step = 0; step < 4; ++step) {
+        for (const Screen& screen : session.step(0)) {
+            CHECK(screen.motion.phase == -1);
+        }
+    }
+    const std::vector<Screen> tick = run(session);
+    REQUIRE(tick.size() == 3);
+    for (int phase = 0; phase < 3; ++phase) {
+        const Motion& motion = tick.at(static_cast<std::size_t>(phase)).motion;
+        CHECK(motion.phase == phase);
+        CHECK(motion.scroll_from.has_value());  // the tick before was one too
+        CHECK(motion.scroll_to == tick[2].motion.scroll);
+        CHECK(motion.view == std::array<int, 2>{kScreenWidth, kPlayfieldHeight});
+        // Erik runs right: his pieces move with him.
+        CHECK(std::ranges::any_of(motion.sprites, [](const auto& moves) { return moves[0] > 0; }));
+    }
 }
 
 TEST_CASE("real data: Remaster rules' rewind goes back at twice the speed, and the play goes on from there as before",
@@ -447,4 +489,89 @@ TEST_CASE("real data: the quicksave is kept in the profile and brought back in a
         CHECK_FALSE((*opened)->has_quicksave());
     }
     std::filesystem::remove_all(folder);
+}
+
+TEST_CASE("real data: the cheat's next level key skips one level, even while it is held over the change",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 1);
+    REQUIRE(opened);
+    Session& session = **opened;
+    session.cheat();
+    for (int step = 0; step < 24; ++step) {
+        (void)session.step(step == 16 ? key::kF : std::uint16_t{0});
+    }
+    const Play::MenuKeys next{.next_level = true};
+    (void)session.step(0, next);  // the level is over
+    (void)session.step(0, next);  // the next one is loaded, the key still held: as the original, let go there
+    CHECK(session.scene() == 2);
+    (void)session.step(0);
+    (void)session.step(0);
+    CHECK(session.scene() == 2);
+}
+
+TEST_CASE("real data: Remaster rules' zoom is the player's: a level starts with it, the rewind keeps it",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    const std::array<int, 2> farthest{640, 480};
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+    REQUIRE(opened);
+    Session& session = **opened;
+    session.cheat();
+    for (int step = 0; step < 24; ++step) {
+        (void)session.step(step == 16 ? key::kF : std::uint16_t{0});
+    }
+    session.zoom(2);
+    std::vector<Screen> shown;
+    for (int step = 0; step < 30; ++step) {
+        shown = session.step(key::kRight);
+    }
+    REQUIRE_FALSE(shown.empty());
+    CHECK(shown.back().motion.view == farthest);
+    // Back over the steps from before the zoom: still zoomed out.
+    session.rewind(true);
+    for (int step = 0; step < 20; ++step) {
+        for (const Screen& screen : session.step(0)) {
+            CHECK(screen.motion.view == farthest);
+            CHECK(screen.part == Screen::Part{.x = 0, .y = 0, .width = 640, .height = 480});
+        }
+    }
+    session.rewind(false);
+    // (Back as far as the password's box: it waits for a key again.)
+    (void)session.step(0);
+    (void)session.step(key::kF);
+    (void)session.step(0);
+    // The next level comes in zoomed out, with no minimap over its fades.
+    (void)session.step(0, Play::MenuKeys{.next_level = true});
+    const std::vector<Screen> loading = session.step(0);
+    REQUIRE(session.scene_loaded());
+    REQUIRE(loading.size() > 140);
+    CHECK(std::ranges::count_if(loading, [](const Screen& screen) { return screen.fading; }) > 140);
+    CHECK_FALSE(loading.back().fading);
+    CHECK(loading.back().motion.view == farthest);
+    CHECK(loading.back().part == Screen::Part{.x = 0, .y = 0, .width = 640, .height = 480});
+}
+
+TEST_CASE("real data: the village has no minimap, zoom or rewind: they are the levels'", "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    auto opened = Session::open(LVR_ORIGINAL_DIR, scene::kIntro, {}, Rules::kRemaster);
+    REQUIRE(opened);
+    Session& session = **opened;
+    session.zoom(2);
+    std::vector<Screen> shown;
+    for (int step = 0; step < 40; ++step) {
+        shown = session.step(0);
+    }
+    CHECK(session.minimap() == nullptr);
+    REQUIRE_FALSE(shown.empty());
+    CHECK(shown.back().motion.view == std::array<int, 2>{kScreenWidth, kPlayfieldHeight});
+    session.rewind(true);
+    (void)session.step(0);
+    CHECK_FALSE(session.rewinding());
 }

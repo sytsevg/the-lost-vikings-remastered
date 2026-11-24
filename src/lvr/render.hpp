@@ -62,10 +62,34 @@ inline bool in_front(const std::vector<std::uint8_t>& masks, std::size_t tile, s
     return at < masks.size() && (masks[at] & (0x80U >> (stored % 8))) != 0;
 }
 
+// Smooth movement (Remaster rules, ADR-0005): what moves in a tick, so that a picture can be shown with it where
+// an even movement over the tick puts it at the moment it is shown, between the screen's refreshes too. The
+// original moves a tick's distance in three whole-pixel shares (7 is 3, 2, 2: share_of_move); shown smoothly, a
+// thing is a third of a tick behind where the picture has it, and goes on evenly from there.
+struct Motion {
+    int phase = -1;  // which of a tick's three pictures this is; -1: not one of a tick's, nothing is moved
+    // The camera as the step left it (not shaken), and where it was at the end of the tick before and is at the
+    // end of this one; without those (a tick after a scene's start, a change of view) it isn't moved.
+    std::array<int, 2> scroll{};
+    std::optional<std::array<int, 2>> scroll_from;
+    std::array<int, 2> scroll_to{};
+    std::array<int, 2> view{};  // the view's size: the camera is only moved between ticks of the same view
+    // Each sprite's (of the view's, in order) movement in the tick: its entity's, which its pieces are moved by.
+    std::vector<std::array<int, 2>> sprites;
+};
+
+// How far a thing moving `by` pixels in a tick is to be drawn from where picture `phase` of the tick has it,
+// `between` (0 to 1) into the refresh that picture is shown for.
+float moved_since(int by, int phase, float between) noexcept;
+// The same for the camera of `motion`'s picture: x and y.
+std::array<float, 2> camera_moved(const Motion& motion, float between) noexcept;
+
 struct Screen {
     std::vector<std::uint8_t> pixels = std::vector<std::uint8_t>(std::size_t{kScreenWidth} * kScreenHeight);
     assets::Palette palette{};
-    int kept = -1;  // drawn by a renderer that keeps its pictures itself (lvr/gpu.hpp): which one; no pixels here
+    std::int64_t kept = -1;  // drawn by a renderer that keeps its pictures itself (lvr/gpu.hpp): which one; no
+                             // pixels here
+    Motion motion;
     // The part of the playfield that is shown, scaled to the playfield's place on screen: all of the original's
     // view, or (Remaster rules' zoom) of a larger one, or a part of it while the zoom changes.
     struct Part {
@@ -87,6 +111,7 @@ struct Screen {
     };
     std::array<Viking, 3> vikings{};
     bool rewinding = false;  // the picture is one of time running backwards (Remaster rules): it is marked so
+    bool fading = false;     // a scene's going dark or coming in: nothing is laid over it (the minimap)
 };
 
 // What draws a view: draw() below, or something that is to make the same picture.
@@ -127,6 +152,7 @@ struct DrawnSprite {
     int y = 0;
     bool mirrored = false;
     bool flipped = false;
+    std::array<int, 2> moves{};  // how far its entity moves in this tick (x, y)
 };
 
 // What the HUD shows.

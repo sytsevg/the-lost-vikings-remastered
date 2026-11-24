@@ -39,6 +39,9 @@ std::optional<Found> find_viking_beside(const World& world, const Entity& entity
 std::optional<Found> find_ahead_below(const World& world, const Entity& entity, const TileTypes& types);
 // A point.
 std::optional<Found> find_at(const World& world, const Entity& entity, int x, int y, const TileTypes& types);
+// Whether a point is under the surface of a slope (Remaster rules: a shot stops there; the original's fly on
+// through the ground).
+bool under_slope(const World& world, int x, int y);
 // Whether it can walk on: 16 pixels ahead there is a slope at its feet, a step up with room above it, or nothing
 // at its feet and ground or a slope under that.
 bool can_walk_on(const World& world, const Entity& entity);

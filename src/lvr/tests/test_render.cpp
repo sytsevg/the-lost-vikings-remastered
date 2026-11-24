@@ -2,6 +2,7 @@
 // checked on the replays by the pixel-match harness (lv-replay --renderer).
 #include <array>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -12,6 +13,7 @@
 #include "assets/graphics.hpp"
 #include "lvr/level.hpp"
 #include "lvr/render.hpp"
+#include "lvr/sprites.hpp"
 
 using namespace lvr;
 
@@ -251,6 +253,43 @@ TEST_CASE("render: the palette darkened, colours 1-15 kept unless everything fad
     view.darken_all = true;
     draw(screen, view, SceneGraphics{}, SharedGraphics{});
     CHECK(screen.palette[5] == assets::Rgb{.r = 215, .g = 255, .b = 0});
+}
+
+TEST_CASE("render: smooth movement: a tick's movement shown evenly, a third of a tick behind") {
+    // Where a thing is shown, from where the tick began: where picture `phase` has it (the original's shares)
+    // plus the correction.
+    const auto shown_at = [](int by, int phase, float between) {
+        int shifted = 0;
+        for (int picture = 0; picture <= phase; ++picture) {
+            shifted += share_of_move(by, picture);
+        }
+        return static_cast<float>(shifted) + moved_since(by, phase, between);
+    };
+    for (int by = -40; by <= 40; ++by) {
+        INFO("by " << by);
+        CHECK(shown_at(by, 0, 0) == 0);  // the tick's first picture: where the tick before ended
+        for (int phase = 0; phase < 3; ++phase) {
+            // Evenly: a third of the tick a refresh, without a jump from one picture to the next.
+            CHECK(std::abs(shown_at(by, phase, 0.5F) -
+                           (static_cast<float>(by) * (static_cast<float>(phase) + 0.5F) / 3.0F)) < 1e-4F);
+            const float next = phase < 2 ? shown_at(by, phase + 1, 0) : static_cast<float>(by);
+            CHECK(std::abs(shown_at(by, phase, 1) - next) < 1e-4F);
+        }
+    }
+    CHECK(moved_since(7, -1, 0.5F) == 0);  // not a tick's picture: as it is
+    CHECK(moved_since(7, 3, 0.5F) == 0);
+
+    Motion motion;
+    motion.scroll = {103, 50};
+    motion.scroll_to = {106, 44};
+    motion.phase = 1;
+    CHECK(camera_moved(motion, 0.5F) == std::array<float, 2>{});  // where the tick before ended isn't known
+    motion.scroll_from = {{100, 50}};
+    // A third of the way at the second picture: 102 and 48, where the step left it at 103 and 50.
+    CHECK(camera_moved(motion, 0) == std::array<float, 2>{102 - 103, 48 - 50});
+    CHECK(camera_moved(motion, 0.5F) == std::array<float, 2>{103 - 103, 47 - 50});
+    motion.phase = -1;
+    CHECK(camera_moved(motion, 0.5F) == std::array<float, 2>{});
 }
 
 TEST_CASE("real data: the shared pictures", "[real-data]") {

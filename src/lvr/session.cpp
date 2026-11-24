@@ -115,19 +115,13 @@ Screen::Part between(const Screen::Part& from, const Screen::Part& to, int pictu
 void Session::zoom(int by) noexcept {
     if (play_.world.rules == Rules::kRemaster) {
         zoom_ = std::clamp(zoom_ + by, 0, static_cast<int>(kZoomViews.size()) - 1);
+        play_.view = kZoomViews[static_cast<std::size_t>(zoom_)];  // (clamped above)
     }
 }
 
-// The view the zoom asks for here: never more than the level has, and only where a level is played.
+// The view the zoom asks for here.
 std::array<int, 2> Session::wanted_view() const {
-    const World& world = play_.world;
-    const std::array<int, 2>& original = kZoomViews.front();
-    if (world.rules != Rules::kRemaster || !play_.loaded().level.hud || world.map.cells.empty() ||
-        world.map.pixel_width() < original[0] || world.map.pixel_height() < original[1]) {
-        return {world.camera.view_width, world.camera.view_height};
-    }
-    const std::array<int, 2>& asked = kZoomViews.at(static_cast<std::size_t>(zoom_));
-    return {std::min(asked[0], world.map.pixel_width()), std::min(asked[1], world.map.pixel_height())};
+    return play_.world.view_for(kZoomViews.at(static_cast<std::size_t>(zoom_)));
 }
 
 // Before a step: the world's view becomes the wanted one. A larger one at once (its pictures then open up from
@@ -267,7 +261,8 @@ std::expected<void, std::string> Session::save_profile() const {
 // After a step: what the view shows now is seen, and the minimap is drawn again.
 void Session::update_minimap() {
     const World& world = play_.world;
-    if (world.rules != Rules::kRemaster || !world.has_vikings || !play_.loaded().level.hud || world.map.cells.empty()) {
+    if (world.rules != Rules::kRemaster || world.scene > scene::kLastLevel || !world.has_vikings ||
+        !play_.loaded().level.hud || world.map.cells.empty()) {
         minimap_ = {};
         return;
     }
@@ -292,6 +287,13 @@ Screen Session::picture() {
     screen.part = part_shown(view);
     screen.level_x = view.camera_x;
     screen.level_y = view.camera_y;
+    screen.fading = play_.fade.has_value();
+    screen.motion.scroll = {play_.world.camera.x, play_.world.camera.y};
+    screen.motion.view = {view.width, view.height};
+    screen.motion.sprites.reserve(view.sprites.size());
+    for (const DrawnSprite& sprite : view.sprites) {
+        screen.motion.sprites.push_back(sprite.moves);
+    }
     for (int who = 0; who < kVikingSlots && play_.world.has_vikings; ++who) {
         if (const Entity* viking = play_.world.at(who); viking != nullptr && !viking->dead) {
             screen.vikings.at(static_cast<std::size_t>(who)) = {
@@ -383,11 +385,12 @@ void Session::render_live(std::size_t frames, std::vector<std::int16_t>& out) {
     rendered_.erase(rendered_.begin(), end);
 }
 
-// A level is being played: not a cutscene, the title or the game-over scene, not a demo, and no menu is open.
+// A level is being played: one of the 37 (not a cutscene, the village, the title or the game-over scene), not a
+// demo, and no menu is open.
 bool Session::level_played() const {
     const World& world = play_.world;
-    return world.has_vikings && play_.loaded().level.hud && !world.map.cells.empty() && !world.attract &&
-           !play_.playing_demo() && !play_.in_menu();
+    return world.scene <= scene::kLastLevel && world.has_vikings && play_.loaded().level.hud &&
+           !world.map.cells.empty() && !world.attract && !play_.playing_demo() && !play_.in_menu();
 }
 
 std::vector<Screen> Session::back_to(const Kept& step, bool& another) {
@@ -496,6 +499,9 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
         }
         play_.world.title.cheat = true;
         rewind_.clear();  // what led up to here is no longer what came before
+        scrolled_.reset();
+        grows_from_.reset();  // (brought back at the view the zoom has: no change of view to show)
+        shrinking_ = false;
     }
     // The rewind: back while it is held and there is something to go back to. With nothing left it is over, and
     // the play goes on until the key is let go and held again. Else the play before this step is kept, the last
@@ -503,7 +509,14 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
     if (!rewind_held_) {
         rewind_over_ = false;
     }
-    const bool back = rewind_held_ && !rewind_over_ && remaster && !play_.in_menu() && !play_.playing_demo();
+    // Only in a level, and from the game-over scene back into the one that was lost: what was kept of a level is
+    // let go anywhere else (the title, a cutscene, a demo), so that no other scene goes back into it. (Not in a
+    // level's pause menu: the play goes on after it.)
+    const bool game_over = play_.world.scene == scene::kGameOver && !play_.in_menu();
+    if (!level_played() && !game_over && !play_.in_menu()) {
+        rewind_.clear();
+    }
+    const bool back = rewind_held_ && !rewind_over_ && remaster && (level_played() || game_over);
     if (back && rewind_.empty()) {
         rewind_over_ = true;
     }
@@ -512,6 +525,9 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
         rewinding_ = back && !rewind_.empty();
     }
     if (rewinding_) {
+        scrolled_.reset();    // (the pictures going back aren't moved between)
+        grows_from_.reset();  // (nor is the view changed: each step is brought back at the zoom's view)
+        shrinking_ = false;
         return step_back();
     }
     if (remaster && level_played()) {
@@ -533,8 +549,25 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
         early.insert(early.end(), frames[i].cues.begin(), frames[i].cues.end());
     }
     std::vector<Screen> shown;
+    const bool tick = refreshes == 3 && frames.size() == 3 && !play_.scene_loaded && !play_.in_menu();
+    if (tick && remaster) {
+        // Smooth movement: the tick's three pictures, and where the camera was at the end of the last one.
+        const Motion& end = frames.back().screen.motion;
+        for (int phase = 0; phase < 3; ++phase) {
+            Motion& motion = frames.at(static_cast<std::size_t>(phase)).screen.motion;
+            motion.phase = phase;
+            motion.scroll_to = end.scroll;
+            if (scrolled_ && scrolled_->view == end.view) {
+                motion.scroll_from = scrolled_->scroll;
+            }
+        }
+        scrolled_ = Scrolled{.scroll = end.scroll, .view = end.view};
+    } else {
+        scrolled_.reset();
+    }
     if (last_.has_value()) {
-        const Screen before = *last_;
+        Screen before = *last_;
+        before.motion.phase = -1;  // shown again: as it was at the end of its tick, not moved back into it
         for (std::size_t padded = frames.size() - first; padded < wanted; ++padded) {
             sound_of_refresh(std::exchange(early, {}));
             shown.push_back(before);
