@@ -182,8 +182,17 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   each piece of the Vikings' and enemies' pool (256, against 16) has a frame buffer of its own. A side effect:
   a new enemy hardly ever shows, for a moment, the frame the buffer's last owner left there.
 - **Zoom is not part of a replay.** Replays are Vanilla's.
-- **Minimap with fog of war:** only what a Viking has seen, kept in the player's profile per level. Profile data,
-  not simulation state.
+- **Minimap with fog of war** (built, simple on purpose: just a map to look something up on). A square of the
+  level around the view, 64 cells a side, in the screen's bottom left corner, as high as the HUD. Each cell is
+  coloured by what it is to the entities (ground, a platform, water, lava, spikes, electricity, a spring; a
+  ladder dark with lighter rungs). Only what a view has shown is drawn, the rest is dark. On it the three
+  Vikings, the one being played framed; no enemies or other entities, and no outline of the view. It is drawn
+  smoothly at every refresh: the map scrolls with the view by fractions of a pixel, and what the view shows now
+  and where the Vikings are is exact, not rounded to the map's cells. At the original's view the HUD moves right
+  by a column of its stone tiles to make room (it slides aside, then the minimap fades in; the other way round
+  when it is put away); zoomed out the smaller HUD is clear of the corner and stays in the middle. Tab puts it
+  away. What was seen is the player's, not the simulation's: `Session` keeps it per level, for now only until
+  the game is closed (the player's profile, with the saves, is still to come).
 - **Rewind:** up to 10 seconds, from a ring of snapshots; the minimap is not taken back.
 - **Saves:** automatic progress and a level select. Passwords keep working; Vanilla rules have only passwords.
 - **An unlimited active area** is not built: one player doesn't need it. It comes back with co-op (ADR-0012),

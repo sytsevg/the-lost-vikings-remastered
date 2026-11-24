@@ -75,6 +75,17 @@ struct Screen {
         float height = kPlayfieldHeight;
         bool operator==(const Part&) const = default;
     } part;
+    // Where the picture's top left corner is in the level (for what is laid over it by place: the minimap).
+    int level_x = 0;
+    int level_y = 0;
+    // Where the Vikings are in the level as the picture was drawn (Erik, Baleog, Olaf), for the minimap.
+    struct Viking {
+        int x = 0;
+        int y = 0;
+        bool there = false;
+        bool played = false;
+    };
+    std::array<Viking, 3> vikings{};
 };
 
 // What draws a view: draw() below, or something that is to make the same picture.

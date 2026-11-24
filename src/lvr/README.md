@@ -9,11 +9,12 @@ Target `lvr::engine`, plain C++ on `lvr::assets`.
   dumps every level and cutscene from it ([`docs/formats/level.md`](../../docs/formats/level.md#exported-output)).
 - `render.*`: the Classic renderer: a `View` (what one picture shows) drawn into a 320 × 240 `Screen`. It draws;
   it decides nothing.
-- `gpu.*`, `gpu_quad.*`, `gpu_show.*`: the GPU renderer (target `lvr::gpu`, on SDL_GPU) and its shaders: the same
+- `gpu.*`, `gpu_quad.*`, `gpu_show.*`, `gpu_over.frag`: the GPU renderer (target `lvr::gpu`, on SDL_GPU) and its shaders: the same
   `View` drawn on the graphics card, at any view size, kept there and shown scaled. What Remaster rules show.
 - `sprites.*`: sprite pieces (`Piece`, 128 to a layer in three pools; 2,048 under Remaster rules), an entity's `Sprite`, taking and letting go
   of pieces, the animation player (the original's animation programs, imported and played as they are), and the
   pieces made into pictures for the renderer (`PiecePainter`).
+- `minimap.*`: Remaster rules' minimap: the level small, by what its cells are, as far as it was seen.
 - `camera.*`: the camera: its limits, where it starts, how it follows the Viking being played; the size of the
   view (the original's, or a zoomed one).
 - `entity.hpp`: `Entity`, the base class of every kind (ADR-0018): what the engine reads and moves of each.

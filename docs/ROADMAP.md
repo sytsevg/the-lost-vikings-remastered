@@ -16,11 +16,12 @@ The whole game under Vanilla rules, with Classic visuals and both sounds.
   MIDI through a SoundFont), swappable while playing.
 - **`vikings-remaster`:** the game in a window, keyboard and gamepad, rebindable keys.
 - **Remaster rules, so far** (`--rules remaster`; M7 below): the window on the GPU renderer, zoom-out in three
-  steps with the HUD laid over the view, text boxes that follow the view, no limit on entities or sprite pieces.
+  steps with the HUD laid over the view, text boxes that follow the view, no limit on entities or sprite pieces,
+  a minimap with fog of war.
 
 ## M7: Remaster rules
-[`decisions.md`](decisions.md), ADR-0011. Zoom-out and the GPU renderer it is shown by are built.
-- Minimap with persistent fog of war
+[`decisions.md`](decisions.md), ADR-0011. Zoom-out, the GPU renderer it is shown by, and the minimap are built.
+- The minimap's fog kept from one run of the game to the next (with the player's profile)
 - 10-second rewind
 - Autosave and a level select
 

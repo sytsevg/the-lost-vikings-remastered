@@ -50,7 +50,8 @@ The game reads your own copy of the original files from `gamedata/original/` (or
 
 ```sh
 ./build/release/bin/vikings-remaster    # --data DIR for the game's files elsewhere
-./build/release/bin/vikings-remaster --rules remaster    # Remaster rules: - and = (or the wheel) zoom out and in
+./build/release/bin/vikings-remaster --rules remaster    # Remaster rules: - and = (or the wheel) zoom out and in,
+                                                         # Tab puts the minimap away
 ```
 
 | Preset | Purpose |

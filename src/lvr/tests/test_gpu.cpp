@@ -1,9 +1,11 @@
 // Tests for src/lvr/gpu.*: the GPU renderer makes the picture the Classic one does (render.*), on hand-made views
 // with everything a picture can show. That it does so on the replays: lv-replay --gpu.
 #include <algorithm>
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <vector>
 
 #include "assets/assets.hpp"
@@ -231,4 +233,96 @@ TEST_CASE("gpu: a kept picture is shown with its colours looked up") {
     }
     CHECK(wrong == 0);
     CHECK_FALSE(gpu.show(first));  // there is no window
+
+    // The minimap: a square of it (64 cells a side: 256 of its pixels) in the bottom left corner, 64 pixels a
+    // side, with a frame; the HUD moved 33 pixels right to make room, and the playfield as it was.
+    const auto pixel = [](std::size_t x, std::size_t y) { return ((y * kScreenWidth) + x) * 4; };
+    const auto colour = [&pixel](const std::vector<std::uint8_t>& from, std::size_t x, std::size_t y) {
+        return std::array<int, 3>{from.at(pixel(x, y)), from.at(pixel(x, y) + 1), from.at(pixel(x, y) + 2)};
+    };
+    // (The minimap lets a little of what is under it through: a colour is near what it was given.)
+    const auto near = [](const std::array<int, 3>& is, const std::array<int, 3>& wanted) {
+        return std::abs(is.at(0) - wanted.at(0)) <= 20 && std::abs(is.at(1) - wanted.at(1)) <= 20 &&
+               std::abs(is.at(2) - wanted.at(2)) <= 20;
+    };
+    constexpr std::array<int, 3> kGreen{0, 200, 0};
+    constexpr std::array<int, 3> kRed{200, 0, 0};
+    constexpr std::array<int, 3> kDark{6, 6, 12};
+    // A map of 100 x 100 cells: red, with its left half (as far as pixel 200) green; all of it seen but the
+    // rows from 300 on.
+    Minimap minimap{.width = 400, .height = 400, .pixels = std::vector<std::uint8_t>(400 * 400 * 4, 0)};
+    for (std::size_t y = 0; y < 400; ++y) {
+        for (std::size_t x = 0; x < 400; ++x) {
+            minimap.pixels[(((y * 400) + x) * 4) + 0] = x < 200 ? 0 : 200;
+            minimap.pixels[(((y * 400) + x) * 4) + 1] = x < 200 ? 200 : 0;
+            minimap.pixels[(((y * 400) + x) * 4) + 3] = y < 300 ? 255 : 0;
+        }
+    }
+    // The view's middle at (800, 800) of the level: (200, 200) of the minimap, where green ends. The square is
+    // its pixels 72 to 328, four of them to one of the picture.
+    first.level_x = 640;
+    first.level_y = 712;
+    const auto with = gpu.shown(first, 1, &minimap);
+    REQUIRE(with);
+    CHECK(near(colour(*with, 10, 200), kGreen));
+    CHECK(near(colour(*with, 54, 200), kRed));
+    CHECK(colour(*with, 0, 200) == std::array<int, 3>{150, 153, 171});  // the frame
+    CHECK(colour(*with, 30, 239) == colour(*with, 0, 200));
+    CHECK(colour(*with, 63, 176) == colour(*with, 0, 200));
+    CHECK(colour(*with, 64 + 30, 200) == colour(*shown, 31 + 30, 200));  // the HUD, 33 to the right
+    CHECK(colour(*with, 319, 200) == colour(*shown, 286, 200));
+    CHECK(colour(*with, 100, 100) == colour(*shown, 100, 100));
+    // What wasn't seen is dark (rows 300 on: from 233 down here), except where the view shows it now: the view is
+    // 80 x 44 of the minimap's pixels around the middle; a view six times as high reaches down there.
+    CHECK(near(colour(*with, 10, 236), kDark));
+    first.part.height = 6 * 176;
+    first.level_y = 800 - (3 * 176);
+    const auto shows = gpu.shown(first, 1, &minimap);
+    REQUIRE(shows);
+    CHECK(near(colour(*shows, 30, 236), kGreen));
+    CHECK(near(colour(*shows, 10, 236), kDark));  // left of the view
+    first.part.height = 176;
+    first.level_y = 712;
+    // The Vikings, seen at three times the size (three pixels of the picture to four of the minimap's): Erik
+    // where he is, the one being played with white around him; Baleog without; Olaf isn't there.
+    const auto wide = [](const std::vector<std::uint8_t>& from, std::size_t x, std::size_t y) {
+        const std::size_t at = ((y * kScreenWidth * 3) + x) * 4;
+        return std::array<int, 3>{from.at(at), from.at(at + 1), from.at(at + 2)};
+    };
+    const auto still = gpu.shown(first, 3, &minimap);
+    first.vikings.at(0) = {.x = 720, .y = 760, .there = true, .played = true};   // (180, 190) of the minimap
+    first.vikings.at(1) = {.x = 880, .y = 760, .there = true, .played = false};  // (220, 190)
+    first.vikings.at(2) = {.x = 800, .y = 700, .there = false, .played = false};
+    const auto dots = gpu.shown(first, 3, &minimap);
+    REQUIRE(still);
+    REQUIRE(dots);
+    CHECK(near(wide(*dots, 81, 616), {240, 84, 60}));
+    CHECK(wide(*dots, 81, 613).at(2) > 150);    // white just above him: blue in it, which he and the map lack
+    CHECK(near(wide(*dots, 81, 611), kGreen));  // and no further: the rim is thin
+    CHECK(near(wide(*dots, 111, 616), {96, 220, 96}));
+    CHECK(near(wide(*dots, 111, 612), kRed));
+    CHECK(wide(*dots, 96, 572) == wide(*still, 96, 572));  // where Olaf would be
+    first.vikings = {};
+    // It moves smoothly: the view a pixel of the level further is another picture.
+    first.level_x = 641;
+    const auto moved = gpu.shown(first, 3, &minimap);
+    first.level_x = 640;
+    REQUIRE(moved);
+    CHECK(*moved != *still);
+    // The view at the level's corner: the square stays inside the map. A map smaller than the square is in its
+    // middle, with what wasn't seen's colour around it.
+    first.level_x = first.level_y = 0;
+    const auto corner = gpu.shown(first, 1, &minimap);
+    REQUIRE(corner);
+    CHECK(near(colour(*corner, 30, 200), kGreen));
+    minimap = Minimap{.width = 96, .height = 96, .pixels = std::vector<std::uint8_t>(96 * 96 * 4, 255)};
+    const auto small = gpu.shown(first, 1, &minimap);
+    REQUIRE(small);
+    CHECK(near(colour(*small, 32, 208), {255, 255, 255}));
+    CHECK(near(colour(*small, 8, 208), kDark));
+    // One that isn't whole is left out.
+    minimap.pixels.pop_back();
+    const auto without = gpu.shown(first, 1, &minimap);
+    REQUIRE(without);
+    CHECK(*without == *shown);
 }

@@ -85,6 +85,7 @@ add_library(lvr_engine STATIC
     lvr/looks.cpp
     lvr/machines.cpp
     lvr/platforms.cpp
+    lvr/minimap.cpp
     lvr/movement.cpp
     lvr/places.cpp
     lvr/play.cpp
@@ -152,7 +153,7 @@ if(LVR_BUILD_APPS)
     find_program(LVR_GLSLC glslc REQUIRED)
     set(lvr_shader_dir ${CMAKE_CURRENT_BINARY_DIR}/shaders)
     file(MAKE_DIRECTORY ${lvr_shader_dir})
-    foreach(shader gpu_quad.vert gpu_quad.frag gpu_show.vert gpu_show.frag)
+    foreach(shader gpu_quad.vert gpu_quad.frag gpu_show.vert gpu_show.frag gpu_over.frag)
         add_custom_command(
             OUTPUT ${lvr_shader_dir}/${shader}.inc
             COMMAND ${LVR_GLSLC} -O -mfmt=c -o ${lvr_shader_dir}/${shader}.inc
@@ -212,6 +213,7 @@ if(LVR_BUILD_TESTS)
     lvr/tests/test_places.cpp
     lvr/tests/test_vikings.cpp
         lvr/tests/test_level.cpp
+        lvr/tests/test_minimap.cpp
         lvr/tests/test_movement.cpp
         lvr/tests/test_play.cpp
         lvr/tests/test_render.cpp

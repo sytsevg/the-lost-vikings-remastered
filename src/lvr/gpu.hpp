@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "lvr/minimap.hpp"
 #include "lvr/render.hpp"
 
 struct SDL_Window;
@@ -35,10 +36,12 @@ class GpuRenderer {
     std::expected<void, std::string> keep(Screen& screen, const View& view, const SceneGraphics& scene,
                                           const SharedGraphics& shared);
     // A kept picture in the window, its colours looked up: as large as whole pixels allow, in the middle.
-    std::expected<void, std::string> show(const Screen& screen);
+    // With `minimap`: a square of it around the view in the bottom left corner, the HUD moved right to make room.
+    std::expected<void, std::string> show(const Screen& screen, const Minimap* minimap = nullptr);
     // The same without a window, `scale` times the original's 320 x 240, read back: red, green, blue and alpha a
     // pixel. For a test or a dump.
-    std::expected<std::vector<std::uint8_t>, std::string> shown(const Screen& screen, int scale = 1);
+    std::expected<std::vector<std::uint8_t>, std::string> shown(const Screen& screen, int scale = 1,
+                                                                const Minimap* minimap = nullptr);
 
   private:
     struct State;

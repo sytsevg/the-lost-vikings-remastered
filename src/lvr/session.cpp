@@ -185,6 +185,18 @@ Screen::Part Session::part_shown(const View& view) {
     return part;
 }
 
+// After a step: what the view shows now is seen, and the minimap is drawn again.
+void Session::update_minimap() {
+    const World& world = play_.world;
+    if (world.rules != Rules::kRemaster || !world.has_vikings || !play_.loaded().level.hud || world.map.cells.empty()) {
+        minimap_ = {};
+        return;
+    }
+    std::vector<bool>& seen = seen_[world.level];
+    reveal(seen, world);
+    minimap_ = draw_minimap(world, seen);
+}
+
 Screen Session::picture() {
     const LoadedLevel& loaded = play_.loaded();
     // (The painter is the same from scene to scene: the original never clears the buffer its packed frames are
@@ -197,6 +209,14 @@ Screen Session::picture() {
     Screen screen;
     draw_(screen, view, play_.graphics(), shared_);
     screen.part = part_shown(view);
+    screen.level_x = view.camera_x;
+    screen.level_y = view.camera_y;
+    for (int who = 0; who < kVikingSlots && play_.world.has_vikings; ++who) {
+        if (const Entity* viking = play_.world.at(who); viking != nullptr && !viking->dead) {
+            screen.vikings.at(static_cast<std::size_t>(who)) = {
+                .x = viking->x, .y = viking->y, .there = true, .played = who == play_.world.current_viking};
+        }
+    }
     return screen;
 }
 
@@ -334,6 +354,7 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
     } else if (!shown.empty()) {
         last_ = shown.back();
     }
+    update_minimap();
     return shown;
 }
 

@@ -39,6 +39,12 @@ Built:
 - **512 entity slots and 2,048 sprite pieces** under Remaster rules (`World::set_rules`; `kSlots` and
   `kOriginalPieces` are Vanilla's 20 and 128). The layer's size and its three pools are a `PieceLayout`.
 
+- **The minimap** (`minimap.*`, Tab): a picture of the whole level from the map's tile types, with how much of
+  it a view has shown in its alpha (`Session::seen_`, per level and per pixel of the minimap, forgotten when the
+  game is closed). The GPU renderer shows a square of it around the view in the bottom left corner
+  (`gpu_over.frag`): it adds what the view shows now and the Vikings (`Screen::level_x`, `Screen::vikings`) at
+  every refresh, and moves the HUD right for it.
+
 Open:
 
 - **A sprite's picture is known to the GPU renderer only by what it looks like:** it is put into the atlas the
@@ -51,8 +57,9 @@ Open:
 - **Rewind** needs a world that can be copied: every entity can (`Entity::clone`), and the simulation is
   deterministic and integer-only, but `World` holds its entities by pointer and has no copy. A ring of about 200
   worlds for 10 seconds. What carries between scenes is listed in `Play::change_scene`.
-- **The minimap and the saves are profile data**, outside the simulation: they must never change what a replay
-  shows. There is no profile or configuration file yet; the game takes command-line options only
+- **What the minimap has seen and the saves are profile data**, outside the simulation: they must never change
+  what a replay shows. There is no profile or configuration file yet, so the minimap's fog starts over with
+  every run; the game takes command-line options only
   (`src/lvr/main.cpp`).
 - **Input per player** was planned from the start (ADR-0012) but the engine takes one keyboard word. Not needed
   for M7; worth not making harder.

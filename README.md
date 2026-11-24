@@ -55,8 +55,8 @@ the code is put together, start with [`docs/architecture.md`](docs/architecture.
 ## What's next
 
 By default it plays the game as it was. Started with `--rules remaster` it plays by its own rules on top, drawn
-on the graphics card: so far that is zooming out (`-` and `=`, or the mouse wheel) and no limit on how many
-creatures a level can have going at once. What comes next is all optional too: a minimap, rewind, proper saves;
+on the graphics card: so far that is zooming out (`-` and `=`, or the mouse wheel), a minimap of what you have
+seen of the level (Tab), and no limit on how many creatures a level can have going at once. What comes next is all optional too: a minimap, rewind, proper saves;
 smoother and prettier visuals; and co-op for three, one Viking each. The plan is
 in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 

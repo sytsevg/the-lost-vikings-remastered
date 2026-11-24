@@ -136,16 +136,26 @@ TEST_CASE("real data: Remaster rules' zoom widens the view over a moment and clo
     REQUIRE(vanilla);
     (*vanilla)->zoom(2);
     CHECK(part_after(**vanilla, 10) == original);
+    CHECK((*vanilla)->minimap() == nullptr);  // nor a minimap
 
     auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
     REQUIRE(opened);
     Session& session = **opened;
     CHECK(part_after(session, 2) == original);
+    // The minimap: level 2 is 64 x 51 cells; the start's view was seen, the far corner not. It can be put away.
+    REQUIRE(session.minimap() != nullptr);
+    CHECK(session.minimap()->width == 64 * kMinimapCell);
+    CHECK(session.minimap()->height == 51 * kMinimapCell);
+    const std::vector<std::uint8_t> before = session.minimap()->pixels;
+    session.toggle_minimap();
+    CHECK(session.minimap() == nullptr);
+    session.toggle_minimap();
     session.zoom(5);  // as far out as it goes: twice the original's view
     const Screen::Part opening = part_after(session, 2);
     CHECK(opening.width > original.width);
     CHECK(opening.width < 640);
     CHECK(part_after(session, 30) == Screen::Part{.x = 0, .y = 0, .width = 640, .height = 480});
+    CHECK(session.minimap()->pixels != before);  // the larger view has shown more
     session.zoom(-1);
     const Screen::Part closing = part_after(session, 2);
     CHECK(closing.width < 640);

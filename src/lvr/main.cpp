@@ -73,9 +73,9 @@ bool write_wav(const std::filesystem::path& path, const std::vector<std::int16_t
 }
 
 // What the GPU renderer shows of `screen`, three times the original's size, as a PNG.
-bool save_shown(GpuRenderer& gpu, const Screen& screen, const std::filesystem::path& out) {
+bool save_shown(GpuRenderer& gpu, const Screen& screen, const Minimap* minimap, const std::filesystem::path& out) {
     constexpr int kScale = 3;
-    auto pixels = gpu.shown(screen, kScale);
+    auto pixels = gpu.shown(screen, kScale, minimap);
     if (!pixels) {
         std::println(stderr, "vikings-remaster: {}", pixels.error());
         return false;
@@ -116,7 +116,7 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
     }
     std::println("scene {} after {} refreshes", session.scene(), refreshes);
     if (gpu != nullptr) {
-        if (!save_shown(*gpu, last, out)) {
+        if (!save_shown(*gpu, last, session.minimap(), out)) {
             return EXIT_FAILURE;
         }
     } else {
@@ -237,6 +237,9 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        (event.key.scancode == SDL_SCANCODE_MINUS || event.key.scancode == SDL_SCANCODE_EQUALS)) {
                 session.zoom(event.key.scancode == SDL_SCANCODE_MINUS ? 1 : -1);  // Remaster rules: out, in
+            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.scancode == SDL_SCANCODE_TAB) {
+                session.toggle_minimap();  // Remaster rules: the minimap, shown or not
             } else if (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y != 0) {
                 session.zoom(event.wheel.y < 0 ? 1 : -1);
             } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F12 &&
@@ -325,7 +328,7 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
             if (shown != nullptr) {
                 last_shown = *shown;
             }
-            if (const auto done = gpu->show(last_shown); !done) {
+            if (const auto done = gpu->show(last_shown, session.minimap()); !done) {
                 std::println(stderr, "vikings-remaster: {}", done.error());
                 status = EXIT_FAILURE;
                 running = false;

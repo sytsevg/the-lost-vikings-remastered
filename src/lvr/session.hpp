@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -18,6 +19,7 @@
 #include "audio/gm.hpp"
 #include "audio/opl3.hpp"
 #include "audio/player.hpp"
+#include "lvr/minimap.hpp"
 #include "lvr/play.hpp"
 #include "lvr/render.hpp"
 #include "lvr/sprites.hpp"
@@ -76,6 +78,10 @@ class Session {
     // Remaster rules' zoom (ADR-0011): a step out (`by` > 0) or back in, between the original's view and twice
     // it. The next step's world has the view; the pictures go from the one to the other over a moment.
     void zoom(int by) noexcept;
+    // Remaster rules' minimap, as the last step left it: the level as far as a view has shown it since the game
+    // was started. None in a scene that isn't a level, under Vanilla rules, or while it is switched off.
+    const Minimap* minimap() const noexcept { return minimap_on_ && !minimap_.pixels.empty() ? &minimap_ : nullptr; }
+    void toggle_minimap() noexcept { minimap_on_ = !minimap_on_; }
 
     static std::uint32_t sample_rate() noexcept { return audio::Opl3::kSampleRate; }
     bool has_modern() const noexcept { return modern_ != nullptr; }
@@ -155,6 +161,10 @@ class Session {
     void change_view();
     Screen::Part part_shown(const View& view);
     int zoom_ = 0;
+    void update_minimap();
+    std::map<int, std::vector<bool>> seen_;  // by level: the cells a view has shown
+    Minimap minimap_;
+    bool minimap_on_ = true;
     int zoom_pictures_ = 0;
     std::optional<Screen::Part> grows_from_;
     bool shrinking_ = false;
