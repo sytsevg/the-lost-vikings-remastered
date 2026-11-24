@@ -164,3 +164,169 @@ TEST_CASE("real data: Remaster rules' zoom widens the view over a moment and clo
     session.zoom(-5);
     CHECK(part_after(session, 30) == original);
 }
+
+TEST_CASE("real data: Remaster rules' rewind goes back at twice the speed, and the play goes on from there as before",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    // Level 2: its password's box is answered (a key pressed anew), then Erik walks right. Every step's pictures:
+    using Pictures = std::vector<std::vector<std::uint8_t>>;
+    const auto keys_of = [](int step) {
+        return static_cast<std::uint16_t>(step < 6 ? (step % 2 != 0 ? key::kF : 0) : key::kRight);
+    };
+    const auto play = [&](Session& session, int from, int to, std::vector<Pictures>& steps) {
+        for (int step = from; step < to; ++step) {
+            Pictures pictures;
+            for (const Screen& screen : session.step(keys_of(step))) {
+                pictures.push_back(screen.pixels);
+            }
+            REQUIRE_FALSE(pictures.empty());
+            steps.push_back(std::move(pictures));
+        }
+    };
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+    REQUIRE(opened);
+    Session& session = **opened;
+    session.toggle_minimap();
+    std::vector<Pictures> steps;
+    play(session, 0, 60, steps);
+    CHECK(steps.at(8).back() != steps.at(59).back());  // he has moved
+    CHECK_FALSE(session.rewinding());
+
+    // Back: every step undoes two, and shows every second of their pictures, the last first: the first picture of
+    // the later step, the second of the earlier one, and the play as it was before that (the last picture of the
+    // step before).
+    session.rewind(true);
+    for (std::size_t back = 0; back < 5; ++back) {
+        const std::vector<Screen> shown = session.step(0);
+        REQUIRE(shown.size() == 3);
+        CHECK(session.rewinding());
+        const std::size_t later = 59 - (2 * back);
+        REQUIRE(steps.at(later).size() == 3);
+        REQUIRE(steps.at(later - 1).size() == 3);
+        CHECK(shown.at(0).rewinding);  // marked as going back
+        CHECK(shown.at(2).rewinding);
+        CHECK(shown.at(0).pixels == steps.at(later).at(0));
+        CHECK(shown.at(1).pixels == steps.at(later - 1).at(1));
+        CHECK(shown.at(2).pixels == steps.at(later - 2).back());
+    }
+    // Let go, ten steps back: the same keys from there give the same play again.
+    session.rewind(false);
+    std::vector<Pictures> again;
+    play(session, 50, 60, again);
+    CHECK_FALSE(session.rewinding());
+    CHECK(again.front() == steps.at(50));
+    CHECK(again.back() == steps.at(59));
+
+    // Held for longer than there is to go back to: at the oldest step that was kept the rewind is over, and the
+    // play goes on, unmarked, until the key is let go and held again.
+    session.rewind(true);
+    int went_back = 0;
+    std::vector<Screen> shown;
+    for (int back = 0; back < 50; ++back) {
+        shown = session.step(key::kRight);
+        went_back += session.rewinding() ? 1 : 0;
+    }
+    CHECK(went_back > 20);
+    CHECK(went_back < 50);
+    CHECK_FALSE(session.rewinding());
+    CHECK_FALSE(shown.back().rewinding);
+    session.rewind(false);
+    session.step(key::kRight);
+    session.rewind(true);
+    CHECK(session.step(key::kRight).back().rewinding);
+    CHECK(session.rewinding());
+    session.rewind(false);
+
+    // Vanilla rules have no rewind: the play goes on.
+    auto vanilla = Session::open(LVR_ORIGINAL_DIR, 1);
+    REQUIRE(vanilla);
+    std::vector<Pictures> plain;
+    play(**vanilla, 0, 30, plain);
+    (*vanilla)->rewind(true);
+    play(**vanilla, 30, 40, plain);
+    CHECK_FALSE((*vanilla)->rewinding());
+    CHECK(plain.at(39) == steps.at(39));
+}
+
+TEST_CASE("real data: the quicksave keeps the play and brings it back, with the cheat on only", "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    const auto keys_of = [](int step) {
+        return static_cast<std::uint16_t>(step < 6 ? (step % 2 != 0 ? key::kF : 0) : key::kRight);
+    };
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+    REQUIRE(opened);
+    Session& session = **opened;
+    std::vector<std::vector<std::uint8_t>> ends;
+    for (int step = 0; step < 20; ++step) {
+        ends.push_back(session.step(keys_of(step)).back().pixels);
+    }
+    // Without the cheat nothing is kept.
+    session.quicksave();
+    ends.push_back(session.step(keys_of(20)).back().pixels);
+    CHECK_FALSE(session.has_quicksave());
+    // With it: kept before step 21, and brought back 20 steps later; the play goes on from there as it did.
+    session.cheat();
+    session.quicksave();
+    for (int step = 21; step < 41; ++step) {
+        ends.push_back(session.step(keys_of(step)).back().pixels);
+    }
+    CHECK(session.has_quicksave());
+    session.quickload();
+    CHECK(session.step(keys_of(21)).back().pixels == ends.at(21));
+    CHECK(session.step(keys_of(22)).back().pixels == ends.at(22));
+    // What led up to the load isn't there to go back to.
+    session.rewind(true);
+    CHECK(session.step(0).back().pixels == ends.at(20));  // (the two steps since the load at once)
+    CHECK(session.rewinding());
+    session.step(0);
+    CHECK_FALSE(session.rewinding());  // and then nothing
+    session.rewind(false);
+
+    // Vanilla rules have no quicksave, cheat or not.
+    auto vanilla = Session::open(LVR_ORIGINAL_DIR, 1);
+    REQUIRE(vanilla);
+    (*vanilla)->cheat();
+    (*vanilla)->quicksave();
+    (*vanilla)->step(0);
+    CHECK_FALSE((*vanilla)->has_quicksave());
+}
+
+TEST_CASE("real data: live, the sound of the rewound seconds is heard backwards", "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 1, SessionSound{.modern = false, .soundfont = {}, .live = true},
+                                Rules::kRemaster);
+    REQUIRE(opened);
+    Session& session = **opened;
+    for (const std::vector<SoundCue>& asked : session.cues) {  // the start's: the level's music
+        session.hear_now(asked);
+    }
+    session.step(0);
+    std::vector<std::int16_t> forwards;
+    session.render_live(150000, forwards);  // three seconds
+    REQUIRE(forwards.size() == 300000);
+    CHECK(std::ranges::any_of(forwards, [](std::int16_t sample) { return sample != 0; }));
+    // Going back: every second of the same frames, the last first, left before right as ever.
+    session.rewind(true);
+    session.step(0);
+    REQUIRE(session.rewinding());
+    std::vector<std::int16_t> backwards;
+    session.render_live(1000, backwards);
+    REQUIRE(backwards.size() == 2000);
+    bool same = true;
+    for (std::size_t frame = 0; frame < 1000; ++frame) {
+        same = same && backwards[frame * 2] == forwards[(149999 - (2 * frame)) * 2] &&
+               backwards[(frame * 2) + 1] == forwards[((149999 - (2 * frame)) * 2) + 1];
+    }
+    CHECK(same);
+    // Past what was heard there is silence.
+    std::vector<std::int16_t> rest;
+    session.render_live(160000, rest);
+    CHECK(rest.at(319998) == 0);
+    CHECK(rest.at(319999) == 0);
+}

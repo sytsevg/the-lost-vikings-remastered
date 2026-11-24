@@ -320,6 +320,16 @@ TEST_CASE("gpu: a kept picture is shown with its colours looked up") {
     REQUIRE(small);
     CHECK(near(colour(*small, 32, 208), {255, 255, 255}));
     CHECK(near(colour(*small, 8, 208), kDark));
+    // The mark of time running backwards: two light triangles pointing left in the top right corner, with dark
+    // behind them; nothing of it otherwise.
+    first.rewinding = true;
+    const auto marked = gpu.shown(first, 1);
+    first.rewinding = false;
+    REQUIRE(marked);
+    CHECK(near(colour(*marked, 320 - 8 - 12, 8 + 5), {255, 255, 255}));                  // in the left triangle
+    CHECK(near(colour(*marked, 320 - 8 - 3, 8 + 5), {255, 255, 255}));                   // in the right one
+    CHECK(colour(*marked, 320 - 8 - 17, 8 + 1) == colour(*shown, 320 - 8 - 17, 8 + 1));  // above its point
+    CHECK(colour(*marked, 100, 100) == colour(*shown, 100, 100));
     // One that isn't whole is left out.
     minimap.pixels.pop_back();
     const auto without = gpu.shown(first, 1, &minimap);

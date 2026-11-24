@@ -290,6 +290,25 @@ constexpr int kNoBlankColumn = 21;
 
 }  // namespace
 
+bool Play::restore(const Snapshot& from) {
+    const bool another = from.loaded != loaded_;
+    world = from.world;
+    loaded_ = from.loaded;
+    owned_ = from.owner;
+    cleared_.reset();
+    fade.reset();
+    menu_ = Menu::kNone;
+    return another;
+}
+
+void Play::scene_sound() {
+    const Level& level = loaded_->level;
+    world.cues.push_back(SoundCue{.kind = SoundCue::Kind::kStopAll});
+    world.cues.push_back(
+        SoundCue{.kind = SoundCue::Kind::kMusicAction, .value = level.music.at_start, .tune = level.music.tune});
+    scene_loaded = true;
+}
+
 bool Play::pause_wanted() const noexcept {
     return world.has_vikings && !leaving() && (world.pressed & key::kEnter) != 0 && world.lines.empty() &&
            !world.inventory.open;

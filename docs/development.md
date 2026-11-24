@@ -40,6 +40,10 @@ ctest --preset asan-ubsan
 the engine and compares each refresh with its golden (`replays/README.md`), in under a minute: run both before a
 commit that touches the engine.
 
+After adding state to `World` or to a kind, `lv-replay --check --copies replays/*.replay` plays the replays
+with the world replaced by a copy of itself before every step: what the rewind and the quicksave keep must be all
+a replay needs.
+
 After a change to the GPU renderer's drawing, `lv-replay --check --gpu REPLAY...` plays replays with it in the
 Classic renderer's place, against the same goldens (all of them take about five minutes on the software driver;
 one or two are enough for most changes). What it shows when zoomed has no golden: under Remaster rules
@@ -51,7 +55,7 @@ The game reads your own copy of the original files from `gamedata/original/` (or
 ```sh
 ./build/release/bin/vikings-remaster    # --data DIR for the game's files elsewhere
 ./build/release/bin/vikings-remaster --rules remaster    # Remaster rules: - and = (or the wheel) zoom out and in,
-                                                         # Tab puts the minimap away
+                                                         # M puts the minimap away, Backspace rewinds
 ```
 
 | Preset | Purpose |

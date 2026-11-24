@@ -86,6 +86,7 @@ struct Screen {
         bool played = false;
     };
     std::array<Viking, 3> vikings{};
+    bool rewinding = false;  // the picture is one of time running backwards (Remaster rules): it is marked so
 };
 
 // What draws a view: draw() below, or something that is to make the same picture.

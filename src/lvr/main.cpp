@@ -4,7 +4,9 @@
 // (docs/original/input.md).
 //
 //   vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] [--soundfont FILE]
-//                    [--rules vanilla|remaster]
+//                    [--rules vanilla|remaster] [--cheat]
+//       --cheat: the game's cheat on from the start, as if its password had been typed at the title: F5 and F6
+//       change the level, and under Remaster rules F7 and F8 are a quicksave and its load.
 //       play, from scene N (default 39, the first logo; 0-36 are the levels); FILE: other keys, lines
 //       "KEY NAME = action" (input/input.hpp). F12 switches between the Classic and the Modern sound.
 //   vikings-remaster [--data DIR] [--slot N] --dump STEPS FILE.png [--wav FILE.wav] [--zoom BY AT_STEP]
@@ -238,8 +240,13 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
                        (event.key.scancode == SDL_SCANCODE_MINUS || event.key.scancode == SDL_SCANCODE_EQUALS)) {
                 session.zoom(event.key.scancode == SDL_SCANCODE_MINUS ? 1 : -1);  // Remaster rules: out, in
             } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-                       event.key.scancode == SDL_SCANCODE_TAB) {
-                session.toggle_minimap();  // Remaster rules: the minimap, shown or not
+                       (event.key.scancode == SDL_SCANCODE_F7 || event.key.scancode == SDL_SCANCODE_F8)) {
+                // Remaster rules, with the cheat on: F7 keeps the play as it is, F8 brings it back.
+                if (event.key.scancode == SDL_SCANCODE_F7) {
+                    session.quicksave();
+                } else {
+                    session.quickload();
+                }
             } else if (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y != 0) {
                 session.zoom(event.wheel.y < 0 ? 1 : -1);
             } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F12 &&
@@ -255,6 +262,9 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
                 // cleared it.
                 session.key_pressed(input::typed_character(SDL_GetScancodeName(event.key.scancode)));
                 keyboard |= key_bit(event.key.scancode);
+                if (event.key.scancode == SDL_SCANCODE_M && !event.key.repeat) {
+                    session.toggle_minimap();  // Remaster rules, in a level: the minimap, shown or not
+                }
                 if (session.demo()) {  // the keyboard handler: any key during a demo
                     keyboard = 0xFFFF;
                 }
@@ -292,6 +302,7 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
                     pad = 0xFFFF;
                 }
                 const bool alt = held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT];
+                session.rewind(held[SDL_SCANCODE_BACKSPACE]);  // Remaster rules: back in time while it is held
                 frames = session.step(static_cast<std::uint16_t>(keyboard | pad),
                                       Play::MenuKeys{.yes = held[SDL_SCANCODE_Y],
                                                      .no = held[SDL_SCANCODE_N],
@@ -382,6 +393,7 @@ int main(int argc, char* argv[]) try {
     int slot = scene::kLogo;
     int steps = 0;
     Rules rules = Rules::kVanilla;
+    bool cheat = false;
     int zoom = 0;     // a dump: this many steps of zoom out ...
     int zoom_at = 0;  // ... asked for before this step
     const std::vector<std::string_view> args(argv + 1, argv + argc);
@@ -396,6 +408,8 @@ int main(int argc, char* argv[]) try {
         } else if (args[i] == "--rules" && (value(1) == "vanilla" || value(1) == "remaster")) {
             rules = value(1) == "remaster" ? Rules::kRemaster : Rules::kVanilla;
             ++i;
+        } else if (args[i] == "--cheat") {
+            cheat = true;
         } else if (args[i] == "--soundfont" && i + 1 < args.size()) {
             sound.soundfont = args[i + 1];
             ++i;
@@ -417,9 +431,10 @@ int main(int argc, char* argv[]) try {
             dump_to = args[i + 2];
             i += 2;
         } else {
-            std::println(stderr,
-                         "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] "
-                         "[--soundfont FILE] [--rules vanilla|remaster] [--dump STEPS FILE.png [--wav FILE.wav]]");
+            std::println(
+                stderr,
+                "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] "
+                "[--soundfont FILE] [--rules vanilla|remaster] [--cheat] [--dump STEPS FILE.png [--wav FILE.wav]]");
             return EXIT_FAILURE;
         }
     }
@@ -462,6 +477,9 @@ int main(int argc, char* argv[]) try {
     if (!session) {
         std::println(stderr, "vikings-remaster: {}", session.error());
         return EXIT_FAILURE;
+    }
+    if (cheat) {
+        (*session)->cheat();
     }
     if (!dump_to.empty()) {
         return dump(**session, steps, dump_to, wav, gpu.get(), zoom, zoom_at);

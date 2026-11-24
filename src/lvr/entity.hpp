@@ -196,4 +196,32 @@ std::unique_ptr<Kind> make_entity(Args&&... args) {
     return made;
 }
 
+// An entity a world owns: a slot's. Copying it copies the entity (Entity::clone), which is what makes a world a
+// thing that can be copied: a snapshot for the rewind, a quicksave. Otherwise it is used as the pointer it holds.
+class OwnedEntity {
+  public:
+    OwnedEntity() = default;
+    template <class Kind>
+    OwnedEntity(std::unique_ptr<Kind> entity) noexcept : entity_{std::move(entity)} {}  // NOLINT(*-explicit-*)
+    OwnedEntity(const OwnedEntity& other) : entity_{other.entity_ ? other.entity_->clone() : nullptr} {}
+    OwnedEntity& operator=(const OwnedEntity& other) {
+        if (this != &other) {
+            entity_ = other.entity_ ? other.entity_->clone() : nullptr;
+        }
+        return *this;
+    }
+    OwnedEntity(OwnedEntity&&) noexcept = default;
+    OwnedEntity& operator=(OwnedEntity&&) noexcept = default;
+    ~OwnedEntity() = default;
+
+    Entity* get() const noexcept { return entity_.get(); }
+    Entity* operator->() const noexcept { return entity_.get(); }
+    Entity& operator*() const noexcept { return *entity_; }
+    explicit operator bool() const noexcept { return entity_ != nullptr; }
+    void reset() noexcept { entity_.reset(); }
+
+  private:
+    std::unique_ptr<Entity> entity_;
+};
+
 }  // namespace lvr

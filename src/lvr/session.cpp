@@ -94,6 +94,9 @@ namespace {
 // takes (a little over a quarter of a second).
 constexpr std::array<std::array<int, 2>, 3> kZoomViews{{{320, 176}, {480, 360}, {640, 480}}};
 constexpr int kZoomPictures = 20;
+// The rewind reaches this far back: in seconds, and in steps (a step is a tick, three refreshes of the display).
+constexpr std::size_t kRewindSeconds = 10;
+constexpr std::size_t kRewindSteps = 233;
 
 // From `from` to `to`, slow at both ends.
 Screen::Part between(const Screen::Part& from, const Screen::Part& to, int pictures) {
@@ -272,13 +275,99 @@ void Session::hear_now(const std::vector<SoundCue>& asked) {
 
 void Session::render_live(std::size_t frames, std::vector<std::int16_t>& out) {
     const std::scoped_lock lock{sound_mutex_};
+    if (rewinding_) {
+        // Going back: what was heard, backwards (the last frame first, left before right as ever) and at twice
+        // the speed, as the pictures go: every second frame. Silence when that is used up. The players hold still
+        // meanwhile.
+        for (std::size_t frame = 0; frame < frames; ++frame) {
+            if (heard_.size() >= 2) {
+                out.push_back(heard_[heard_.size() - 2]);
+                out.push_back(heard_.back());
+                heard_.resize(heard_.size() - std::min<std::size_t>(heard_.size(), 4));
+            } else {
+                out.insert(out.end(), 2, std::int16_t{0});
+            }
+        }
+        return;
+    }
     // Half a refresh at a time, as the driver is serviced; what is made past the asking waits for the next.
     while (rendered_.size() < frames * 2) {
         half_refresh_sound(rendered_);
     }
     const auto end = rendered_.begin() + static_cast<std::ptrdiff_t>(frames * 2);
     out.insert(out.end(), rendered_.begin(), end);
+    // Kept for going back, the last ten seconds of it.
+    const std::size_t kept = std::size_t{sample_rate()} * kRewindSeconds * 2;
+    heard_.insert(heard_.end(), rendered_.begin(), end);
+    if (heard_.size() > kept + (kept / 4)) {  // (trimmed in one go now and then, not at every call)
+        heard_.erase(heard_.begin(), heard_.end() - static_cast<std::ptrdiff_t>(kept));
+    }
     rendered_.erase(rendered_.begin(), end);
+}
+
+// A level is being played: not a cutscene, the title or the game-over scene, not a demo, and no menu is open.
+bool Session::level_played() const {
+    const World& world = play_.world;
+    return world.has_vikings && play_.loaded().level.hud && !world.map.cells.empty() && !world.attract &&
+           !play_.playing_demo() && !play_.in_menu();
+}
+
+std::vector<Screen> Session::back_to(const Kept& step, bool& another) {
+    another = play_.restore(step.before) || another;
+    // The step again, for its pictures only: what it asks of the sound isn't heard, and the play is put back.
+    const bool ended = play_.ended;
+    std::vector<Screen> shown;
+    play_.menu_keys = step.keys;
+    const int refreshes = play_.step(step.keyboard, [&] { shown.push_back(picture()); });
+    const bool plain = refreshes == 3 && shown.size() == 3 && !play_.scene_loaded && !play_.in_menu();
+    (void)play_.restore(step.before);  // (the same scene as a moment ago)
+    play_.ended = ended;
+    play_.scene_loaded = false;
+    if (!plain) {
+        shown.clear();
+    }
+    return shown;
+}
+
+// A step back in time, at twice the speed it went forwards: the last two steps that were kept are undone, and of
+// their six pictures, backwards, every second one is shown: the first of the later step, the second of the
+// earlier one, and the play as it was before that. (With one step left, or a step that was more than a plain
+// tick, the pictures there are.)
+std::vector<Screen> Session::step_back() {
+    bool another = false;
+    std::vector<Screen> shown;
+    const std::vector<Screen> later = back_to(rewind_.back(), another);
+    if (rewind_.size() >= 2) {
+        if (!later.empty()) {
+            shown.push_back(later.at(0));
+        }
+        rewind_.pop_back();
+        const std::vector<Screen> earlier = back_to(rewind_.back(), another);
+        if (!earlier.empty()) {
+            shown.push_back(earlier.at(1));
+        }
+    } else if (!later.empty()) {
+        shown.push_back(later.at(1));
+        shown.push_back(later.at(0));
+    }
+    rewind_.pop_back();
+    if (another) {
+        play_.scene_sound();
+    }
+    const Screen now = picture();
+    shown.resize(2, now);  // (a picture that couldn't be made again: the play as it is now instead)
+    shown.push_back(now);
+    for (Screen& screen : shown) {
+        screen.rewinding = true;
+    }
+    cues.clear();
+    for (std::size_t refresh = 0; refresh < shown.size(); ++refresh) {
+        // (Another scene's music, if this went back into one, with the first.)
+        sound_of_refresh(refresh == 0 ? std::exchange(play_.world.cues, {}) : std::vector<SoundCue>{});
+    }
+    last_ = now;
+    update_minimap();
+    return shown;
 }
 
 // Half a display refresh of the sound: the driver serviced once (twice a refresh, docs/original/timing.md#audio),
@@ -316,6 +405,42 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
         play_.world.cues.clear();
         return asked;
     };
+    play_.scene_loaded = false;
+    // The quicksave, with the cheat on only: kept in a level, brought back from anywhere.
+    const bool remaster = play_.world.rules == Rules::kRemaster;
+    if (std::exchange(save_wanted_, false) && remaster && play_.world.title.cheat && level_played()) {
+        quick_ = play_.snapshot();
+    }
+    if (std::exchange(load_wanted_, false) && remaster && play_.world.title.cheat && quick_ && !play_.in_menu()) {
+        if (play_.restore(*quick_)) {
+            play_.scene_sound();
+        }
+        play_.world.title.cheat = true;
+        rewind_.clear();  // what led up to here is no longer what came before
+    }
+    // The rewind: back while it is held and there is something to go back to. With nothing left it is over, and
+    // the play goes on until the key is let go and held again. Else the play before this step is kept, the last
+    // ten seconds of them.
+    if (!rewind_held_) {
+        rewind_over_ = false;
+    }
+    const bool back = rewind_held_ && !rewind_over_ && remaster && !play_.in_menu() && !play_.playing_demo();
+    if (back && rewind_.empty()) {
+        rewind_over_ = true;
+    }
+    {
+        const std::scoped_lock lock{sound_mutex_};
+        rewinding_ = back && !rewind_.empty();
+    }
+    if (rewinding_) {
+        return step_back();
+    }
+    if (remaster && level_played()) {
+        rewind_.push_back({.before = play_.snapshot(), .keyboard = keyboard, .keys = keys});
+        if (rewind_.size() > kRewindSteps) {
+            rewind_.pop_front();
+        }
+    }
     cues.clear();
     play_.menu_keys = keys;
     change_view();

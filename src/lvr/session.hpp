@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <expected>
 #include <filesystem>
 #include <map>
@@ -81,7 +82,27 @@ class Session {
     // Remaster rules' minimap, as the last step left it: the level as far as a view has shown it since the game
     // was started. None in a scene that isn't a level, under Vanilla rules, or while it is switched off.
     const Minimap* minimap() const noexcept { return minimap_on_ && !minimap_.pixels.empty() ? &minimap_ : nullptr; }
-    void toggle_minimap() noexcept { minimap_on_ = !minimap_on_; }
+    void toggle_minimap() noexcept {
+        if (!minimap_.pixels.empty()) {  // only where there is one: in a level
+            minimap_on_ = !minimap_on_;
+        }
+    }
+
+    // Remaster rules' rewind (ADR-0011): while it is held, every step goes two steps back instead of one on (time
+    // runs backwards at twice its speed, with the pictures in between as they were), as far as the last ten
+    // seconds of play in levels reach; there it is over and the play goes on, until it is let go and held again.
+    // Live, the sound of those seconds is heard backwards meanwhile, twice as fast. What the minimap has seen is
+    // not taken back.
+    void rewind(bool held) noexcept { rewind_held_ = held; }
+    bool rewinding() const noexcept { return rewinding_; }
+    // The quicksave, only with the game's cheat on (the title was given its password, or `cheat` below): the play
+    // as it is now is kept, in a level; and brought back, from wherever the game is by then. One is kept, until
+    // the game is closed. Acted on at the next step.
+    void quicksave() noexcept { save_wanted_ = true; }
+    void quickload() noexcept { load_wanted_ = true; }
+    bool has_quicksave() const noexcept { return quick_.has_value(); }
+    // The cheat on without its password: F5 and F6 change the level, and under Remaster rules the quicksave.
+    void cheat() noexcept { play_.world.title.cheat = true; }
 
     static std::uint32_t sample_rate() noexcept { return audio::Opl3::kSampleRate; }
     bool has_modern() const noexcept { return modern_ != nullptr; }
@@ -162,6 +183,27 @@ class Session {
     Screen::Part part_shown(const View& view);
     int zoom_ = 0;
     void update_minimap();
+    // Rewind and quicksave.
+    bool level_played() const;
+    std::vector<Screen> step_back();
+    // A step that can be gone back over: the play before it, and the keys it was given.
+    struct Kept {
+        Play::Snapshot before;
+        std::uint16_t keyboard = 0;
+        Play::MenuKeys keys;
+    };
+    // The play back at `step`'s start, and the pictures the step showed, made again; none if it was more than a
+    // plain tick. True in `another` if that was another scene than the one played.
+    std::vector<Screen> back_to(const Kept& step, bool& another);
+    std::deque<Kept> rewind_;  // the last steps in levels, the oldest first
+    std::optional<Play::Snapshot> quick_;
+    bool rewind_held_ = false;
+    bool rewinding_ = false;    // the last step went back
+    bool rewind_over_ = false;  // held, but there was nothing left to go back to: not again until it is let go
+    bool save_wanted_ = false;
+    bool load_wanted_ = false;
+    std::vector<std::int16_t>
+        heard_;  // live: the sound of the last ten seconds as it was heard, for hearing it backwards
     std::map<int, std::vector<bool>> seen_;  // by level: the cells a view has shown
     Minimap minimap_;
     bool minimap_on_ = true;

@@ -187,6 +187,24 @@ class Play {
         return refreshes;
     }
 
+    // The play as it is now, to come back to: a copy of the world, and the level it is a world of (kept loaded for
+    // as long as the snapshot is). For Remaster rules' rewind and the quicksave.
+    struct Snapshot {
+        World world;
+        const LoadedLevel* loaded = nullptr;
+        std::shared_ptr<LoadedLevel> owner;
+    };
+    Snapshot snapshot() const { return {.world = world, .loaded = loaded_, .owner = owned_}; }
+    // Back to a snapshot. True if it is of another scene than the one played now: the caller then has that
+    // scene's sound start again (scene_sound) once it is where it stays.
+    bool restore(const Snapshot& from);
+    // What is heard stops and the scene's music starts, as when the scene was loaded; the step counts as one that
+    // loaded a scene.
+    void scene_sound();
+    // The pause menu or the quit box is open; a scene is played from a recording.
+    bool in_menu() const noexcept { return menu_ != Menu::kNone; }
+    bool playing_demo() const noexcept { return playback_; }
+
     World world;
     // The keys the menus read as held, apart from the keyboard word: set before a step.
     struct MenuKeys {
@@ -274,7 +292,7 @@ class Play {
 
     const assets::GameFiles* files_ = nullptr;
     const LoadedLevel* loaded_;
-    std::unique_ptr<LoadedLevel> owned_;
+    std::shared_ptr<LoadedLevel> owned_;    // shared with the snapshots of it
     std::optional<SceneGraphics> cleared_;  // the scene's graphics after the menu's clear
     // Demos: the scenes played from a recording (the village's, the ending's, and the levels the title shows).
     bool playback_ = false;

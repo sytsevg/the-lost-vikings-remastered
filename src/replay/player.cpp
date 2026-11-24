@@ -143,6 +143,10 @@ void LvrPlayer::play_step() {
     menu_keys.effects = alt && s;  // a tick acts on them while they are held, as the original does
     menu_keys.music = alt && m;
     play_.menu_keys = menu_keys;
+    if (copies) {
+        World copy = play_.world;
+        play_.world = std::move(copy);
+    }
     const int refreshes = play_.step(replay_.steps[step_].keyboard, [&] {
         frames.push_back(picture());
         frames.back().sounds = take_sounds();

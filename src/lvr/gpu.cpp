@@ -32,6 +32,9 @@ constexpr std::uint32_t kShowFragmentShader[] =
 constexpr std::uint32_t kOverFragmentShader[] =
 #include "gpu_over.frag.inc"
     ;
+constexpr std::uint32_t kMarkFragmentShader[] =
+#include "gpu_mark.frag.inc"
+    ;
 
 // How many pictures are kept for showing: more than two steps make (a change of scene is some 150), since the
 // last of a step is still shown while the next step's are drawn.
@@ -47,6 +50,7 @@ constexpr int kMinimapCells = 64;
 constexpr int kHudSpare = 31;  // (a pixel less than a tile: the panel's tiles start a pixel in)
 constexpr float kSlidePictures = 10;
 constexpr float kFadePictures = 7;
+constexpr int kMarkPictures = 18;  // the rewind's mark: shown this long, then away this long
 
 constexpr int kAtlasSize = 2048;
 constexpr int kTilesAcross = kAtlasSize / kTileSize;  // the tileset's tiles in the atlas, a row of them
@@ -169,6 +173,10 @@ struct GpuRenderer::State {
     SDL_GPUTransferBuffer* over_upload = nullptr;
     int over_width = 0;
     int over_height = 0;
+    // The mark of time running backwards: two triangles, flashing.
+    SDL_GPUGraphicsPipeline* mark_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* mark_pipeline_own = nullptr;
+    int marked = 0;       // for how many pictures in a row it has been wanted
     float made_room = 0;  // how far the HUD has slid aside for the minimap: 0 not at all, 1 all the way
     float faded_in = 0;   // how much of the minimap is there: 0 nothing, 1 all of it
     SDL_GPUTransferBuffer* palette_upload = nullptr;
@@ -215,6 +223,8 @@ struct GpuRenderer::State {
             SDL_ReleaseGPUTransferBuffer(device, over_upload);
             SDL_ReleaseGPUTexture(device, over_texture);
             SDL_ReleaseGPUGraphicsPipeline(device, over_pipeline_own);
+            SDL_ReleaseGPUGraphicsPipeline(device, mark_pipeline_own);
+            SDL_ReleaseGPUGraphicsPipeline(device, mark_pipeline);
             SDL_ReleaseGPUGraphicsPipeline(device, over_pipeline);
             SDL_ReleaseGPUTexture(device, palette_texture);
             SDL_ReleaseGPUGraphicsPipeline(device, show_pipeline_own);
@@ -337,7 +347,9 @@ std::expected<void, std::string> GpuRenderer::State::set_up() {
     }
     SDL_GPUShader* over_fragment =
         shader(kOverFragmentShader, sizeof(kOverFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
-    if (over_fragment == nullptr) {
+    SDL_GPUShader* mark_fragment =
+        shader(kMarkFragmentShader, sizeof(kMarkFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
+    if (over_fragment == nullptr || mark_fragment == nullptr) {
         return sdl_error("the shaders");
     }
     const auto show_onto = [this, show_vertex](SDL_GPUTextureFormat format, SDL_GPUShader* fragment, bool blended) {
@@ -365,15 +377,18 @@ std::expected<void, std::string> GpuRenderer::State::set_up() {
     };
     show_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, show_fragment, false);
     over_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, over_fragment, true);
+    mark_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, mark_fragment, true);
     if (window != nullptr) {
         show_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), show_fragment, false);
         over_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), over_fragment, true);
+        mark_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), mark_fragment, true);
     }
     SDL_ReleaseGPUShader(device, show_vertex);
     SDL_ReleaseGPUShader(device, show_fragment);
     SDL_ReleaseGPUShader(device, over_fragment);
-    if (show_pipeline_own == nullptr || over_pipeline_own == nullptr ||
-        (window != nullptr && (show_pipeline == nullptr || over_pipeline == nullptr))) {
+    SDL_ReleaseGPUShader(device, mark_fragment);
+    if (show_pipeline_own == nullptr || over_pipeline_own == nullptr || mark_pipeline_own == nullptr ||
+        (window != nullptr && (show_pipeline == nullptr || over_pipeline == nullptr || mark_pipeline == nullptr))) {
         return sdl_error("the pipeline that shows");
     }
     return {};
@@ -1008,6 +1023,36 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         const SDL_GPUTextureSamplerBinding over_picture{.texture = over_texture, .sampler = smooth};
         SDL_BindGPUFragmentSamplers(pass, 0, &over_picture, 1);
         SDL_DrawGPUPrimitives(pass, kCorners, 1, 0, 0);
+    }
+    // Time running backwards: two triangles pointing left in the screen's top right corner, flashing (about twice
+    // a second; in a picture read back they are there). First dark, a pixel down and right, then light over it.
+    marked = screen.rewinding ? marked + 1 : 0;
+    if (screen.rewinding && (own || ((marked - 1) / kMarkPictures) % 2 == 0)) {
+        constexpr std::uint32_t kCorners = 6;
+        constexpr int kWide = 18;  // the two together, in the original's pixels
+        constexpr int kHigh = 11;
+        constexpr int kFromEdge = 8;
+        struct Placed {  // gpu_show.vert
+            std::array<float, 4> dest;
+            std::array<float, 4> source;
+            std::array<float, 2> size;
+            std::array<float, 2> unused;
+        };
+        SDL_BindGPUGraphicsPipeline(pass, own ? mark_pipeline_own : mark_pipeline);
+        const auto mark = [&](int nudge, const std::array<float, 4>& tint) {
+            const Placed placed{
+                .dest = {static_cast<float>(left + ((kScreenWidth - kFromEdge - kWide + nudge) * scale)),
+                         static_cast<float>(top + ((kFromEdge + nudge) * scale)), static_cast<float>(kWide * scale),
+                         static_cast<float>(kHigh * scale)},
+                .source = {0, 0, 2, 1},
+                .size = {static_cast<float>(width), static_cast<float>(height)},
+                .unused = {}};
+            SDL_PushGPUVertexUniformData(commands, 0, &placed, sizeof(placed));
+            SDL_PushGPUFragmentUniformData(commands, 0, tint.data(), sizeof(tint));
+            SDL_DrawGPUPrimitives(pass, kCorners, 1, 0, 0);
+        };
+        mark(1, {0, 0, 0, 0.7F});
+        mark(0, {1, 1, 1, 0.95F});
     }
     SDL_EndGPURenderPass(pass);
     return {};

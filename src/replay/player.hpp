@@ -33,6 +33,10 @@ class LvrPlayer : public Player {
     std::expected<std::optional<Refresh>, std::string> next() override;
     std::string entities() override;
 
+    // Before every step the world is replaced by a copy of itself: what a snapshot keeps (a rewind, a quicksave)
+    // is then all a replay needs, or the replay differs from its golden.
+    bool copies = false;
+
   private:
     LvrPlayer(Replay replay, assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, SharedGraphics shared,
               int slot, Draw draw_with);

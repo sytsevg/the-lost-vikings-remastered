@@ -190,11 +190,28 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   smoothly at every refresh: the map scrolls with the view by fractions of a pixel, and what the view shows now
   and where the Vikings are is exact, not rounded to the map's cells. At the original's view the HUD moves right
   by a column of its stone tiles to make room (it slides aside, then the minimap fades in; the other way round
-  when it is put away); zoomed out the smaller HUD is clear of the corner and stays in the middle. Tab puts it
-  away. What was seen is the player's, not the simulation's: `Session` keeps it per level, for now only until
-  the game is closed (the player's profile, with the saves, is still to come).
-- **Rewind:** up to 10 seconds, from a ring of snapshots; the minimap is not taken back.
-- **Saves:** automatic progress and a level select. Passwords keep working; Vanilla rules have only passwords.
+  when it is put away); zoomed out the smaller HUD is clear of the corner and stays in the middle. M puts it
+  away (not Tab, which is the inventory). What was seen is the player's, not the simulation's: `Session` keeps
+  it per level, for now only until the game is closed (the player's profile on disk is still to come).
+- **Rewind** (built): while Backspace is held, time runs backwards at twice its speed, as far as the last 10
+  seconds of play in levels reach; there the rewind is over and the play goes on. Let go earlier, the play goes
+  on from where it is. The
+  pictures between the ticks are there as they were going forwards: a step that is undone is run again from
+  its snapshot with the keys it had, for its pictures. It crosses scenes: from the game-over scene back into
+  the level. The sound of those seconds is heard backwards meanwhile, twice as fast (the last 10 seconds of
+  what was played are kept), and the music then goes on from where it was. Two triangles flash in the
+  screen's top right corner while it runs. The minimap is not taken back.
+- **A world can be copied**, which is what rewind and quicksave are: a snapshot is a copy of the `World` (each
+  entity its own copy) with the level it belongs to. The rewind keeps one before every step. That a copy keeps
+  everything is checked on the replays: `lv-replay --copies` replaces the world by a copy of itself before
+  every step, and all 119 still match their goldens.
+- **Quicksave** (built), only with the game's own cheat on (its password typed at the title, or `--cheat`): F7
+  keeps the play as it is, in a level; F8 brings it back from wherever the game is by then. One, kept until the
+  game is closed.
+- **No autosave and no level select** (taken out of M7): the passwords are how a level is reached, under both
+  rules.
+- **For later, with the player's profile on disk:** the quicksave written to a file, and what the minimap has
+  seen kept from one run to the next.
 - **An unlimited active area** is not built: one player doesn't need it. It comes back with co-op (ADR-0012),
   where several views share one world: either the active area is every view's together, or everything runs.
 

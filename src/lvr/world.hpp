@@ -89,7 +89,7 @@ class World {
     std::uint16_t shot_picture = 0;    // and where another kind of target was (the wacky world's)
     // An entity is created in the lowest free slot; they are updated and drawn in slot order.
     // As many slots as the rules give (set_rules); they are not added to while a world runs.
-    std::vector<std::unique_ptr<Entity>> entities = std::vector<std::unique_ptr<Entity>>(kSlots);
+    std::vector<OwnedEntity> entities = std::vector<OwnedEntity>(kSlots);
     int slots() const noexcept { return static_cast<int>(entities.size()); }
     // The entity in a slot; nullptr if the slot is empty, or is no slot (kNobody).
     Entity* at(int slot) noexcept {
@@ -413,7 +413,7 @@ class World {
     void mark_outside_active_area();
 
   private:
-    std::vector<std::unique_ptr<Entity>> removed_;  // removed in the turn that is running
+    std::vector<OwnedEntity> removed_;  // removed in the turn that is running
 
     struct View {
         int left = 0;
