@@ -1,0 +1,53 @@
+# Level 30: every placement visited (scripts/reach_replays.py). The Vikings are put beside one after
+# another and make the same moves at each.
+slot 29
+steps 1210
+key 3 0x8000
+place 10 680 626  # kind B6 at 680,648
+key 25-69 0x0800
+key 70-74 0x0000
+key 75-119 0x0400
+key 125-134 0x0100
+key 140-149 0x0200
+place 160 696 626  # kind B6 at 696,648
+key 175-219 0x0800
+key 220-224 0x0000
+key 225-269 0x0400
+key 275-284 0x0100
+key 290-299 0x0200
+place 310 624 546  # kind B2 at 624,568
+key 325-369 0x0800
+key 370-374 0x0000
+key 375-419 0x0400
+key 425-434 0x0100
+key 440-449 0x0200
+place 460 704 450  # kind B2 at 704,472
+key 475-519 0x0800
+key 520-524 0x0000
+key 525-569 0x0400
+key 575-584 0x0100
+key 590-599 0x0200
+place 610 712 1010  # kind C3 at 712,1048
+key 625-669 0x0800
+key 670-674 0x0000
+key 675-719 0x0400
+key 725-734 0x0100
+key 740-749 0x0200
+place 760 728 914  # kind B8 at 728,936
+key 775-819 0x0800
+key 820-824 0x0000
+key 825-869 0x0400
+key 875-884 0x0100
+key 890-899 0x0200
+place 910 744 914  # kind B8 at 744,936
+key 925-969 0x0800
+key 970-974 0x0000
+key 975-1019 0x0400
+key 1025-1034 0x0100
+key 1040-1049 0x0200
+place 1060 448 1030  # kind AF at 448,1072
+key 1075-1119 0x0800
+key 1120-1124 0x0000
+key 1125-1169 0x0400
+key 1175-1184 0x0100
+key 1190-1199 0x0200

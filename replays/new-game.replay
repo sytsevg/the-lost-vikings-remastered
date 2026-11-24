@@ -1,0 +1,6 @@
+# A new game from the title, written by hand: Enter opens the menu, fire takes "new game"; then no key: the
+# village's two scenes play by themselves, and level 1 starts.
+slot 38
+steps 4400
+key 20-20 0x1000
+key 80-80 0x8000

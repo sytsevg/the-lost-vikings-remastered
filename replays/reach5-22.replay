@@ -1,0 +1,93 @@
+# Level 22: every placement visited (scripts/reach_replays.py). The Vikings are put beside one after
+# another and make the same moves at each.
+slot 21
+steps 610
+key 3 0x8000
+place 10 56 304  # kind 87 at 80,304
+key 13 0x0010
+key 16-17 0x0100
+key 20 0x8000
+key 27 0x8000
+key 34 0x8000
+key 41 0x8000
+key 48 0x8000
+key 55 0x8000
+key 62 0x8000
+key 69 0x8000
+key 76 0x8000
+key 83 0x8000
+key 90 0x8000
+key 97 0x8000
+key 104 0x8000
+key 110-118 0x4000
+key 124-132 0x4000
+key 138 0x8000
+key 145 0x8000
+key 152 0x0010
+key 156 0x0010
+place 160 88 304  # kind 87 at 80,304
+key 163 0x0010
+key 166-167 0x0200
+key 170 0x8000
+key 177 0x8000
+key 184 0x8000
+key 191 0x8000
+key 198 0x8000
+key 205 0x8000
+key 212 0x8000
+key 219 0x8000
+key 226 0x8000
+key 233 0x8000
+key 240 0x8000
+key 247 0x8000
+key 254 0x8000
+key 260-268 0x4000
+key 274-282 0x4000
+key 288 0x8000
+key 295 0x8000
+key 302 0x0010
+key 306 0x0010
+place 310 728 704  # kind 88 at 752,704
+key 313 0x0010
+key 316-317 0x0100
+key 320 0x8000
+key 327 0x8000
+key 334 0x8000
+key 341 0x8000
+key 348 0x8000
+key 355 0x8000
+key 362 0x8000
+key 369 0x8000
+key 376 0x8000
+key 383 0x8000
+key 390 0x8000
+key 397 0x8000
+key 404 0x8000
+key 410-418 0x4000
+key 424-432 0x4000
+key 438 0x8000
+key 445 0x8000
+key 452 0x0010
+key 456 0x0010
+place 460 808 704  # kind 88 at 752,704
+key 463 0x0010
+key 466-467 0x0200
+key 470 0x8000
+key 477 0x8000
+key 484 0x8000
+key 491 0x8000
+key 498 0x8000
+key 505 0x8000
+key 512 0x8000
+key 519 0x8000
+key 526 0x8000
+key 533 0x8000
+key 540 0x8000
+key 547 0x8000
+key 554 0x8000
+key 560-568 0x4000
+key 574-582 0x4000
+key 588 0x8000
+key 595 0x8000
+key 602 0x0010
+key 606 0x0010

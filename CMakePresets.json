@@ -1,0 +1,107 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_COLOR_DIAGNOSTICS": "ON"
+            }
+        },
+        {
+            "name": "debug",
+            "displayName": "Debug",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "LVR_LIBCXX_HARDENING": "extensive"
+            }
+        },
+        {
+            "name": "asan-ubsan",
+            "displayName": "Debug + AddressSanitizer + UndefinedBehaviorSanitizer (default for development)",
+            "inherits": "debug",
+            "cacheVariables": { "LVR_SANITIZERS": "address;undefined" }
+        },
+        {
+            "name": "tsan",
+            "displayName": "Debug + ThreadSanitizer",
+            "inherits": "debug",
+            "cacheVariables": { "LVR_SANITIZERS": "thread" }
+        },
+        {
+            "name": "release",
+            "displayName": "Release",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "LVR_LIBCXX_HARDENING": "fast",
+                "LVR_STATIC_RUNTIME": "ON"
+            }
+        },
+        {
+            "name": "coverage",
+            "displayName": "Debug + clang source-based coverage of our own targets (scripts/coverage.sh)",
+            "inherits": "debug",
+            "cacheVariables": {
+                "LVR_COVERAGE": "ON"
+            }
+        },
+        {
+            "name": "fuzz",
+            "displayName": "libFuzzer targets (ASan + UBSan)",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "LVR_SANITIZERS": "address;undefined;fuzzer-no-link",
+                "LVR_LIBCXX_HARDENING": "extensive",
+                "LVR_BUILD_FUZZERS": "ON",
+                "LVR_BUILD_APPS": "OFF",
+                "LVR_BUILD_TESTS": "OFF"
+            }
+        },
+        {
+            "name": "ci",
+            "displayName": "CI: asan-ubsan + clang-tidy + -Werror",
+            "inherits": "asan-ubsan",
+            "cacheVariables": {
+                "LVR_WARNINGS_AS_ERRORS": "ON",
+                "LVR_CLANG_TIDY": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "debug", "configurePreset": "debug" },
+        { "name": "asan-ubsan", "configurePreset": "asan-ubsan" },
+        { "name": "tsan", "configurePreset": "tsan" },
+        { "name": "release", "configurePreset": "release" },
+        { "name": "coverage", "configurePreset": "coverage" },
+        { "name": "fuzz", "configurePreset": "fuzz" },
+        { "name": "ci", "configurePreset": "ci" }
+    ],
+    "testPresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "output": { "outputOnFailure": true },
+            "execution": { "noTestsAction": "error", "jobs": 8 },
+            "environment": {
+                "ASAN_OPTIONS": "abort_on_error=1:detect_leaks=1:strict_string_checks=1",
+                "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1",
+                "TSAN_OPTIONS": "halt_on_error=1"
+            }
+        },
+        { "name": "debug", "inherits": "base", "configurePreset": "debug" },
+        { "name": "asan-ubsan", "inherits": "base", "configurePreset": "asan-ubsan" },
+        { "name": "tsan", "inherits": "base", "configurePreset": "tsan" },
+        { "name": "release", "inherits": "base", "configurePreset": "release" },
+        { "name": "coverage", "inherits": "base", "configurePreset": "coverage" },
+        { "name": "ci", "inherits": "base", "configurePreset": "ci" }
+    ]
+}

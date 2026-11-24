@@ -1,0 +1,76 @@
+diff --git a/src/cpu/core_normal.cpp b/src/cpu/core_normal.cpp
+index e582cc06..c306f0fd 100644
+--- a/src/cpu/core_normal.cpp
++++ b/src/cpu/core_normal.cpp
+@@ -163,6 +163,10 @@ static INLINE uint32_t Fetchd() {
+ 
+ #define EALookupTable (core.ea_table)
+ 
++extern bool lvr_control_breaks; /* vikings-remaster control channel (misc/lvr_control.cpp) */
++bool LVR_ControlIsBreak(PhysPt address);
++Bitu LVR_ControlCallback();
++
+ Bits CPU_Core_Normal_Run(void) {
+ 	if (CPU_Cycles <= 0)
+ 		return CBRET_NONE;
+@@ -185,6 +189,11 @@ Bits CPU_Core_Normal_Run(void) {
+ 		}
+ #endif
+ #endif
++		if (GCC_UNLIKELY(lvr_control_breaks) && LVR_ControlIsBreak(SegPhys(cs)+reg_eip)) {
++			CPU_Cycles++; /* the instruction isn't run now */
++			FillFlags();
++			return (Bits)LVR_ControlCallback();
++		}
+ 		cycle_count++;
+ restart_opcode:
+ 		switch (core.opcode_index+Fetchb()) {
+diff --git a/src/dos/dos_execute.cpp b/src/dos/dos_execute.cpp
+index 6ba9ffac..792b2003 100644
+--- a/src/dos/dos_execute.cpp
++++ b/src/dos/dos_execute.cpp
+@@ -296,6 +296,8 @@ static void SetupCMDLine(uint16_t pspseg, const DOS_ParamBlock& block) {
+  *        shell without any error message. The least we could do is return
+  *        an error code so that the INT 21h EXEC call can print an informative
+  *        error message! --J.C. */
++void LVR_ControlExec(const char* name, uint16_t loadseg, uint16_t seg, uint16_t off); /* misc/lvr_control.cpp */
++
+ bool DOS_Execute(const char* name, PhysPt block_pt, uint16_t flags) {
+ 	EXE_Header head;Bitu i;
+ 	uint16_t fhandle;uint16_t len;uint32_t pos;
+@@ -965,6 +967,7 @@ bool DOS_Execute(const char* name, PhysPt block_pt, uint16_t flags) {
+ 		reg_di=RealOff(sssp);
+ 		reg_bp=0x91c;	/* DOS internal stack begin relict */
+ 		SegSet16(ds,pspseg);SegSet16(es,pspseg);
++		LVR_ControlExec(name, (uint16_t)(pspseg + 16), RealSeg(csip), RealOff(csip));
+ #if C_DEBUG		
+ 		/* Started from debug.com, then set breakpoint at start */
+ 		DEBUG_CheckExecuteBreakpoint(RealSeg(csip),RealOff(csip));
+diff --git a/src/hardware/vga_draw.cpp b/src/hardware/vga_draw.cpp
+index 824cd61f..53da7d5b 100644
+--- a/src/hardware/vga_draw.cpp
++++ b/src/hardware/vga_draw.cpp
+@@ -6118,9 +6118,13 @@ extern bool DEBUG_HaltOnRetrace;
+ Bitu DEBUG_EnableDebugger(void);
+ #endif
+ 
++void LVR_ControlFrame(); /* vikings-remaster control channel (misc/lvr_control.cpp) */
++
+ static void VGA_VerticalTimer(Bitu /*val*/) {
+ 	double current_time = PIC_GetCurrentEventTime();
+ 
++	LVR_ControlFrame();
++
+ #if C_DEBUG
+ 	if (DEBUG_HaltOnRetrace) {
+ 		DEBUG_EnableDebugger();
+diff --git a/src/misc/Makefile.am b/src/misc/Makefile.am
+index fd907a61..91df6ac7 100644
+--- a/src/misc/Makefile.am
++++ b/src/misc/Makefile.am
+@@ -3,4 +3,4 @@ AM_CPPFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/src "-DRESDIR=\"$(resdir)\
+ resdir = $(datarootdir)/dosbox-x
+ 
+ noinst_LIBRARIES = libmisc.a
+-libmisc_a_SOURCES = clipboard.cpp cross.cpp ethernet.cpp ethernet_pcap.cpp ethernet_slirp.cpp ethernet_ethnet.cpp ethernet_nothing.cpp localpipe.cpp messages.cpp programs.cpp setup.cpp support.cpp regionalloctracking.cpp savestates.cpp shiftjis.cpp iconvpp.cpp mkdir_p.cpp
++libmisc_a_SOURCES = clipboard.cpp cross.cpp ethernet.cpp ethernet_pcap.cpp ethernet_slirp.cpp ethernet_ethnet.cpp ethernet_nothing.cpp localpipe.cpp messages.cpp programs.cpp setup.cpp support.cpp regionalloctracking.cpp savestates.cpp lvr_control.cpp shiftjis.cpp iconvpp.cpp mkdir_p.cpp

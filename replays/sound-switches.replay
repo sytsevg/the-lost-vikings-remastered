@@ -1,0 +1,24 @@
+# The sound switches in level 1, written by hand: through the opening's lines, then Alt+S (the effects off), a
+# walk with Erik's jump and Baleog's sword unheard, Alt+M (the music off), Alt+S held for three steps (on, off,
+# on), and Alt+M again (the music on).
+slot 0
+steps 480
+key 3 0x8000
+key 10 0x8000
+key 20 0x8000
+held 40 0x38
+held 40 0x1f
+key 50-70 0x0100
+key 60 0x8000
+key 72 0x0010
+key 75 0x8000
+held 90 0x38
+held 90 0x32
+held 110-112 0x38
+held 110-112 0x1f
+key 120 0x8000
+held 150 0x38
+held 150 0x32
+key 200-260 0x0200
+key 270 0x0010
+key 280-320 0x0100

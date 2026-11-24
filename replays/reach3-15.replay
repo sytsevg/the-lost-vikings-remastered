@@ -1,0 +1,23 @@
+# Level 15: every placement visited (scripts/reach_replays.py). The Vikings are put beside one after
+# another and make the same moves at each.
+slot 14
+steps 460
+key 3 0x8000
+place 10 72 690  # kind 3B at 72,728
+key 25-69 0x0800
+key 70-74 0x0000
+key 75-119 0x0400
+key 125-134 0x0100
+key 140-149 0x0200
+place 160 576 370  # kind 39 at 576,392
+key 175-219 0x0800
+key 220-224 0x0000
+key 225-269 0x0400
+key 275-284 0x0100
+key 290-299 0x0200
+place 310 576 262  # kind 71 at 576,292
+key 325-369 0x0800
+key 370-374 0x0000
+key 375-419 0x0400
+key 425-434 0x0100
+key 440-449 0x0200

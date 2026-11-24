@@ -1,0 +1,65 @@
+# docs/decisions.md
+# Relaxed set: bug-finding groups in full, plus a hand-picked handful of style/guideline checks.
+# The full cppcoreguidelines-* and readability-* groups are deliberately off: too pedantic for low-level/SDL code.
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  performance-*,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-use-nodiscard,
+  -modernize-use-designated-initializers,
+  -modernize-avoid-c-arrays,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-virtual-class-destructor,
+  cppcoreguidelines-rvalue-reference-param-not-moved,
+  cppcoreguidelines-missing-std-forward,
+  cppcoreguidelines-prefer-member-initializer,
+  readability-identifier-naming,
+  readability-misleading-indentation,
+  readability-container-contains,
+  readability-container-size-empty,
+  readability-duplicate-include,
+  misc-redundant-expression,
+  misc-unused-using-decls,
+  misc-definitions-in-headers,
+  misc-misplaced-const
+
+HeaderFilterRegex: '.*/(src|tests|fuzz)/.*'
+
+CheckOptions:
+  # Results must not be dropped, instead of [[nodiscard]] on every function: any call to a function of ours
+  # (^::lvr::), the check's default std functions, and any call returning std::expected or std::optional. A (void)
+  # cast marks a deliberate discard. Enforced by scripts/check.sh (clang-tidy, warnings as errors).
+  - key: bugprone-unused-return-value.CheckedFunctions
+    value: '^::lvr::;^::std::async$;^::std::launder$;^::std::remove$;^::std::remove_if$;^::std::unique$;^::std::unique_ptr::release$;^::std::basic_string::empty$;^::std::vector::empty$;^::std::back_inserter$;^::std::distance$;^::std::find$;^::std::find_if$;^::std::inserter$;^::std::lower_bound$;^::std::make_pair$;^::std::map::count$;^::std::map::find$;^::std::map::lower_bound$;^::std::multimap::equal_range$;^::std::multimap::upper_bound$;^::std::set::count$;^::std::set::find$;^::std::setfill$;^::std::setprecision$;^::std::setw$;^::std::upper_bound$;^::std::vector::at$;^::bsearch$;^::ferror$;^::feof$;^::isalnum$;^::isalpha$;^::isblank$;^::iscntrl$;^::isdigit$;^::isgraph$;^::islower$;^::isprint$;^::ispunct$;^::isspace$;^::isupper$;^::iswalnum$;^::iswprint$;^::iswspace$;^::isxdigit$;^::memchr$;^::memcmp$;^::strcmp$;^::strcoll$;^::strncmp$;^::strpbrk$;^::strrchr$;^::strspn$;^::strstr$;^::wcscmp$;^::access$;^::bind$;^::connect$;^::difftime$;^::dlsym$;^::fnmatch$;^::getaddrinfo$;^::getopt$;^::htonl$;^::htons$;^::iconv_open$;^::inet_addr$;^::isascii$;^::isatty$;^::mmap$;^::newlocale$;^::openat$;^::pathconf$;^::pthread_equal$;^::pthread_getspecific$;^::pthread_mutex_trylock$;^::readdir$;^::readlink$;^::recvmsg$;^::regexec$;^::scandir$;^::semget$;^::setjmp$;^::shm_open$;^::shmget$;^::sigismember$;^::strcasecmp$;^::strsignal$;^::ttyname$'
+  - key: bugprone-unused-return-value.CheckedReturnTypes
+    value: '^::std::error_code$;^::std::error_condition$;^::std::errc$;^::std::expected$;^::std::optional$;^::boost::system::error_code$'
+  - { key: bugprone-unused-return-value.AllowCastToVoid, value: true }
+  # The engine's numbers are the original's 16-bit ones and wrap round by design (defined behaviour since C++20),
+  # so `speed_x += px(2)` on a 16-bit field is what is meant. A plain assignment that narrows is still an error:
+  # the compiler's -Wconversion catches it.
+  - { key: bugprone-narrowing-conversions.WarnOnIntegerNarrowingConversion, value: false }
+  # Naming: types CamelCase, functions/variables snake_case, constants kCamelCase, private members trailing_.
+  - { key: readability-identifier-naming.NamespaceCase,          value: lower_case }
+  - { key: readability-identifier-naming.ClassCase,              value: CamelCase }
+  - { key: readability-identifier-naming.StructCase,             value: CamelCase }
+  - { key: readability-identifier-naming.EnumCase,               value: CamelCase }
+  - { key: readability-identifier-naming.EnumConstantCase,       value: CamelCase }
+  - { key: readability-identifier-naming.EnumConstantPrefix,     value: k }
+  - { key: readability-identifier-naming.TypeAliasCase,          value: CamelCase }
+  - { key: readability-identifier-naming.TemplateParameterCase,  value: CamelCase }
+  - { key: readability-identifier-naming.FunctionCase,           value: lower_case }
+  - { key: readability-identifier-naming.VariableCase,           value: lower_case }
+  - { key: readability-identifier-naming.ParameterCase,          value: lower_case }
+  - { key: readability-identifier-naming.MemberCase,             value: lower_case }
+  - { key: readability-identifier-naming.PrivateMemberSuffix,    value: _ }
+  - { key: readability-identifier-naming.ProtectedMemberSuffix,  value: _ }
+  - { key: readability-identifier-naming.ConstexprVariableCase,  value: CamelCase }
+  - { key: readability-identifier-naming.ConstexprVariablePrefix, value: k }
+  - { key: readability-identifier-naming.GlobalConstantCase,     value: CamelCase }
+  - { key: readability-identifier-naming.GlobalConstantPrefix,   value: k }
+  - { key: readability-identifier-naming.MacroDefinitionCase,    value: UPPER_CASE }

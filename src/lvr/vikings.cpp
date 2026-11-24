@@ -1,0 +1,923 @@
+// The Vikings: Erik, Baleog and Olaf (docs/original/vikings.md). What the three share is here once: standing,
+// walking, falling and landing, ladders, acting on things, getting hurt and dying. Each one's abilities are his own.
+//
+// A Viking's turn ends where he waits for the next tick (`At`). What stops him after the tick's move, and who
+// touches him, is tested later in the tick (`Test`) and acted on when his next turn starts.
+
+#include <memory>
+
+#include "lvr/viking.hpp"
+
+namespace lvr {
+
+// --- Small things ---
+
+void Viking::after_move(World& world) {
+    for (std::size_t i = 0; i < tests_.size(); ++i) {
+        switch (tests_.at(i)) {
+            case Test::kWall:
+                hit_.at(i) = stop_at_wall(world, *this, types().solid);
+                break;
+            case Test::kBreakableWall:
+                hit_.at(i) = stop_at_wall(world, *this, types().breakable);
+                break;
+            case Test::kFloorOrCeiling:
+                hit_.at(i) = stop_at_floor_or_ceiling(world, *this, types().solid);
+                break;
+            case Test::kDeadly:
+                hit_.at(i) = stop_at_floor_or_ceiling(world, *this, types().deadly);
+                break;
+            case Test::kLands:
+                hit_.at(i) = land(world, *this, types().ground);
+                break;
+            case Test::kLandsAnywhere:
+                hit_.at(i) = land(world, *this, types().landing);
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+void Viking::check_hits(World& world) {
+    for (std::size_t i = 0; i < tests_.size(); ++i) {
+        if (tests_.at(i) == Test::kTouchesClass) {
+            touched_ = find_touching(world, *this, touch_class_);
+            hit_.at(i) = touched_ != kNobody;
+        } else if (tests_.at(i) == Test::kTouchesEnemy || tests_.at(i) == Test::kTouchesThing) {
+            touched_ = find_touching_any(world, *this, tests_.at(i) == Test::kTouchesEnemy ? hit::kEnemy : hit::kThing);
+            hit_.at(i) = touched_ != kNobody;
+        }
+    }
+}
+
+void Viking::outside_active_area(World& world) {
+    if (!Entity::dead) {  // a dead one stays as he is
+        world.remove(slot);
+    }
+}
+
+const VikingLooks& Viking::looks() const {
+    return who_ == kind::kErik ? kErikLooks : (who_ == kind::kBaleog ? kBaleogLooks : kOlafLooks);
+}
+
+void Viking::wait(At at, std::array<Test, 4> tests) {
+    if (at != At::kDizzy && at != At::kDizzyInTheAir) {
+        returns_to_landing_ = false;
+    }
+    at_ = at;
+    tests_ = tests;
+    hit_ = {};
+}
+
+bool Viking::found(Test test) const {
+    for (std::size_t i = 0; i < tests_.size(); ++i) {
+        if (tests_.at(i) == test) {
+            return hit_.at(i);
+        }
+    }
+    return false;
+}
+
+void Viking::face(World& world, bool left) {
+    if (facing_left() != left) {
+        world.flip_across(*this);
+    }
+}
+
+bool Viking::on_ground(const World& world) const {
+    return find_beside(world, *this, Side::kBelow, types().ground).has_value();
+}
+
+bool Viking::on_own_ground(const World& world) const {
+    return find_beside(world, *this, Side::kBelow, who_ == kind::kOlaf ? types().landing : types().ground).has_value();
+}
+
+std::uint8_t Viking::type_at(const World& world, int at_x, int at_y) const {
+    return world.map.tile_type_at(static_cast<std::int16_t>(at_x), static_cast<std::int16_t>(at_y));
+}
+
+std::uint16_t Viking::by_who(std::uint16_t erik, std::uint16_t baleog, std::uint16_t olaf) const {
+    return who_ == kind::kErik ? erik : (who_ == kind::kBaleog ? baleog : olaf);
+}
+
+const Animation& Viking::by_who(const anim::ByViking& each) const {
+    return each.at(who_ == kind::kErik ? 0 : (who_ == kind::kBaleog ? 1 : 2));
+}
+
+void Viking::hide_pieces(World& world) const {
+    for (int index = sprite.first; index < sprite.first + sprite.count; ++index) {
+        Piece& piece = world.piece_at(index);
+        piece.hidden = true;
+        piece.erase |= 2U;
+    }
+}
+
+void Viking::show_pieces(World& world) const {
+    for (int index = sprite.first; index < sprite.first + sprite.count; ++index) {
+        Piece& piece = world.piece_at(index);
+        piece.hidden = false;
+        piece.blinked_off = false;
+        piece.redraw = 2;
+        piece.erase = 0;
+    }
+}
+
+// --- The turn ---
+
+// Each state belongs to one of five subjects, and its turn is with them.
+void Viking::resume(World& world) {
+    switch (at_) {
+        case At::kStart:
+        case At::kStarted:
+        case At::kAboutToFallIn:
+        case At::kFallingIn:
+        case At::kStanding:
+        case At::kRising:
+        case At::kFalling:
+        case At::kOntoLadder:
+        case At::kClimbing:
+        case At::kArriving:
+            return resume_moving(world);
+        case At::kUsingKey:
+        case At::kHandingOver:
+        case At::kActing:
+        case At::kActed:
+            return resume_acting(world);
+        case At::kFadingAway:
+        case At::kBeamed:  // a tick more than a teleporter's
+        case At::kTeleported:
+        case At::kAppearing:
+        case At::kTakingControls:
+        case At::kAtControls:
+        case At::kLedWalking:
+        case At::kLedStanding:
+        case At::kCheering:
+        case At::kInflating:
+        case At::kInflated:
+            return resume_in_world(world);
+        case At::kHurt:
+        case At::kDizzy:
+        case At::kDizzyInTheAir:
+        case At::kDying:
+        case At::kSinking:
+        case At::kBecomingAMummy:
+        case At::kBecameAMummy:
+        case At::kDyingOnTheGround:
+        case At::kDyingInTheAir:
+        case At::kCrushed:
+        case At::kDead:
+            return resume_harmed(world);
+        case At::kCharging:
+        case At::kHeadHit:
+        case At::kBouncing:
+        case At::kBouncingDown:
+        case At::kHanging:
+        case At::kBlownBack:
+        case At::kDrawingBow:
+        case At::kAiming:
+        case At::kLoosing:
+        case At::kSwinging:
+        case At::kSwingingOn:
+        case At::kGettingUp:
+        case At::kStoppingCharge:
+            return resume_ability(world);
+    }
+}
+
+// Standing, walking, jumping, falling, climbing: a turn of one of those.
+void Viking::resume_moving(World& world) {
+    switch (at_) {
+        case At::kStart:
+            return start(world);
+        case At::kStarted:
+            if (world.vikings_falling_in == 0) {
+                return stand(world);
+            }
+            if (who_ == kind::kErik) {
+                world.play(*this, looks().falls_far);
+            }
+            return wait(At::kAboutToFallIn);
+        case At::kAboutToFallIn:
+            if (who_ == kind::kErik) {
+                sound(world, effect::kFallingIn);
+            } else {  // Baleog and Olaf
+                world.play(*this, looks().falls_far);
+            }
+            set_falling(true);
+            return fall_in(world);
+        case At::kFallingIn:
+            if (landed()) {
+                if (who_ == kind::kErik || world.database == database::kScenes) {  // in a scene: each of them
+                    world.stop_sound(*this, effect::kFallingIn);
+                    sound(world, world.database == database::kScenes ? effect::kLandedInScene : effect::kLandedHard);
+                }
+                return land_hard(world);
+            }
+            return fall_in(world);
+        case At::kStanding:
+            if (found(Test::kWall)) {
+                speed_x = 0;
+            }
+            if (found(Test::kDeadly) && deadly(world)) {
+                return;
+            }
+            return standing(world);
+        case At::kRising:
+            if (found(Test::kWall)) {
+                speed_x = 0;
+            }
+            if (found(Test::kFloorOrCeiling)) {
+                speed_y = 0;
+            }
+            if (found(Test::kDeadly) && deadly(world)) {
+                return;
+            }
+            if (message != 0 && told(world)) {
+                return;
+            }
+            if (who_ == kind::kErik && (world.held & key::kF) != 0) {  // the key held: a higher jump
+                speed_y -= px(0.25);
+            }
+            return falling(world);
+        case At::kFalling:
+            if (found(Test::kWall)) {
+                speed_x = 0;
+            }
+            if (landed()) {
+                return landed(world);
+            }
+            if (found(Test::kDeadly) && deadly(world)) {
+                return;
+            }
+            if (message != 0 && told(world)) {
+                return;
+            }
+            return falling(world);
+        case At::kOntoLadder:
+            world.play(*this, after_step_);
+            return climb(world);
+        case At::kClimbing:
+            if (found(Test::kFloorOrCeiling)) {
+                set_falling(false);
+                speed_y = 0;
+            }
+            if (found(Test::kDeadly) && deadly(world)) {
+                return;
+            }
+            if (message != 0 && told(world)) {
+                return;
+            }
+            if (!played(world)) {
+                return climb(world);
+            }
+            if ((world.pressed & key::kE) != 0 && use_item(world)) {
+                return;
+            }
+            return climbing(world);
+        case At::kArriving:
+            if (world.vikings_arriving == 0) {
+                return stand(world);
+            }
+            return arriving(world);
+        default:
+            return;
+    }
+}
+
+void Viking::start(World& world) {
+    const bool on_the_ship = world.database == database::kScenes && world.scene == scene::kShip;
+    if (on_the_ship && who_ == kind::kOlaf) {  // the ship's scene: they cheer from the start
+        return cheer(world);
+    }
+    if (on_the_ship) {
+        doing_ = who_ == kind::kErik ? Doing::kStanding : Doing::kOther;
+        world.play(*this, looks().stands);
+        keep_on_ground();
+        world.animate(*this);
+        return cheer(world);
+    }
+    if (who_ == kind::kOlaf) {  // his shield is an entity of its own
+        world.spawn(*this, kind::kShield, x, y, kShieldArgument, entity_flag::kLargePieces);
+    }
+    doing_ = who_ == kind::kErik ? Doing::kStanding : Doing::kOther;
+    acts_as = tile::kViking;
+    world.play(*this, looks().stands);
+    keep_on_ground();
+    world.animate(*this);
+    wait(At::kStarted);
+}
+
+void Viking::fall_in(World& world) {
+    world.animate(*this);
+    wait(At::kFallingIn, {Test::kLandsAnywhere});
+}
+
+// --- Standing and walking ---
+
+void Viking::stand(World& world) {
+    keep_on_ground();
+    world.animate(*this);
+    wait(At::kStanding, {Test::kWall, Test::kDeadly});
+}
+
+void Viking::standing(World& world) {
+    if (message != 0 && told(world)) {
+        return;
+    }
+    grounded(world);
+}
+
+void Viking::grounded(World& world) {
+    if (!on_own_ground(world)) {
+        return fall(world);
+    }
+    keys(world);
+}
+
+void Viking::keys(World& world) {
+    if (!played(world)) {
+        return slow_down(world);
+    }
+    if ((world.held & key::kAction) != 0) {
+        if (who_ == kind::kOlaf) {
+            if ((world.pressed & key::kFOrD) != 0) {
+                return turn_shield(world);
+            }
+        } else if ((world.pressed & key::kF) != 0) {
+            return who_ == kind::kErik ? jump(world) : swing(world);
+        }
+        if (who_ == kind::kErik && (world.pressed & key::kD) != 0 && speed_x >= kRunning) {
+            return charge(world);
+        }
+        if ((world.pressed & key::kS) != 0 && act(world)) {
+            return;
+        }
+    }
+    standing_after_acting(world);
+}
+
+void Viking::standing_after_acting(World& world) {
+    if ((world.pressed & key::kE) != 0 && use_item(world)) {
+        return;
+    }
+    standing_after_item(world);
+}
+
+void Viking::standing_after_item(World& world) {
+    if (who_ == kind::kBaleog && (world.held & key::kD) != 0) {
+        return draw_bow(world);
+    }
+    arrow_keys(world);
+}
+
+void Viking::arrow_keys(World& world) {
+    if ((world.held & key::kUp) != 0) {
+        if (find_beside(world, *this, Side::kAbove, types().ladder) &&
+            find_at(world, *this, x, box.top, types().ladder)) {
+            return onto_ladder(world, true);
+        }
+    } else if ((world.held & key::kDown) != 0) {
+        if (find_beside(world, *this, Side::kBelow, types().ladder_top) &&
+            !find_at(world, *this, x, box.bottom + 1, types().no_way_down)) {
+            return onto_ladder(world, false);
+        }
+    }
+    if ((world.held & key::kLeft) != 0) {
+        return walk(world, true);
+    }
+    if ((world.held & key::kRight) != 0) {
+        return walk(world, false);
+    }
+    slow_down(world);
+}
+
+void Viking::walk(World& world, bool left) {
+    if (facing_left() != left) {  // his speed is the way he faces
+        speed_x = static_cast<std::int16_t>(-speed_x);
+    }
+    face(world, left);
+    if (const auto wall = find_at(world, *this, left ? box.left - 1 : box.right + 1, y, types().solid)) {
+        return push(world, *wall);
+    }
+    const Doing walking = left ? Doing::kWalkingLeft : Doing::kWalkingRight;
+    if (doing_ != walking) {
+        doing_ = walking;
+        shield_away_ = false;
+        world.play(*this, shield_up_ ? anim::kOlafWalksShieldUp : looks().walks);
+    }
+    const int top_speed = who_ == kind::kErik ? kErikTopSpeed : kTopSpeed;
+    if (speed_x >= top_speed) {
+        speed_x = static_cast<std::int16_t>(top_speed);
+    } else if (speed_x >= 0) {
+        speed_x += px(0.75);
+    } else {  // still going the other way: Erik slows, the others stop at once
+        speed_x = static_cast<std::int16_t>(who_ == kind::kErik ? speed_x + px(1.5) : 0);
+    }
+    stand(world);
+}
+
+void Viking::push(World& world, const Found& wall) {
+    if (doing_ != Doing::kPushing) {
+        world.play(*this, looks().pushes);
+        doing_ = Doing::kPushing;
+        shield_away_ = who_ == kind::kOlaf;
+    }
+    speed_x = kPushing;
+    if (wall.entity >= 0) {
+        Entity* other = world.at(wall.entity);
+        if (other != nullptr && (other->hit_mask & hit::kPushable) != 0) {
+            target = wall.entity;
+            tell(*other, message::kPushed, facing_left() ? -kPushing : kPushing);
+        }
+    }
+    stand(world);
+}
+
+void Viking::slow_down(World& world) {
+    if (who_ == kind::kBaleog) {
+        if (doing_ != Doing::kStanding) {
+            speed_x = 0;
+            world.play(*this, looks().stops);
+            doing_ = Doing::kStanding;
+        }
+        if (!animation_waits()) {  // left standing, he finds something to do
+            world.play(*this, world.random() >= 32767 ? anim::kBaleogFidgets : anim::kBaleogLooksAround);
+        }
+        return stand(world);
+    }
+    if (who_ == kind::kOlaf) {
+        if (doing_ != Doing::kStanding) {
+            doing_ = Doing::kStanding;
+            shield_away_ = false;
+            speed_x = 0;
+            world.play(*this, shield_up_ ? anim::kOlafStopsShieldUp : looks().stops);
+        }
+        return stand(world);
+    }
+    if (doing_ != Doing::kStanding) {
+        doing_ = Doing::kStanding;
+        world.play(*this, speed_x >= kRunning ? looks().skids : looks().stops);
+    }
+    speed_x = static_cast<std::int16_t>(speed_x > px(4) ? speed_x - px(4) : 0);
+    stand(world);
+}
+
+// --- In the air ---
+
+void Viking::fall(World& world) {
+    doing_ = Doing::kFalling;
+    set_falling(true);
+    if (who_ == kind::kBaleog) {
+        world.play(*this, looks().floats);
+    } else if (who_ == kind::kOlaf) {
+        shield_away_ = false;
+        glides_fast_ = false;
+        world.play(*this, shield_up_ ? anim::kOlafGlides : looks().floats);
+    }
+    fall_shown_ = false;
+    long_fall_shown_ = false;
+    falling(world);
+}
+
+void Viking::falling(World& world) {
+    if (who_ == kind::kOlaf) {
+        if (!played(world)) {
+            return drift(world);
+        }
+        if ((world.pressed & key::kFOrD) != 0) {  // the shield up: he glides down
+            shield_up_ = !shield_up_;
+            if (shield_up_) {
+                glides_fast_ = speed_x >= kGlidingFast;
+                world.play(*this, glides_fast_ ? anim::kOlafGlidesFast : anim::kOlafGlides);
+            } else {
+                world.play(*this, looks().floats);
+            }
+        }
+        if ((world.pressed & key::kS) != 0 && act(world)) {
+            return;
+        }
+        return falling_after_acting(world);
+    }
+    if (who_ == kind::kBaleog) {
+        if ((speed_y >= kLongFall) != long_fall_shown_) {
+            long_fall_shown_ = !long_fall_shown_;
+            world.play(*this, long_fall_shown_ ? looks().falls_far : looks().floats);
+        }
+    } else if (speed_y >= kLongFall) {
+        if (!long_fall_shown_) {
+            long_fall_shown_ = true;
+            fall_shown_ = false;
+            world.play(*this, looks().falls_far);
+        }
+    } else if (speed_y >= kFall) {
+        if (!fall_shown_) {
+            long_fall_shown_ = false;
+            fall_shown_ = true;
+            world.play(*this, looks().falls);
+        }
+    } else if (speed_y < -kFall) {
+        fall_shown_ = false;
+        world.play(*this, looks().rises);
+    } else {
+        world.play(*this, looks().floats);
+    }
+    if (!played(world)) {
+        return drift(world);
+    }
+    if ((world.pressed & key::kS) != 0 && act(world)) {
+        return;
+    }
+    falling_after_acting(world);
+}
+
+void Viking::falling_after_acting(World& world) {
+    if ((world.pressed & key::kE) != 0 && use_item(world)) {
+        return;
+    }
+    falling_after_item(world);
+}
+
+void Viking::falling_after_item(World& world) {
+    if ((world.held & key::kUp) != 0 && find_beside(world, *this, Side::kAbove, types().ladder) &&
+        find_at(world, *this, x, box.top, types().ladder)) {
+        return onto_ladder(world, true);
+    }
+    if ((world.held & kLeftOrRight) == 0) {
+        return drift(world);
+    }
+    const bool left = (world.held & key::kLeft) != 0;
+    if (facing_left() != left) {
+        speed_x = static_cast<std::int16_t>(-speed_x);
+    }
+    face(world, left);
+    const int top_speed = who_ == kind::kErik ? kErikTopSpeed : kTopSpeed;
+    if (speed_x < top_speed) {
+        speed_x += (speed_x <= 0 ? px(1.5) : (speed_x < px(1) ? px(1) : px(0.75)));
+    }
+    fall_on(world);
+}
+
+void Viking::drift(World& world) {
+    if (speed_x != 0) {
+        if (static_cast<std::uint16_t>(speed_x) <= px(0.5)) {
+            speed_x = 0;
+        } else {
+            speed_x += (speed_x > 0 ? -128 : 128);
+        }
+    }
+    fall_on(world);
+}
+
+void Viking::fall_on(World& world) {
+    if (who_ == kind::kOlaf) {
+        if (!shield_up_) {
+            if ((speed_y >= kLongFall) != long_fall_shown_) {
+                long_fall_shown_ = !long_fall_shown_;
+                world.play(*this, long_fall_shown_ ? looks().falls_far : looks().floats);
+            }
+        } else if ((speed_x >= kGlidingFast) != glides_fast_) {
+            glides_fast_ = !glides_fast_;
+            world.play(*this, glides_fast_ ? anim::kOlafGlidesFast : anim::kOlafGlides);
+        }
+    }
+    // Which way he is going decides the tests: for Erik and Olaf after this tick's gravity, for Baleog (in every
+    // world's listing) before it.
+    const bool going_down = speed_y > 0;
+    world.animate(*this);
+    if (who_ == kind::kBaleog ? going_down : speed_y > 0) {
+        if (who_ == kind::kOlaf) {
+            if (shield_up_ && speed_y >= kGliding) {
+                speed_y = kGliding;
+            }
+            return wait(At::kFalling, {Test::kWall, Test::kLandsAnywhere, Test::kDeadly});
+        }
+        wait(At::kFalling, {Test::kWall, Test::kLands, Test::kDeadly});
+    } else {
+        wait(At::kRising, {Test::kWall, Test::kFloorOrCeiling, Test::kDeadly});
+    }
+}
+
+void Viking::landed(World& world) {
+    if (find_beside(world, *this, Side::kBelow, types().spring)) {
+        return falling(world);
+    }
+    if (speed_y >= kLongFall) {
+        return land_hard(world);
+    }
+    if (message != 0 && told(world)) {
+        return;
+    }
+    doing_ = Doing::kOther;
+    speed_y = 0;
+    set_falling(false);
+    if (who_ != kind::kOlaf) {
+        world.play(*this, looks().back_on_his_feet);
+    }
+    stand(world);
+}
+
+void Viking::land_hard(World& world) {
+    speed_x = speed_y = 0;
+    set_falling(false);
+    world.shake_y = {.amount = 1, .offset = 0, .ticks = 8};
+    const auto my_bit = static_cast<std::uint16_t>(by_who(1, 2, 4));
+    if (world.vikings_falling_in != 0) {
+        world.vikings_falling_in &= static_cast<std::uint16_t>(~my_bit);
+        if (world.database == database::kScenes) {  // the scenes' Vikings make their landing's sound here too
+            sound(world, effect::kLandedInScene);
+        }
+    } else {
+        message_value = 2;
+        lose_health(world);
+        returns_to_landing_ = true;
+        return after_landing_hard(world);
+    }
+    world.play(*this, looks().dizzy);
+    dizzy(world);
+}
+
+void Viking::after_landing_hard(World& world) {
+    if (health == 0) {
+        sound(world, effect::kBurnt);
+        speed_x = speed_y = 0;
+        set_falling(false);
+        die(world);
+        world.play(*this, looks().burns);
+        return dying_on_the_ground(world);
+    }
+    sound(world, effect::kLandedHard);
+    world.play(*this, looks().dizzy);
+    dizzy(world);
+}
+
+void Viking::dizzy(World& world) {
+    if (!on_ground(world)) {
+        set_falling(true);
+        return dizzy_in_the_air(world);
+    }
+    doing_ = Doing::kDizzy;
+    keep_on_ground();
+    world.animate(*this);
+    wait(At::kDizzy, {Test::kWall, Test::kDeadly});
+}
+
+void Viking::dizzy_in_the_air(World& world) {
+    world.animate(*this);
+    if (speed_y > 0) {
+        doing_ = Doing::kDizzyFalling;
+        wait(At::kDizzyInTheAir, {Test::kWall, Test::kLands, Test::kDeadly});
+    } else {
+        doing_ = Doing::kDizzyRising;
+        wait(At::kDizzyInTheAir, {Test::kWall, Test::kFloorOrCeiling, Test::kDeadly});
+    }
+}
+
+void Viking::dizzy_after_acting(World& world) {
+    if ((world.pressed & key::kE) != 0 && use_item(world)) {
+        return;
+    }
+    dizzy_after_item(world);
+}
+
+void Viking::dizzy_after_item(World& world) {
+    // A quirk of the original: in the air it jumps to what he is told instead of calling it, and what ends
+    // with a return there (something he takes no notice of) comes back through whatever he last called. After
+    // a hard landing with nothing since, that is the landing's loss of health: its sound and his stars start
+    // again, without the loss. Any other call is taken here as coming straight back.
+    if (message != 0) {
+        if (told_while_dizzy(world)) {
+            return;
+        }
+        if (doing_ != Doing::kDizzy && returns_to_landing_) {
+            return after_landing_hard(world);
+        }
+    }
+    if (!animation_waits()) {  // the stars are gone
+        message = 0;
+        if (is_falling()) {
+            doing_ = Doing::kDazedInTheAir;
+        }
+        return carry_on(world);
+    }
+    if (doing_ == Doing::kDizzy) {
+        return dizzy(world);
+    }
+    dizzy_in_the_air(world);
+}
+
+// --- Ladders ---
+
+void Viking::onto_ladder(World& world, bool up) {
+    doing_ = Doing::kClimbing;
+    shield_away_ = who_ == kind::kOlaf;
+    speed_x = speed_y = 0;
+    set_falling(false);
+    const std::uint8_t beside = type_at(world, x + kCellSize, up ? box.top - 1 : box.bottom + 1);
+    const bool ladder_to_the_right =
+        up ? (beside == tile::kLadder || beside == tile::kLadderTop || beside == tile::kLadder0D)
+           : beside == tile::kLadderTop;
+    const int middle = (static_cast<int>(static_cast<std::uint16_t>(x) & 0xfff0U)) + (ladder_to_the_right ? 16 : 0);
+    const int feet = static_cast<int>(static_cast<std::uint16_t>(box.bottom) | 7U);
+    push_x = static_cast<std::int16_t>(static_cast<std::uint16_t>((middle - x) * 256));
+    push_y = static_cast<std::int16_t>(static_cast<std::uint16_t>((feet - box.bottom) * 256));
+    world.play(*this, anim::kOntoLadder);
+    world.animate(*this);
+    after_step_ = up ? looks().onto_ladder_up : looks().onto_ladder_down;
+    wait(At::kOntoLadder);
+}
+
+void Viking::climb(World& world) {
+    world.animate(*this);
+    wait(At::kClimbing, {Test::kFloorOrCeiling, Test::kDeadly});
+}
+
+void Viking::climbing(World& world) {
+    if (animation_waits()) {
+        return climb(world);
+    }
+    const VikingLooks& look = looks();
+    const std::uint16_t frame = sprite.packed_frame;
+    if (who_ == kind::kErik && (world.pressed & key::kF) != 0) {
+        return jump(world);
+    }
+    if ((world.held & key::kUp) != 0) {
+        if (frame == look.off_frame) {
+            return stepped_off(world);
+        }
+        if (frame == look.nearly_off_frame) {
+            world.play(*this, look.steps_off_more);
+        } else if (type_at(world, x, box.bottom) == tile::kLadderTop) {  // his feet at the ladder's top
+            world.play(*this, look.steps_off);
+        } else {
+            world.play(*this, next_step(look.climbs_up_from, look.climbs_up));
+        }
+        return climb(world);
+    }
+    if ((world.held & key::kDown) != 0) {
+        if (type_at(world, x, box.bottom + 1) != tile::kLadderTop) {
+            if (find_at(world, *this, x, box.bottom + 1, types().landing)) {
+                return landed(world);
+            }
+            if (!find_at(world, *this, x, box.bottom, types().ladder) &&
+                !find_at(world, *this, x, box.top + 4, types().ladder)) {
+                return fall(world);
+            }
+        }
+        if (frame == look.off_frame) {
+            world.play(*this, look.climbs_back_down);
+        } else if (frame == look.nearly_off_frame) {
+            world.play(*this, look.climbs_back_down_nearly_off);
+        } else {
+            world.play(*this, next_step(look.climbs_down_from, look.climbs_down));
+        }
+        return climb(world);
+    }
+    if ((world.held & kLeftOrRight) != 0) {
+        if (frame == look.off_frame) {
+            return stepped_off(world);
+        }
+        if (frame == look.nearly_off_frame) {
+            world.play(*this, look.steps_off_more);
+            return climb(world);
+        }
+        return fall(world);
+    }
+    climb(world);
+}
+
+Animation Viking::next_step(const std::array<Animation, 3>& from, Animation otherwise) const {
+    for (std::size_t i = 0; i < from.size(); ++i) {
+        if (sprite.packed_frame == looks().rung_frames.at(i)) {
+            return from.at(i);
+        }
+    }
+    return otherwise;
+}
+
+void Viking::stepped_off(World& world) {
+    doing_ = Doing::kOther;
+    world.play(*this, shield_up_ ? anim::kOlafSteppedOffShieldUp : looks().stepped_off);
+    stand(world);
+}
+
+namespace {
+
+// Olaf's shield: an entity of its own that goes where he goes. In front of him it stops what comes at him; held
+// up, others can stand on it. While he can't hold it (climbing, dead) it is nothing to anyone.
+class Shield : public Entity {
+  public:
+    void update(World& world) override {
+        if (first_turn()) {
+            stay_active();
+            return hold(false);
+        }
+        target = creator;
+        const auto* olaf = creator == kNobody ? nullptr : dynamic_cast<const Viking*>(world.at(creator));
+        const bool olaf_is_gone = olaf == nullptr || olaf->health == 0;
+        if (olaf_is_gone && !world.title.cheat) {
+            world.remove(slot);
+            return;
+        }
+        if (olaf_is_gone && !watching_) {  // with the cheat on it stays, put away, to watch the keys
+            put_away();
+            watching_ = true;
+            return;
+        }
+        if (world.title.cheat && level_keys(world)) {
+            return;
+        }
+        if (olaf_is_gone) {
+            return;
+        }
+        watching_ = false;
+        moved_by = creator;
+        push_x = push_y = 0;
+        if (olaf->shield_away()) {
+            put_away();
+        } else if (away_ || up_ != olaf->shield_up()) {
+            hold(olaf->shield_up());
+        }
+        if (message != 0) {  // what hits the shield, Olaf is told
+            Entity* bearer = world.at(creator);
+            tell(*bearer, message, message_value);
+            message = 0;
+            message_value = 0;
+        }
+    }
+
+  private:
+    void put_away() {
+        away_ = true;
+        acts_as = tile::kBody;
+        hit_class = 0;
+        hit_mask = 0;
+    }
+    // The cheat's other level keys (the title's password turns them on, like F5 and F6): F, D, E and S held
+    // together, and nothing else, end the level for the next one; with Left as well, for the one before. Not
+    // from the last level on, nor back from the first. A Viking without health gets his full health first.
+    // True if the level ends.
+    static bool level_keys(World& world) {
+        constexpr int kLastLevel = 36;
+        if (world.held == key::kAction) {
+            if (world.scene == kLastLevel) {
+                return false;
+            }
+        } else if (world.held == (key::kAction | key::kLeft)) {
+            if (world.scene == 0) {
+                return false;
+            }
+            world.next_scene = world.scene - 1;
+        } else {
+            return false;
+        }
+        for (int viking = 0; viking < kVikingSlots; ++viking) {
+            if (Entity* entity = world.at(viking); entity != nullptr && entity->health == 0) {
+                entity->health = kFullHealth;
+            }
+        }
+        world.level_done = true;
+        return true;
+    }
+    void hold(bool up) {
+        away_ = false;
+        up_ = up;
+        if (up) {  // a platform over his head
+            acts_as = tile::kShieldOverhead;
+            hit_class = hit_class::kShieldOverhead;
+            hit_mask = hit::kShieldOverhead;
+            box = box_of(x - 13, y - 18, x + 13, y - 13);
+        } else {  // a wall before him
+            acts_as = tile::kShield;
+            hit_class = hit_class::kViking;
+            hit_mask = hit::kShield;
+            box = box_of(facing_left() ? x - 18 : x + 2, y - 16, facing_left() ? x - 2 : x + 18, y + 16);
+        }
+    }
+
+    bool away_ = false;
+    bool up_ = false;
+    bool watching_ = false;  // Olaf is gone and the cheat is on: it only watches the keys
+};
+
+}  // namespace
+
+std::unique_ptr<Entity> make_shield() {
+    return make_entity<Shield>();
+}
+
+bool olaf_shield_away(const World& world) {
+    const auto* olaf = dynamic_cast<const Viking*>(world.at(2));
+    return olaf != nullptr && olaf->shield_away();
+}
+
+bool olaf_holds_shield_up(const World& world) {
+    const auto* olaf = dynamic_cast<const Viking*>(world.at(2));
+    return olaf != nullptr && olaf->shield_up();
+}
+
+std::unique_ptr<Entity> make_viking(std::uint16_t kind) {
+    return make_entity<Viking>(kind);
+}
+
+}  // namespace lvr

@@ -1,0 +1,22 @@
+# The pause menu and the quit box in level 2, written by hand: the password's box answered; Esc, the choice moved
+# to yes and back, fire on "no"; Esc again and Esc for "no"; Esc and the N key; Alt+X and "no" by fire; Esc and
+# left, fire: giving up, into the game-over scene; fire there: the level again.
+slot 1
+steps 560
+key 6-6 0x8000
+key 30-30 0x1000
+key 52-52 0x200
+key 60-60 0x100
+key 75-75 0x8000
+key 90-90 0x1000
+key 100-100 0x1000
+key 120-120 0x1000
+held 131-131 0x31
+key 140-141 0x100
+held 150-152 0x38
+held 152-152 0x2d
+key 175-175 0x8000
+key 200-200 0x1000
+key 220-220 0x200
+key 240-240 0x8000
+key 300-300 0x8000

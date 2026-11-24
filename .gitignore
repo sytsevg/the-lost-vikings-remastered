@@ -1,0 +1,16 @@
+# Original game data and imported output: never commit Blizzard assets
+/gamedata/
+
+# Build output
+/build/
+/out/
+
+# Local tooling state
+/.claude/
+/.claude.json
+.cache/
+compile_commands.json
+
+# Python
+__pycache__/
+*.profraw
