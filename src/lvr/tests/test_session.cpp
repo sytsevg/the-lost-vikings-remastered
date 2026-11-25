@@ -161,7 +161,13 @@ TEST_CASE("real data: Remaster rules' zoom widens the view over a moment and clo
     CHECK(session.minimap() == nullptr);
     session.toggle_minimap();
     CHECK(session.zoom(5));  // as far out as it goes: twice the original's view
-    const Screen::Part opening = part_after(session, 2);
+    // The level's password box waits for a key: a step is one picture for its three refreshes, but the view goes on
+    // changing over all three.
+    const std::vector<Screen> waiting = session.step(0);
+    REQUIRE(waiting.size() == 3);
+    CHECK(waiting[0].part.width < waiting[1].part.width);
+    CHECK(waiting[1].part.width < waiting[2].part.width);
+    const Screen::Part opening = part_after(session, 1);
     CHECK(opening.width > original.width);
     CHECK(opening.width < 640);
     CHECK(part_after(session, 30) == Screen::Part{.x = 0, .y = 0, .width = 640, .height = 480});

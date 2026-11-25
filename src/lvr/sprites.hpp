@@ -114,6 +114,14 @@ class Pieces {
 // A pace, in 16ths of the original's: how fast an animation goes on (Sprite::pace), or a Viking walks (World::pace).
 // Remaster rules' only (a gamepad's stick pushed part way); the original's is always all of it.
 inline constexpr std::uint8_t kFullPace = 16;
+// Remaster rules: how far a gamepad's stick has the Vikings walk (`across`: left or right, and steer in the air) and
+// climb (`up_down`), in 16ths, 1 to kFullPace (all of it, as anything but a stick does).
+struct Pace {
+    std::uint8_t across = kFullPace;
+    std::uint8_t up_down = kFullPace;
+
+    bool operator==(const Pace&) const = default;
+};
 
 // An entity's pieces and the animation it is playing.
 struct Sprite {

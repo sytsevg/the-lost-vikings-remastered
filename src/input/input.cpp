@@ -4,6 +4,7 @@
 #include <array>
 #include <format>
 #include <initializer_list>
+#include <string>
 
 namespace lvr::input {
 namespace {
@@ -25,7 +26,7 @@ constexpr std::array<ActionInfo, kActionCount> kActionInfo{{
     {"previous-viking", "PREVIOUS VIKING", 0x0020},
     {"next-viking", "NEXT VIKING", 0x0010},
     {"inventory", "INVENTORY", 0x2000},
-    {"pause", "PAUSE", 0x1000},
+    {"pause", "GIVE UP LEVEL", 0x1000},  // the original's pause box: its question is whether to give up
     {"rewind", "REWIND", 0},
     {"zoom-out", "ZOOM OUT", 0},
     {"zoom-in", "ZOOM IN", 0},
@@ -311,27 +312,54 @@ bool bind_pad(Controls& controls, Action action, std::string_view input) {
 
 PadActions read_pad(const Controls& controls, const PadReading& reading, bool analog) {
     constexpr Actions kWalking = bit(Action::kLeft) | bit(Action::kRight);
+    constexpr Actions kClimbing = bit(Action::kUp) | bit(Action::kDown);
+    // How far the stick of axis input `name` ("leftx-", ...) is pushed along its other axis, either way.
+    const auto across = [&reading](std::string_view name) {
+        std::string other{name};
+        other.at(other.size() - 2) = other.at(other.size() - 2) == 'x' ? 'y' : 'x';
+        float most = 0;
+        for (const char sign : {'-', '+'}) {
+            other.back() = sign;
+            if (const auto index = pad_input_index(other)) {
+                most = std::max(most, reading.at(*index));
+            }
+        }
+        return most;
+    };
     PadActions read;
-    float stick = 0;  // the furthest a stick that walks is pushed, past the dead zone
+    float walk = 0;  // the furthest a stick that walks (or climbs) is pushed, past the dead zone
+    float climb = 0;
     bool walks_full = false;
+    bool climbs_full = false;
     for (std::size_t i = 0; i < kPadInputCount; ++i) {
         const float pushed = reading.at(i);
         const Actions actions = pushed > 0 ? pad_actions(controls, kPadInputs.at(i)) : 0;
         if (actions == 0) {
             continue;
         }
-        const bool axis = kPadInputs.at(i).ends_with('-') || kPadInputs.at(i).ends_with('+');
-        const bool walking = analog && axis && (actions & kWalking) != 0;
-        if (pushed > (walking ? kDeadZone : kHalfWay)) {
-            read.held |= actions;
-            if (walking) {
-                stick = std::max(stick, std::min((pushed - kDeadZone) / (kFullWalk - kDeadZone), 1.0F));
-            } else if ((actions & kWalking) != 0) {
-                walks_full = true;
-            }
+        const std::string_view name = kPadInputs.at(i);
+        const bool axis = name.ends_with('-') || name.ends_with('+');
+        // A stick's direction that walks or climbs is held from its dead zone, as far as it is pushed, when it is
+        // the way the stick is pushed most: up a ladder held a little to the side doesn't step off it, nor does
+        // walking a little up go up one.
+        const bool moving = (actions & (kWalking | kClimbing)) != 0;
+        const bool analog_axis = analog && axis && moving && pushed >= across(name);
+        if (pushed <= (analog_axis ? kDeadZone : kHalfWay)) {
+            continue;
+        }
+        read.held |= actions;
+        const float how_far = std::min((pushed - kDeadZone) / (kFullWalk - kDeadZone), 1.0F);
+        if ((actions & kWalking) != 0) {
+            walk = analog_axis ? std::max(walk, how_far) : walk;
+            walks_full = walks_full || !analog_axis;
+        }
+        if ((actions & kClimbing) != 0) {
+            climb = analog_axis ? std::max(climb, how_far) : climb;
+            climbs_full = climbs_full || !analog_axis;
         }
     }
-    read.walk = (walks_full || stick <= 0) ? 1.0F : stick;
+    read.walk = (walks_full || walk <= 0) ? 1.0F : walk;
+    read.climb = (climbs_full || climb <= 0) ? 1.0F : climb;
     return read;
 }
 

@@ -168,22 +168,61 @@ TEST_CASE("vikings: under Remaster rules a stick pushed part way walks him slowe
         room.world.rules = rules;
         Entity* erik = room.vikings();
         room.ticks(2);
-        room.world.pace = kFullPace / 2;  // (Vanilla rules don't have it)
+        room.world.pace.across = kFullPace / 2;  // (Vanilla rules don't have it)
         room.ticks(20, kRight);
         const bool paced = rules == Rules::kRemaster;
         CHECK(erik->speed_x == (paced ? px(4) : px(8)));
         CHECK(erik->sprite.pace == (paced ? 12 : kFullPace));  // his legs at the root of it: 16 x 0.71, rounded up
-        // Pushed all the way, he speeds up as from a walk.
-        room.world.pace = kFullPace;
+        // Pushed all the way while walking at that pace: at full speed at once.
+        room.world.pace.across = kFullPace;
         room.tick(kRight);
-        CHECK(erik->speed_x == (paced ? px(4.75) : px(8)));
+        CHECK(erik->speed_x == px(8));
         CHECK(erik->sprite.pace == kFullPace);
         // Pushed a little, from standing: never faster than that.
         room.ticks(6);
-        room.world.pace = 1;
+        room.world.pace.across = 1;
         room.tick(kRight);
         CHECK(erik->speed_x == (paced ? px(0.5) : px(0.75)));
         CHECK(erik->sprite.pace == (paced ? 4 : kFullPace));  // a sixteenth of his speed, a quarter of his steps
+    }
+}
+
+TEST_CASE("vikings: under Remaster rules a stick pushed part way steers him slower in the air, and climbs slower") {
+    for (const Rules rules : {Rules::kVanilla, Rules::kRemaster}) {
+        const bool paced = rules == Rules::kRemaster;
+        {
+            // Falling from high up, steered right with the stick a quarter of the way: no faster than he'd walk so.
+            Room room;
+            room.world.rules = rules;
+            room.world.camera.y = 0;
+            Entity* erik = room.world.create({.kind = kind::kErik, .x = 100, .y = 40});
+            room.world.create({.kind = kind::kBaleog, .x = 400, .y = Room::kFloor - 16});
+            room.world.create({.kind = kind::kOlaf, .x = 500, .y = Room::kFloor - 16});
+            room.ticks(2);
+            room.world.pace.across = kFullPace / 4;
+            room.ticks(6, kRight);
+            REQUIRE(erik->y < Room::kFloor - 40);  // still in the air
+            CHECK(erik->speed_x == (paced ? px(2) : px(5.25)));
+        }
+        {
+            // Up a ladder with the stick half way up: each step of the climb at half its pace.
+            Room room;
+            room.world.rules = rules;
+            for (int row = 12; row < 18; ++row) {
+                room.cell(10, row).tile_type = room.cell(11, row).tile_type = 0x03;
+            }
+            room.cell(10, 11).tile_type = room.cell(11, 11).tile_type = 0x04;
+            Entity* erik = room.vikings(11 * 16 - 3);
+            room.ticks(2);
+            room.world.pace.up_down = kFullPace / 2;
+            room.ticks(6, kUp);
+            CHECK(erik->sprite.pace == (paced ? kFullPace / 2 : kFullPace));
+            room.world.pace.up_down = kFullPace / 4;  // the stick moved: at once, not when the step is over
+            room.tick(kUp);
+            CHECK(erik->sprite.pace == (paced ? kFullPace / 4 : kFullPace));
+            room.tick();  // let go: the step he is in ends at full pace
+            CHECK(erik->sprite.pace == kFullPace);
+        }
     }
 }
 

@@ -594,7 +594,7 @@ std::vector<Screen> Session::held() {
 // A step that shows fewer pictures than refreshes starts with the last picture shown before it; one that shows
 // more keeps its last ones (what the pictures that aren't shown asked of the sound is heard with the first that
 // is). The same rule as the pixel-match harness's player (src/replay/player.cpp).
-std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys, std::uint8_t pace) {
+std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys, Pace pace) {
     struct Frame {
         Screen screen;
         std::vector<SoundCue> cues;
@@ -608,7 +608,8 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys, s
     play_.scene_loaded = false;
     // The quicksave, with the cheat on only: kept in a level, brought back from anywhere.
     const bool remaster = play_.world.rules == Rules::kRemaster;
-    pace = remaster ? std::clamp(pace, std::uint8_t{1}, kFullPace) : kFullPace;
+    const auto within = [](std::uint8_t part) { return std::clamp(part, std::uint8_t{1}, kFullPace); };
+    pace = remaster ? Pace{.across = within(pace.across), .up_down = within(pace.up_down)} : Pace{};
     if (std::exchange(save_wanted_, false) && remaster && play_.world.title.cheat && level_played()) {
         quick_ = play_.snapshot();
         (void)write_quicksave();  // (a profile that can't be written is said when the game is closed)
@@ -657,6 +658,12 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys, s
     moving_ = true;
     const int refreshes = play_.step(keyboard, [&] { frames.push_back({.screen = picture(), .cues = take_cues()}); });
     moving_ = false;
+    // A step that shows fewer pictures than its refreshes (a wait for a key: a text box, a password) shows the last
+    // one again for the rest. While the zoom changes the view that held its change up: one stage a step, each shown
+    // three times (slow and not smooth, the user). Then the rest are pictures too, the view going on.
+    while (std::cmp_less(frames.size(), refreshes) && !play_.scene_loaded && (grows_from_ || shrinking_)) {
+        frames.push_back({.screen = picture(), .cues = {}});
+    }
     if (play_.scenes_started != rewind_scene_) {
         effects_.clear();
         // A scene started (a level again too): what was kept is of the one before, and the new one has all of its

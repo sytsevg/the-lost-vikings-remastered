@@ -239,6 +239,9 @@ class Viking : public Entity {
     // The step sideways to the ladder's middle: its two cells meet there.
     void onto_ladder(World& world, bool up);
     void climb(World& world);
+    void pace_climb(World& world);
+    // His top speed across as a gamepad's stick is pushed (Remaster rules), walking or steered in the air.
+    static int paced_speed(const World& world, int top_speed);
     // A climbing step has ended: the next one, by the keys.
     void climbing(World& world);
     Animation next_step(const std::array<Animation, 3>& from, Animation otherwise) const;
@@ -385,6 +388,10 @@ class Viking : public Entity {
         std::uint16_t crane = 0;          // at a crane's controls: which crane
         bool shield_away = false;         // he can't hold it now: climbing, pushing, dead
         bool glides_fast = false;         // which animation of gliding is playing
+        // Remaster rules' stick (World::pace): the pace he last walked at, and which way the step of the climb
+        // being played goes (1 up, -1 down, 0 none).
+        std::uint8_t walked_at = kFullPace;
+        std::int8_t climbs = 0;
     } s;
     LVR_SAVES(Entity)
 };

@@ -352,9 +352,14 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   the Viking from a little past its middle, as fast as it is pushed: his top speed and his walk's animation in
   16ths (`World::pace`, part of the step's input like the keys), his walk's animation at the square root of
   that (`Sprite::pace`: a quarter of the speed, half the steps; the user: at the same pace he slid ahead of his
-  legs). A key, a button or the
-  d-pad walks at full speed, as before. Erik pushed too little to reach a run can't charge, and jumps lower. Only
-  walking so far: not climbing, nor steering in the air.
+  legs). Pushed further while he walks at its speed, he is at the new speed at once (the user: it didn't snap
+  in); from standing he speeds up as the original's run does (Erik's jump depends on it). The same stick steers
+  him in the air no faster than he would walk so, and up or down it climbs a ladder as fast as it is pushed (a
+  climb's step is its animation, so his hands and feet keep up), the pace taken every tick; a step the way the
+  stick no longer goes ends at full pace (the user: else a slow step was sat out before the next). A stick's
+  direction counts from the dead zone only where it is the way the stick is pushed most, else from half way as
+  without: up a ladder held a little to the side doesn't step off it, walking a little up doesn't climb. A key, a button or the
+  d-pad walks at full speed, as before. Erik pushed too little to reach a run can't charge, and jumps lower.
 - **The quicksave is a file in the profile too** (`quicksave.bin`, ADR-0020): written when F7 keeps the play,
   read when the game starts. It begins with the state's version (ADR-0020) and ends with a sum over the world's
   bytes: a file of another version, or a damaged one, is said and left alone.

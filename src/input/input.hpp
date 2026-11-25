@@ -109,13 +109,16 @@ bool bind_pad(Controls& controls, Action action, std::string_view input);
 // A gamepad as it is read: how far each of pad_inputs() is pushed, 0 to 1 (a button 0 or 1).
 using PadReading = std::array<float, kPadInputCount>;
 struct PadActions {
-    Actions held =
-        0;  // past half way: a stick's direction or a trigger (with `analog`, for walking: past its dead zone)
-    // How fast the Vikings walk, with `analog`: how far a stick bound to left or right is pushed past the dead
-    // zone, 0 to 1. 1 for anything else that walks (a button, the d-pad), when nothing does, and without `analog`.
+    // Past half way: a stick's direction or a trigger (with `analog`, one that walks or climbs: past its dead zone,
+    // where it is the way the stick is pushed most).
+    Actions held = 0;
+    // How fast the Vikings walk (and steer in the air) and climb, with `analog`: how far a stick bound to left or
+    // right (up or down) is pushed past the dead zone, 0 to 1. 1 for anything else that does it (a button, the
+    // d-pad), when nothing does, and without `analog`.
     float walk = 1;
+    float climb = 1;
 };
-// `analog`: Remaster rules' walking by how far a stick is pushed.
+// `analog`: Remaster rules' walking and climbing by how far a stick is pushed.
 PadActions read_pad(const Controls& controls, const PadReading& reading, bool analog);
 
 // The character the original's keyboard handler notes for a pressed key (its table at ds:8E68, a word per

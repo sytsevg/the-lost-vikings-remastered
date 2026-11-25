@@ -87,7 +87,10 @@ only under Remaster rules; Vanilla rules must stay exactly what they are, and th
   (`input::Controls`: keys and gamepad inputs by action, `input.hpp`). `main.cpp` reads each gamepad as a
   `PadReading` (every button, stick direction and trigger, 0 to 1) and `input::read_pad` turns it into actions,
   for both rules: Vanilla's are `original_controls()`, the joystick's mapping as it always was. A stick that walks
-  gives the step a pace (`Session::step`'s, kept for the rewind; `World::pace`, `Sprite::pace`: kStateVersion 4).
+  gives the step a pace across and up and down (`Pace`: `Session::step`'s, kept for the rewind; `World::pace`,
+  `Sprite::pace`: kStateVersion 5): walking, steering in the air and climbing (`Viking::Saved::walked_at` and
+  `climbs` keep what that needs). The pad's pause is called GIVE UP LEVEL in the menu, as the original's pause
+  box asks that.
   Stills: `gamedata/previews/menu/` (`vikings-remaster --rules remaster --dump STEPS FILE --menu KEYS`).
 
 ## M8: the visuals
@@ -110,8 +113,12 @@ were dropped by the user, 2026-11-25). The screen's look is built ("Screen look"
   try: the menu's look and its keys (keyboard and a pad), the volume sliders by ear (the steps are percent of the
   game's volume; the Classic chip's are steeper than the General MIDI ones), rebinding, and walking with a
   stick pushed part way (at the slowest a Viking moves a whole pixel every few ticks: if that looks jerky,
-  smooth movement could use the position's leftover fraction). Open questions for the user: whether the
-  stick's pace should go on to climbing and steering in the air.
+  smooth movement could use the position's leftover fraction). The stick's pace goes on to climbing and steering
+  in the air (the user, 2026-11-25).
+- **Zooming while a text box waits for a key (fixed, 2026-11-25):** such a step is one picture for its three
+  refreshes, and the rest showed it again, so the zoom's change of view went a stage a step, each shown three
+  times (slow, and not smooth: the user). While the view changes `Session::step` now makes the rest as pictures
+  too.
 - **After that the user picks the next M8 item.** Left on the roadmap's list: sound placed by position. More
   effects can be added to the table any time (water and lava cross-fading between their colour steps was talked
   about, not tried).
@@ -275,8 +282,6 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
 
 ## Open
 
-- **Zooming while a text box is open is slow, not smooth** (the user, 2026-11-25, on the host; not looked into
-  yet). The world holds while the box waits for a key, and the zoom's change of view goes on meanwhile.
 - **Frames now and then a refresh or more late** in the window (the user's AMD Radeon 890M, RADV), mostly noticed
   while moving. `--slow-frames` shows the time is spent waiting for the window's next picture (the card or the
   compositor holding frames), not in the game's step, its drawing, or its uploads; it was there before smooth

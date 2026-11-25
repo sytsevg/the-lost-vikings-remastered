@@ -189,13 +189,29 @@ TEST_CASE("input: a gamepad's inputs, labels and readings") {
     CHECK(read_pad(controls, reading, false).walk == 1);  // (without: at full speed)
     reading.at(at("leftx-")) = 0.95F;
     CHECK(read_pad(controls, reading, true).walk == 1);
+    // A stick's direction counts from the dead zone where it is the way the stick is pushed most; else from half
+    // way, as without.
     reading.at(at("leftx-")) = 0.3F;
-    reading.at(at("lefty-")) = 0.3F;  // up is held from half way only
+    reading.at(at("lefty-")) = 0.25F;  // a little up while walking: not up
     read = read_pad(controls, reading, true);
     CHECK(read.held == bit(Action::kLeft));
     CHECK(read.walk < 0.2F);
+    CHECK(read.climb == 1);
+    reading.at(at("lefty-")) = 0.55F;  // up a ladder, a little to the side: not left
+    read = read_pad(controls, reading, true);
+    CHECK(read.held == bit(Action::kUp));
+    CHECK(read.climb > 0.49F);
+    CHECK(read.climb < 0.51F);
+    CHECK(read.walk == 1);
+    reading.at(at("leftx-")) = 0.55F;  // as far both ways: both
+    CHECK(read_pad(controls, reading, true).held == (bit(Action::kLeft) | bit(Action::kUp)));
+    reading.at(at("lefty-")) = 0.3F;
     reading.at(at("dpleft")) = 1;
     CHECK(read_pad(controls, reading, true).walk == 1);
+    reading = {};
+    reading.at(at("dpup")) = 1;  // the d-pad climbs at full speed
+    CHECK(read_pad(controls, reading, true).climb == 1);
+    CHECK(read_pad(controls, reading, true).held == bit(Action::kUp));
 }
 
 TEST_CASE("input: the character a key types for the scripts") {

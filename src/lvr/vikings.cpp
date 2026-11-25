@@ -413,8 +413,7 @@ void Viking::walk(World& world, bool left) {
     // charge), and his walk's animation slower too, but less: at the square root of his pace (a quarter of his speed,
     // half of his steps), so his legs keep up with the floor (the user: at the same pace he slid ahead of them).
     constexpr int kFull = kFullPace;
-    const int pace = std::clamp(int{world.pace}, 1, kFull);
-    const bool paced = world.rules == Rules::kRemaster && pace < kFull;
+    const int pace = std::clamp(int{world.pace.across}, 1, kFull);
     if (world.rules == Rules::kRemaster) {
         int steps = 1;  // in 16ths too: the smallest whose square is at least the pace's 16ths of 16
         while (steps * steps < pace * kFull) {
@@ -422,8 +421,18 @@ void Viking::walk(World& world, bool left) {
         }
         sprite.pace = static_cast<std::uint8_t>(steps);
     }
-    if (paced) {
-        top_speed = (top_speed * pace) / kFull;
+    const bool paced = world.rules == Rules::kRemaster && pace < kFull;
+    const int full_top = top_speed;
+    top_speed = paced_speed(world, top_speed);
+    if (world.rules == Rules::kRemaster) {
+        // Pushed further while walking as fast as the pace he had: at the new one's speed at once (the user: it
+        // didn't snap in). From standing, or slower, he still speeds up as the original's run does.
+        const int walked_at = std::max(int{s.walked_at}, 1);
+        const int had = (full_top * walked_at) / kFull;
+        if (pace > walked_at && speed_x >= had && had > 0) {
+            speed_x = static_cast<std::int16_t>(top_speed);
+        }
+        s.walked_at = static_cast<std::uint8_t>(pace);
     }
     if (speed_x >= top_speed) {
         speed_x = static_cast<std::int16_t>(top_speed);
@@ -572,9 +581,14 @@ void Viking::falling_after_item(World& world) {
         speed_x = static_cast<std::int16_t>(-speed_x);
     }
     face(world, left);
-    const int top_speed = s.who == kind::kErik ? kErikTopSpeed : kTopSpeed;
+    // Remaster rules: steered with a gamepad's stick pushed part way, no faster than he would walk so (what he
+    // already had he keeps).
+    const int top_speed = paced_speed(world, s.who == kind::kErik ? kErikTopSpeed : kTopSpeed);
     if (speed_x < top_speed) {
         speed_x += (speed_x <= 0 ? px(1.5) : (speed_x < px(1) ? px(1) : px(0.75)));
+        if (world.rules == Rules::kRemaster && world.pace.across < kFullPace) {
+            speed_x = static_cast<std::int16_t>(std::min(int{speed_x}, top_speed));
+        }
     }
     fall_on(world);
 }
@@ -731,6 +745,7 @@ void Viking::dizzy_after_item(World& world) {
 
 void Viking::onto_ladder(World& world, bool up) {
     s.doing = Doing::kClimbing;
+    s.climbs = 0;  // (no step of the climb yet)
     s.shield_away = s.who == kind::kOlaf;
     speed_x = speed_y = 0;
     set_falling(false);
@@ -748,12 +763,31 @@ void Viking::onto_ladder(World& world, bool up) {
     wait(At::kOntoLadder);
 }
 
+// Remaster rules: a climb's step moves him as its animation goes on, so it goes on as fast as a gamepad's stick
+// is pushed up or down (and his hands and feet keep up), from tick to tick as the stick moves. A step the way the
+// stick isn't pushed (now the other way, or let go) ends at full pace (the user: a slow step was sat out first).
+void Viking::pace_climb(World& world) {
+    if (world.rules != Rules::kRemaster) {
+        return;
+    }
+    const int way = (world.held & key::kUp) != 0 ? 1 : (world.held & key::kDown) != 0 ? -1 : 0;
+    sprite.pace = way != 0 && way == s.climbs ? std::clamp(world.pace.up_down, std::uint8_t{1}, kFullPace) : kFullPace;
+}
+
+int Viking::paced_speed(const World& world, int top_speed) {
+    if (world.rules != Rules::kRemaster || world.pace.across >= kFullPace) {
+        return top_speed;
+    }
+    return (top_speed * std::max(int{world.pace.across}, 1)) / kFullPace;
+}
+
 void Viking::climb(World& world) {
     world.animate(*this);
     wait(At::kClimbing, {Test::kFloorOrCeiling, Test::kDeadly});
 }
 
 void Viking::climbing(World& world) {
+    pace_climb(world);
     if (animation_waits()) {
         return climb(world);
     }
@@ -773,6 +807,8 @@ void Viking::climbing(World& world) {
         } else {
             world.play(*this, next_step(look.climbs_up_from, look.climbs_up));
         }
+        s.climbs = 1;
+        pace_climb(world);
         return climb(world);
     }
     if ((world.held & key::kDown) != 0) {
@@ -792,6 +828,8 @@ void Viking::climbing(World& world) {
         } else {
             world.play(*this, next_step(look.climbs_down_from, look.climbs_down));
         }
+        s.climbs = -1;
+        pace_climb(world);
         return climb(world);
     }
     if ((world.held & kLeftOrRight) != 0) {

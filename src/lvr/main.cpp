@@ -698,15 +698,18 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
                     pad = 0xFFFF;
                 }
                 const bool alt = held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT];
-                // Remaster rules: back in time while it is held; walking as fast as a stick is pushed (a key: all
-                // the way).
+                // Remaster rules: back in time while it is held; walking and climbing as fast as a stick is pushed
+                // (a key: all the way).
                 session.rewind(remaster &&
                                (keys_held(controls, Action::kRewind) || (from_pads.held & bit(Action::kRewind)) != 0));
-                const std::uint16_t walking = input::game_bits(bit(Action::kLeft) | bit(Action::kRight));
-                const auto pace = static_cast<std::uint8_t>(
-                    (keyboard & walking) != 0
-                        ? kFullPace
-                        : std::clamp(static_cast<int>(std::ceil(from_pads.walk * kFullPace)), 1, int{kFullPace}));
+                const auto part = [&](Action one, Action other, float stick) {  // a key: all of it
+                    return static_cast<std::uint8_t>(
+                        (keyboard & input::game_bits(bit(one) | bit(other))) != 0
+                            ? kFullPace
+                            : std::clamp(static_cast<int>(std::ceil(stick * kFullPace)), 1, int{kFullPace}));
+                };
+                const Pace pace{.across = part(Action::kLeft, Action::kRight, from_pads.walk),
+                                .up_down = part(Action::kUp, Action::kDown, from_pads.climb)};
                 std::uint16_t given = keyboard | pad;
                 if (std::exchange(give_up, false)) {
                     given |= input::game_bits(bit(Action::kPause));  // the menu's: the original's pause box

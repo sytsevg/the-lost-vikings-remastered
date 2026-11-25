@@ -203,8 +203,8 @@ struct WorldState {
     bool has_vikings = true;          // a level, not a cutscene
     std::uint16_t held = 0;           // this tick's input: the keys held, and of them the ones newly pressed
     std::uint16_t pressed = 0;        // (docs/original/input.md)
-    // Remaster rules: how fast the Vikings walk this tick (a gamepad's stick pushed part way), 1 to kFullPace.
-    std::uint8_t pace = kFullPace;
+    // Remaster rules: how fast the Vikings walk and climb this tick (a gamepad's stick pushed part way).
+    Pace pace;
     int current_viking = 0;      // the slot of the Viking being played; kNobody when all are dead
     int shown_viking = kNobody;  // the one that last blinked as it was chosen
     int blink = 0;               // ticks of that blinking left

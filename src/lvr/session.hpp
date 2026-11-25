@@ -57,8 +57,8 @@ class Session {
     // One step of input: the pictures of the refreshes it takes (three for a tick or a wait's pass, one in the
     // inventory, 145 more for a change of scene; none when a menu only opens). Their sound is added to `samples`;
     // live, what each picture asks of the sound is in `cues` instead, one entry a picture. `pace`: under Remaster
-    // rules, how fast the Vikings walk (World::pace: a gamepad's stick pushed part way), 1 to kFullPace.
-    std::vector<Screen> step(std::uint16_t keyboard, Play::MenuKeys keys = {}, std::uint8_t pace = kFullPace);
+    // rules, how fast the Vikings walk and climb (World::pace: a gamepad's stick pushed part way).
+    std::vector<Screen> step(std::uint16_t keyboard, Play::MenuKeys keys = {}, Pace pace = {});
     // Instead of a step, while the play is held (Remaster rules' menu is open): a tick's three pictures of the world
     // as it is, a little darker as under the original's menus. Nothing of the play moves and nothing is kept for the
     // rewind; only a change of view the zoom asks for goes on, as while the world holds for a key (what it brings into
@@ -274,7 +274,7 @@ class Session {
         Play::Snapshot before;
         std::uint16_t keyboard = 0;
         Play::MenuKeys keys;
-        std::uint8_t pace = kFullPace;
+        Pace pace;
     };
     // The play back at `step`'s start, and the pictures the step showed, made again; none if it was more than a
     // plain tick.

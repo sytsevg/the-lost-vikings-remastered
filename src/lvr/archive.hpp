@@ -27,7 +27,7 @@ namespace lvr {
 // tell each other before one sends the other a snapshot. Whoever reads another version reads nothing. Raise it
 // whenever a kind's `Saved`, `EntityState` or `WorldState` changes (a test in test_play.cpp says when the written
 // size has changed without it).
-inline constexpr std::uint32_t kStateVersion = 4;
+inline constexpr std::uint32_t kStateVersion = 5;
 
 class Writer;
 class Reader;
