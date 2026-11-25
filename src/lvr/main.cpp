@@ -168,64 +168,28 @@ bool save_shown(GpuRenderer& gpu, const Screen& screen, const Minimap* minimap, 
 
 // Without a window: `steps` steps with no key held, the last picture written as a PNG, the sound as a WAV. With
 // `gpu` (Remaster rules) the picture is the one it shows, and `zoom` steps out are asked for before step `zoom_at`.
-// Co-op online (ADR-0012): the names under the Vikings this machine's view shows, and whom the game waits for.
-CoopOverlay coop_overlay(const Session& session, const NetGame& net) {
+// Co-op online (ADR-0012): whom the game waits for, once it has waited a while. (The players' names are under
+// the portraits: Session::set_player_names.)
+CoopOverlay coop_overlay(const NetGame& net) {
     constexpr int kWaitedRefreshes = 18;  // a third of a second before the box says so
     CoopOverlay overlay;
-    const World& world = session.world();
-    if (world.has_vikings && world.has_hud) {
-        const Camera& camera = world.players.at(static_cast<std::size_t>(session.player())).camera;
-        const double scale = static_cast<double>(kScreenWidth) / static_cast<double>(std::max(camera.view_width, 1));
-        for (int viking = 0; viking < kVikingSlots; ++viking) {
-            const Entity* entity = world.at(viking);
-            if (entity == nullptr || entity->dead) {
-                continue;
-            }
-            CoopOverlay::Label label{.x = static_cast<int>((entity->x - camera.x) * scale),
-                                     .y = static_cast<int>((entity->box.bottom + 3 - camera.y) * scale),
-                                     .names = {}};
-            // His player's name first, then his viewers' in their line's order.
-            std::vector<std::pair<std::uint32_t, int>> watching;
-            for (int who = 0; who < world.player_count; ++who) {
-                const Player& player = world.players.at(static_cast<std::size_t>(who));
-                if (player.viking == viking) {
-                    watching.emplace_back(player.controls ? 0 : std::uint32_t{player.in_line} + 1, who);
-                }
-            }
-            std::ranges::sort(watching);
-            for (const auto& [place, who] : watching) {
-                if (std::cmp_less(who, net.names().size())) {
-                    label.names.push_back(net.names().at(static_cast<std::size_t>(who)));
-                }
-            }
-            if (!label.names.empty()) {
-                overlay.labels.push_back(std::move(label));
-            }
-        }
-    }
     if (const std::optional<std::string> whom = net.waiting_for(); whom && net.waited() >= kWaitedRefreshes) {
         overlay.waiting = "WAITING FOR " + *whom;
     }
     return overlay;
 }
 
-// Online: the menu's page of the players: each one's name, the Viking he plays or watches, his round trip.
+// Online: the menu's players: each one's name and his round trip.
 std::vector<Menu::PlayerLine> player_lines(const Session& session, const NetGame& net) {
-    constexpr std::array<std::string_view, kVikingSlots> kVikings{"ERIK", "BALEOG", "OLAF"};
     std::vector<Menu::PlayerLine> lines;
-    const World& world = session.world();
-    for (int who = 0; who < world.player_count && std::cmp_less(who, net.names().size()); ++who) {
-        const Player& player = world.players.at(static_cast<std::size_t>(who));
-        const bool viking = player.viking >= 0 && player.viking < kVikingSlots && world.has_vikings;
+    for (int who = 0; who < session.world().player_count && std::cmp_less(who, net.names().size()); ++who) {
         std::string latency = "-";
         if (who == session.player()) {
             latency = "YOU";
         } else if (const std::optional<int> ms = net.latency_ms(who)) {
             latency = std::format("{} MS", *ms);
         }
-        lines.push_back({.name = net.names().at(static_cast<std::size_t>(who)),
-                         .viking = viking ? std::string{kVikings.at(static_cast<std::size_t>(player.viking))} : "-",
-                         .latency = latency});
+        lines.push_back({.name = net.names().at(static_cast<std::size_t>(who)), .latency = latency});
     }
     return lines;
 }
@@ -300,7 +264,9 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
                 if (net->wants_input()) {
                     net->give(session.take_input(keys, {}, {}));
                 }
-                if (pictures = net->step(); !pictures) {
+                pictures = net->step();
+                (void)net->flush();
+                if (!pictures) {
                     SDL_Delay(1);
                 }
             }
@@ -325,7 +291,7 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
             SDL_Delay(2);
         }
         if (gpu != nullptr) {
-            gpu->set_overlay(coop_picture(coop_overlay(session, *net), session.font()));
+            gpu->set_overlay(coop_picture(coop_overlay(*net), session.font()));
         }
     }
     std::println("scene {} after {} refreshes", session.scene(), refreshes);
@@ -848,7 +814,9 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
                                                      menu ? Play::MenuKeys{} : menu_keys, pace));
                     }
                     const Screen again = frames.empty() ? Screen{} : frames.back();
-                    if (std::optional<std::vector<Screen>> pictures = net->step()) {
+                    std::optional<std::vector<Screen>> pictures = net->step();
+                    (void)net->flush();  // (this machine's input on its way at once; poll says what went wrong)
+                    if (pictures) {
                         frames = std::move(*pictures);
                         cues = std::move(session.cues);
                     } else {
@@ -909,12 +877,11 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
                                 static_cast<double>(refreshes);
             const auto between = static_cast<float>(std::clamp(into, 0.0, 1.0));
             if (net != nullptr && !menu) {  // the names, and whom the game waits for
-                CoopOverlay now = coop_overlay(session, *net);
+                CoopOverlay now = coop_overlay(*net);
                 if (now != coop_shown) {
                     coop_shown = std::move(now);
-                    gpu->set_overlay(coop_shown.labels.empty() && coop_shown.waiting.empty()
-                                         ? std::vector<std::uint8_t>{}
-                                         : coop_picture(coop_shown, session.font()));
+                    gpu->set_overlay(coop_shown.waiting.empty() ? std::vector<std::uint8_t>{}
+                                                                : coop_picture(coop_shown, session.font()));
                 }
             } else if (menu) {
                 coop_shown = {};  // (drawn again when the menu closes)
@@ -1226,6 +1193,7 @@ int main(int argc, char* argv[]) try {
     }
     if (net != nullptr) {
         net->begin(**session);
+        (*session)->set_player_names(joined.names);
     }
     if (cheat) {
         (*session)->cheat();

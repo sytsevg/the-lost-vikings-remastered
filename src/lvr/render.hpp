@@ -37,6 +37,11 @@ inline constexpr std::size_t kPickerIcon = 19;
 // The HUD's parts, from the HUD's top-left corner (docs/formats/level.md).
 inline constexpr std::array<std::array<int, 2>, 3> kPortraitAt{{{45, 19}, {117, 19}, {189, 19}}};
 inline constexpr std::array<std::array<int, 2>, 3> kHealthAt{{{47, 43}, {119, 43}, {191, 43}}};
+// The game's font begins at this character (VIKINGS.EXE's text): below it nothing is drawn.
+inline constexpr std::uint8_t kFirstGlyph = 0x10;
+// Where a portrait's middle is across, and the top of a name under it (in the HUD's bottom border).
+inline constexpr int kPortraitMiddle = 16;
+inline constexpr int kNameRow = 54;
 inline constexpr std::array<std::array<int, 2>, kSquares> kSquareAt{{{79, 18},
                                                                      {95, 18},
                                                                      {79, 34},
@@ -202,7 +207,10 @@ struct HudView {
         Portrait portrait = Portrait::kWaiting;
         int health = 0;  // which of the health pictures
     };
-    std::array<Viking, 3> vikings;                   // Erik, Baleog, Olaf
+    std::array<Viking, 3> vikings;  // Erik, Baleog, Olaf
+    // Co-op online (ADR-0012): under each portrait the name of the player who plays him (and "+N" for those
+    // watching), in the game's font, its letters only. Empty: none.
+    std::array<std::string, 3> names;
     std::array<std::optional<int>, kSquares> icons;  // the item's icon in each square; none: left as the panel has it
     std::array<bool, kSquares> picker{};             // the picker's corners around the square
 };

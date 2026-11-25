@@ -346,9 +346,13 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   `Session::run` shown and `Session::run_again` not, the cue ledger), `src/lvr/online.*` (`NetGame`: host, join,
   the lobby with its checks of protocol, state version, build and game files, the delay from the round trips,
   rollback a refresh at a time). `vikings-remaster --host PORT [--players N] [--delay N]` and `--join
-  ADDRESS[:PORT]`, `--name NAME`: the lobby in the terminal for now; the game in the window with every player's
-  name under the Viking he plays or watches, a box at the top while it waits for someone's input, the Escape menu
-  over the running game with a page of the players and their latency. A step that changes the scene waits for every
+  ADDRESS[:PORT]`, `--name NAME`: the lobby in the terminal for now; the game in the window with each player's
+  name under the portrait of the Viking he plays (`HudView::names`, letters only: `see_through` 2 in
+  `gpu_quad.frag`), a box at the top while it waits for someone's input, the Escape menu over the running game with
+  the players and their latency under its first page's lines; no rewind and no rewind bar online. This machine's
+  input is sent as soon as a step took it (`NetGame::flush`), not at the next refresh's poll. The latency shown is
+  the round trip as the two games answer each other, once a refresh each: on one machine 17 or 33 ms (two windows
+  on one monitor refresh together), not the network's. A step that changes the scene waits for every
   input (`net::Game::waits_for_inputs`). Tested: a real-data test of two sessions under rollback over a lossy
   simulated network against one with every input (`test_coop.cpp`), a host and a client in one process through the
   real transport (`test_online.cpp`), and two `--dump` processes over 127.0.0.1 (stills in

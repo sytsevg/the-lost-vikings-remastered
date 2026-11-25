@@ -88,14 +88,6 @@ Menu::Menu(Settings settings, Choices choices) : settings_{std::move(settings)},
     }
 }
 
-std::vector<std::string_view> Menu::first_lines() const {
-    std::vector<std::string_view> lines{kFirstLines.begin(), kFirstLines.end()};
-    if (choices_.online) {
-        lines.insert(lines.begin() + 3, "PLAYERS");  // (after the controls)
-    }
-    return lines;
-}
-
 std::size_t Menu::line_count() const {
     switch (page_) {
         case Page::kOptions:
@@ -103,12 +95,10 @@ std::size_t Menu::line_count() const {
         case Page::kKeyboard:
         case Page::kGamepad:
             return input::kActionCount + kControlsAfter;
-        case Page::kPlayers:
-            return players_.size() + 1;  // and back
         case Page::kFirst:
             break;
     }
-    return first_lines().size();
+    return kFirstLines.size();
 }
 
 std::string_view Menu::title() const noexcept {
@@ -119,8 +109,6 @@ std::string_view Menu::title() const noexcept {
             return "KEYBOARD";
         case Page::kGamepad:
             return "GAMEPAD";
-        case Page::kPlayers:
-            return "PLAYERS";
         case Page::kFirst:
             break;
     }
@@ -138,15 +126,9 @@ std::vector<Menu::Line> Menu::lines() const {
     };
     switch (page_) {
         case Page::kFirst:
-            for (const std::string_view label : first_lines()) {
+            for (const std::string_view label : kFirstLines) {
                 line(label);
             }
-            break;
-        case Page::kPlayers:
-            for (const PlayerLine& player : players_) {
-                line(player.name, std::format("{:<7} {}", player.viking, player.latency));
-            }
-            line("BACK");
             break;
         case Page::kOptions: {
             const auto screen = settings_.screen == "none" ? std::string{"OFF"} : upper(settings_.screen);
@@ -208,9 +190,6 @@ std::vector<std::string> Menu::note() const {
         case Page::kGamepad:
             note.emplace_back("ENTER/A ADD, DEL/Y CLEAR, ESC/B BACK");
             break;
-        case Page::kPlayers:
-            note.emplace_back("ESC/B BACK");
-            break;
     }
     return note;
 }
@@ -266,23 +245,15 @@ Menu::Asked Menu::press(Key key) {
 Menu::Asked Menu::choose() {
     const std::size_t chosen = this->chosen();
     switch (page_) {
-        case Page::kFirst: {
-            const std::string_view label = first_lines().at(chosen);
-            if (label == "GIVE UP LEVEL") {
-                return Asked::kGiveUp;
-            }
-            if (label == "QUIT GAME") {
-                return Asked::kQuit;
-            }
-            page_ = label == "OPTIONS"    ? Page::kOptions
-                    : label == "KEYBOARD" ? Page::kKeyboard
-                    : label == "GAMEPAD"  ? Page::kGamepad
-                                          : Page::kPlayers;
-            break;
-        }
-        case Page::kPlayers:
-            if (chosen == players_.size()) {
-                page_ = Page::kFirst;
+        case Page::kFirst:
+            switch (chosen) {
+                case 3:
+                    return Asked::kGiveUp;
+                case 4:
+                    return Asked::kQuit;
+                default:
+                    page_ = chosen == 0 ? Page::kOptions : chosen == 1 ? Page::kKeyboard : Page::kGamepad;
+                    break;
             }
             break;
         case Page::kOptions:
@@ -438,7 +409,6 @@ class Canvas {
     // A text in the font: a character's letter in `c`, its shadow dark, and nothing of the box it is drawn on (the
     // font's three colours, as the text boxes give them their own).
     void text(int x, int y, std::string_view text, Colour c, const std::vector<assets::IndexedImage>& font) {
-        constexpr std::uint8_t kFirstGlyph = 0x10;
         constexpr std::uint8_t kShadow = 1;
         constexpr std::uint8_t kLetter = 2;
         constexpr Colour kShadowColour{kDark.r, kDark.g, kDark.b, 255};
@@ -489,16 +459,7 @@ class Canvas {
 }  // namespace
 
 std::vector<std::uint8_t> coop_picture(const CoopOverlay& overlay, const std::vector<assets::IndexedImage>& font) {
-    constexpr int kNameLine = 9;
     Canvas canvas;
-    for (const CoopOverlay::Label& label : overlay.labels) {
-        for (std::size_t i = 0; i < label.names.size(); ++i) {
-            const std::string& name = label.names.at(i);
-            const int width = static_cast<int>(name.size()) * kCharacter;
-            canvas.text(label.x - (width / 2), label.y + (static_cast<int>(i) * kNameLine), name,
-                        i == 0 ? kWhite : kGrey, font);
-        }
-    }
     if (!overlay.waiting.empty()) {
         constexpr int kPadding = 6;
         const int width = (static_cast<int>(overlay.waiting.size()) * kCharacter) + (2 * kPadding);
@@ -520,7 +481,11 @@ std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<asset
     const std::vector<std::string> note = menu.note();
     const int shown = std::min(static_cast<int>(lines.size()), kMostLines);
     const int width = (kColumns * kCharacter) + (2 * kPadding);
-    const int height = 6 + kCharacter + 6 + (shown * kLine) + 6 + (static_cast<int>(note.size()) * kNoteLine) + 4;
+    // Online, under the first page's lines: a divider, and each player's name and round trip.
+    const int players = menu.shows_players() ? static_cast<int>(menu.players().size()) : 0;
+    const int players_height = players > 0 ? 6 + (players * kLine) : 0;
+    const int height =
+        6 + kCharacter + 6 + (shown * kLine) + players_height + 6 + (static_cast<int>(note.size()) * kNoteLine) + 4;
     const int x = (kScreenWidth - width) / 2;
     const int y = (kScreenHeight - height) / 2;
     Canvas canvas;
@@ -571,7 +536,17 @@ std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<asset
     if (first + shown < static_cast<int>(lines.size())) {
         canvas.arrow(x + width - 6, lines_y + (shown * kLine) - 2, Canvas::Pointing::kDown, kGrey);
     }
-    const int note_y = lines_y + (shown * kLine) + 6;
+    if (players > 0) {
+        const int divider_y = lines_y + (shown * kLine) + 3;
+        canvas.fill(text_x, divider_y, kColumns * kCharacter, 1, kDimmed);
+        for (int i = 0; i < players; ++i) {
+            const Menu::PlayerLine& player = menu.players().at(static_cast<std::size_t>(i));
+            const int top = divider_y + 3 + (i * kLine);
+            canvas.text(text_x, top + 1, player.name, kGrey, font);
+            canvas.text(text_x + ((kLabelColumns + 1) * kCharacter), top + 1, player.latency, kGrey, font);
+        }
+    }
+    const int note_y = lines_y + (shown * kLine) + players_height + 6;
     for (std::size_t i = 0; i < note.size(); ++i) {
         if (i == 0 && menu.note_flashes() && !flash_shown) {
             continue;

@@ -56,6 +56,9 @@ class NetGame {
     void begin(Session& session);
     // Each refresh: what came, and what is due to be sent. An error ends the game: the host gone, out of step.
     std::expected<void, std::string> poll();
+    // What is due to be sent, now: right after a step took this machine's input, so it is on its way at once
+    // rather than at the next refresh's poll.
+    std::expected<void, std::string> flush();
     // Whether this machine's input for its next step can be given now (the delay ahead, no more).
     bool wants_input() const;
     void give(const StepInput& input);

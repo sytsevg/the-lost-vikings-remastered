@@ -262,6 +262,10 @@ std::expected<void, std::string> NetGame::poll() {
             }
         }
     }
+    return flush();
+}
+
+std::expected<void, std::string> NetGame::flush() {
     const int players = static_cast<int>(acked_.size());
     // To each peer: every player's inputs he hasn't acknowledged (a client gives the host his own; the host passes
     // on everyone's but the client's own), and where this machine is.

@@ -82,6 +82,8 @@ class Session {
     bool online() const noexcept { return play_.world.online; }
     int player() const noexcept { return player_; }
     const World& world() const noexcept { return play_.world; }
+    // The players' names, by player: shown under the portraits of the Vikings they play.
+    void set_player_names(std::vector<std::string> names) { player_names_ = std::move(names); }
     // Instead of a step, while the play is held (Remaster rules' menu is open): a tick's three pictures of the world
     // as it is, a little darker as under the original's menus. Nothing of the play moves and nothing is kept for the
     // rewind; only a change of view the zoom asks for goes on, as while the world holds for a key (what it brings into
@@ -284,17 +286,17 @@ class Session {
     void set_view(int width, int height, bool at_once);
     // The step's input from this machine's player: his keys, stick and zoom, the character typed, the menu keys.
     StepInput input_of(std::uint16_t keyboard, const Play::MenuKeys& keys, Pace pace);
-    CueLedger ledger_;  // online: what the steps run again asked of the sound, heard once
     // After a rewind's or a quicksave's snapshot is brought back: the view the zoom has now.
     void zoom_back();
-    std::optional<std::array<int, 2>> view_now_;  // the view change_view gives the next step
-    std::uint16_t typed_ = 0;                     // the character typed since the last step
-    std::vector<std::uint8_t> hashed_;            // (the state hash's buffer, kept)
     Screen::Part part_shown(const View& view);
     int zoom_ = 0;
     std::uint32_t refreshes_ = 0;  // the refreshes the pictures handed out so far are for (Screen::refresh)
     std::optional<std::array<int, 2>> whole_view_;  // view_whole_level()'s
+    std::optional<std::array<int, 2>> view_now_;    // the view change_view gives the next step
     Effects effects_;
+    CueLedger ledger_;                       // online: what the steps run again asked of the sound, heard once
+    std::vector<std::uint8_t> hashed_;       // (the state hash's buffer, kept)
+    std::vector<std::string> player_names_;  // online: by player
     // Smooth movement: where the camera was at the end of the last tick, and the view's size then. None after
     // what wasn't a plain tick.
     struct Scrolled {
@@ -329,6 +331,7 @@ class Session {
     bool load_wanted_ = false;
     // Which of the world's players this machine shows and plays (co-op online, ADR-0012): the first, so far.
     std::uint8_t player_ = 0;
+    std::uint16_t typed_ = 0;  // the character typed since the last step
     std::vector<std::int16_t>
         heard_;        // live: the sound of the last ten seconds as it was heard, for hearing it backwards
     SeenLevels seen_;  // by level: what a view has shown of it (the minimap's pixels)

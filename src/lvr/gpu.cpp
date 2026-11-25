@@ -793,6 +793,21 @@ void GpuRenderer::State::list_hud(const Page& on, const HudView& hud, const Shar
             whole(graphics.health[health], on.health[health], kHealthAt.at(who)[0], top + kHealthAt.at(who)[1]);
         }
     }
+    for (std::size_t who = 0; who < hud.names.size(); ++who) {  // the letters of each name, not their cells
+        const std::string& name = hud.names.at(who);
+        int x = kPortraitAt.at(who)[0] + kPortraitMiddle - (static_cast<int>(name.size()) * kTileSize / 2);
+        for (const char each : name) {
+            const auto character = static_cast<std::uint8_t>(each);
+            if (character >= kFirstGlyph && std::size_t{character} - kFirstGlyph < graphics.font.size()) {
+                const std::size_t glyph = std::size_t{character} - kFirstGlyph;
+                Quad letter = quad(on.font[glyph], x, top + kNameRow, static_cast<int>(graphics.font[glyph].width),
+                                   static_cast<int>(graphics.font[glyph].height));
+                letter.see_through = 2;
+                add(letter);
+            }
+            x += kTileSize;
+        }
+    }
     for (std::size_t square = 0; square < kSquares; ++square) {
         const int x = kSquareAt.at(square)[0];
         const int y = top + kSquareAt.at(square)[1];
@@ -846,7 +861,6 @@ bool GpuRenderer::State::place_pieces(Page& on, const View& view) {
 // Everything the picture shows, in the order it is drawn: first what stays above the HUD (`in_playfield` of
 // them), then what is drawn in the HUD's place. False when the page has no room for the sprites.
 bool GpuRenderer::State::list(Page& on, const View& view, const SceneGraphics& graphics, Picture& picture) {
-    constexpr std::uint8_t kFirstGlyph = 0x10;
     const SharedGraphics& common = *on.shared_of;
     picture.quads.clear();
     picture.moves_with.clear();

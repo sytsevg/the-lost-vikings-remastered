@@ -400,6 +400,13 @@ Screen Session::picture(bool dimmed) {
     // unpacked into, so a piece that hasn't had a frame of its own yet shows what the last one left there.)
     const World& world = play_.shown();
     View view = view_of(world, loaded, painter_, pictures_, player_);
+    if (view.hud && world.online) {  // under each portrait the name of the player who plays him (ADR-0012)
+        for (int viking = 0; viking < kVikingSlots; ++viking) {
+            if (const int who = world.player_of(viking); who >= 0 && std::cmp_less(who, player_names_.size())) {
+                view.hud->names.at(static_cast<std::size_t>(viking)) = player_names_.at(static_cast<std::size_t>(who));
+            }
+        }
+    }
     if (dimmed && view.darken == std::array<std::uint8_t, 3>{}) {
         view.darken = kMenuTint;
     }
@@ -561,7 +568,7 @@ bool Session::level_played() const {
 
 bool Session::gauge_shown(const World& world) const {
     return world.rules == Rules::kRemaster && world.scene <= scene::kLastLevel && world.has_vikings && !world.attract &&
-           !play_.playing_demo();
+           !play_.playing_demo() && !world.online;  // (online there is no rewind: ADR-0012)
 }
 
 std::vector<Screen> Session::back_to(const Kept& step) {

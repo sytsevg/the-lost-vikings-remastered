@@ -12,6 +12,9 @@ void main() {
     if (how.z > 0.5 && colour == 0u) {
         discard;
     }
+    if (how.z > 1.5 && colour == 3u) {  // a letter alone, without its cell (a name in the HUD)
+        discard;
+    }
     if (how.w > 0.5 && texelFetch(atlas, texel + ivec2(how.xy), 0).r == 0u) {
         discard;
     }

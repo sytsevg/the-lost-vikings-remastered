@@ -89,7 +89,6 @@ void draw_sprite(Screen& screen, const View& view, const DrawnSprite& sprite) {
 }
 
 void draw_text(Screen& screen, const View& view, const SharedGraphics& shared) {
-    constexpr std::uint8_t kFirstGlyph = 0x10;
     for (int row = 0; row < std::min(view.height / kTileSize, kTextRows); ++row) {
         for (int column = 0; column < std::min(view.width / kTileSize, kTextColumns); ++column) {
             const std::uint8_t character =
@@ -124,6 +123,25 @@ void draw_hud(Screen& screen, const HudView& hud, const SharedGraphics& shared) 
         if (viking.health >= 0 && std::cmp_less(viking.health, shared.health.size())) {
             blit(screen, shared.health[static_cast<std::size_t>(viking.health)], kHealthAt.at(who)[0],
                  kPlayfieldHeight + kHealthAt.at(who)[1]);
+        }
+    }
+    for (std::size_t who = 0; who < hud.names.size(); ++who) {  // the letters of each name, not their cells
+        const std::string& name = hud.names.at(who);
+        int x = kPortraitAt.at(who)[0] + kPortraitMiddle - (static_cast<int>(name.size()) * kTileSize / 2);
+        for (const char each : name) {
+            const auto character = static_cast<std::uint8_t>(each);
+            if (character >= kFirstGlyph && std::size_t{character} - kFirstGlyph < shared.font.size()) {
+                const assets::IndexedImage& glyph = shared.font[std::size_t{character} - kFirstGlyph];
+                for (std::size_t gy = 0; gy < glyph.height; ++gy) {
+                    for (std::size_t gx = 0; gx < glyph.width; ++gx) {
+                        if (const std::uint8_t colour = glyph.at(gx, gy); colour == 1 || colour == 2) {
+                            put(screen, x + static_cast<int>(gx), kPlayfieldHeight + kNameRow + static_cast<int>(gy),
+                                colour, kScreenHeight);
+                        }
+                    }
+                }
+            }
+            x += kTileSize;
         }
     }
     for (std::size_t square = 0; square < kSquares; ++square) {
