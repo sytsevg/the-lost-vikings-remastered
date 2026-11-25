@@ -6,6 +6,7 @@
 // Classic picture exactly. For a window a picture is kept as those rectangles and drawn when it is shown: as large
 // as it is shown, and with what moves between ticks where it is at that moment (Motion, render.hpp).
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -24,22 +25,47 @@ namespace lvr {
 
 class GpuRenderer {
   public:
-    // How the window shows what it shows (Remaster rules' screen look, the user's to choose: F11): as it is, or as a
-    // television's tube would: 240 lines with dark gaps between them, soft along them, a mask of red, green and
-    // blue, flat glass a little darker at the corners, filling the window at 4:3. (A VGA monitor's look, its 480
-    // fine lines, was tried and dropped: only blurry, the user said.)
-    enum class Look : std::uint8_t { kNone, kTv };
-    static constexpr std::string_view name_of(Look look) noexcept { return look == Look::kTv ? "tv" : "none"; }
+    // How the window shows what it shows (Remaster rules' screen look, the user's to choose: F11), one at a time:
+    // - as it is;
+    // - a television's tube: 240 lines with dark gaps between them (more zoomed out: a line a row), soft along them,
+    //   a mask of red, green and blue, flat glass a little darker at the corners, filling the window at 4:3;
+    // - xbr: the picture in the game's whole pixels (nothing moved between ticks), its stair-steps rounded off and
+    //   their edges blended (Hyllian's xBR).
+    // (Tried and dropped, the user: a VGA monitor's look, its 480 fine lines, only blurry; xBR without blending,
+    // each tile and sprite's piece rounded by itself.)
+    enum class Look : std::uint8_t { kNone, kTv, kXbr };
+    static constexpr std::array kLooks{Look::kNone, Look::kTv, Look::kXbr};
+    static constexpr std::string_view name_of(Look look) noexcept {
+        switch (look) {
+            case Look::kTv:
+                return "tv";
+            case Look::kXbr:
+                return "xbr";
+            case Look::kNone:
+                break;
+        }
+        return "none";
+    }
     static constexpr std::optional<Look> look_named(std::string_view name) noexcept {
-        for (const Look look : {Look::kNone, Look::kTv}) {
+        for (const Look look : kLooks) {
             if (name == name_of(look)) {
                 return look;
             }
         }
         return std::nullopt;
     }
-    // The other one: F11 goes from the one to the other.
-    static constexpr Look after(Look look) noexcept { return look == Look::kNone ? Look::kTv : Look::kNone; }
+    // The next one, as F11 goes: none, tv, xbr, none.
+    static constexpr Look after(Look look) noexcept {
+        switch (look) {
+            case Look::kNone:
+                return Look::kTv;
+            case Look::kTv:
+                return Look::kXbr;
+            case Look::kXbr:
+                break;
+        }
+        return Look::kNone;
+    }
 
     // Without a window: for a tool or a test, on whatever Vulkan driver there is (a software one will do).
     static std::expected<std::unique_ptr<GpuRenderer>, std::string> open_headless();

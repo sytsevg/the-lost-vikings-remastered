@@ -12,8 +12,9 @@
 //       from the Nth on: each with the view held on it; PgDn or ] and PgUp or [ go to the next and the one before (with
 //       --dump: the Nth, as --whole writes it); the last ones put a Viking where he dies, starting the level again
 //       --no-effects: under Remaster rules, the pictures without the Modern visuals' effects (effects.hpp)
-//       --shader none|tv: under Remaster rules, the screen's look (gpu.hpp): as it is, or a television's; F11
-//       switches it. The profile keeps the one the window ended with.
+//       --shader none|tv|xbr: under Remaster rules, the screen's look (gpu.hpp): as it is, a television's, or the
+//       pixels' stair-steps rounded off (xBR, in whole pixels); F11 goes from one to the next. The profile keeps
+//       the one the window ended with.
 //       --cheat: the game's cheat on from the start, as if its password had been typed at the title: F5 and F6
 //       change the level, and under Remaster rules F7 and F8 are a quicksave and its load.
 //       play, from scene N (default 39, the first logo; 0-36 are the levels); FILE: other keys, lines
@@ -600,7 +601,8 @@ int main(int argc, char* argv[]) try {
             std::println(
                 stderr,
                 "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] "
-                "[--soundfont FILE] [--rules vanilla|remaster] [--no-effects] [--shader none|tv] [--showcase N] "
+                "[--soundfont FILE] [--rules vanilla|remaster] [--no-effects] [--shader none|tv|xbr] "
+                "[--showcase N] "
                 "[--cheat] "
                 "[--slow-frames] "
                 "[--profile DIR] "

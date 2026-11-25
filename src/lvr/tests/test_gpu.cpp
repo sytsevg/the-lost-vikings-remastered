@@ -643,13 +643,15 @@ TEST_CASE("gpu: the screen's look shows the picture as a television would; witho
     }
     GpuRenderer& gpu = **opened;
     using Look = GpuRenderer::Look;
-    // Their names; F11 goes from the one to the other.
-    for (const Look look : {Look::kNone, Look::kTv}) {
+    // Their names, and the order F11 goes through them.
+    for (const Look look : GpuRenderer::kLooks) {
         CHECK(GpuRenderer::look_named(GpuRenderer::name_of(look)) == look);
     }
     CHECK_FALSE(GpuRenderer::look_named("vga"));  // tried and dropped
     CHECK(GpuRenderer::after(Look::kNone) == Look::kTv);
-    CHECK(GpuRenderer::after(Look::kTv) == Look::kNone);
+    CHECK(GpuRenderer::after(Look::kTv) == Look::kXbr);
+    CHECK(GpuRenderer::after(Look::kXbr) == Look::kNone);
+    CHECK_FALSE(GpuRenderer::look_named("xbr-noblend"));  // tried and dropped
     // A screen all of one grey.
     const SharedGraphics shared = sample_shared();
     SceneGraphics scene = sample_scene();
@@ -712,4 +714,61 @@ TEST_CASE("gpu: the screen's look shows the picture as a television would; witho
     REQUIRE(whole);
     REQUIRE(whole_plain);
     CHECK(whole->pixels == whole_plain->pixels);
+}
+
+TEST_CASE("gpu: the xbr look rounds off stair-steps, blending their edges; flat stays flat") {
+    auto opened = GpuRenderer::open_headless();
+    if (!opened) {
+        SKIP("no graphics device: " << opened.error());
+    }
+    GpuRenderer& gpu = **opened;
+    using Look = GpuRenderer::Look;
+    const SharedGraphics shared = sample_shared();
+    SceneGraphics scene = sample_scene();
+    // Grey above a line going down a pixel to the right a pixel, white below; the HUD's place grey.
+    assets::IndexedImage split = assets::make_image(kScreenWidth, kScreenHeight);
+    for (std::size_t y = 0; y < kScreenHeight; ++y) {
+        for (std::size_t x = 0; x < kScreenWidth; ++x) {
+            split.set(x, y, x < y && y < kPlayfieldHeight ? std::uint8_t{2} : std::uint8_t{1});
+        }
+    }
+    scene.picture = split;
+    assets::IndexedImage grey = assets::make_image(kScreenWidth, kScreenHeight);
+    std::ranges::fill(grey.pixels, std::uint8_t{1});
+    scene.hud_picture = grey;
+    View view;
+    view.camera_y = kPictureTop;
+    view.palette[1] = {.r = 128, .g = 128, .b = 128};
+    view.palette[2] = {.r = 255, .g = 255, .b = 255};
+    Screen screen;
+    REQUIRE(gpu.keep(screen, view, scene, shared));
+    constexpr int kScale = 4;
+    constexpr std::size_t kWide = std::size_t{kScreenWidth} * kScale;
+    gpu.set_look(Look::kNone);
+    const auto plain = gpu.shown(screen, kScale);
+    gpu.set_look(Look::kXbr);
+    const auto rounded = gpu.shown(screen, kScale);
+    REQUIRE(plain);
+    REQUIRE(rounded);
+    // Along the line (pixels 40 to 80 of the picture, all of each's 4 x 4): not the steps, and colours between the
+    // two where it blends.
+    std::size_t differ = 0;
+    std::size_t between_colours = 0;
+    for (std::size_t y = 40 * kScale; y < 80 * kScale; ++y) {
+        for (std::size_t x = y - (2 * kScale); x < y + (2 * kScale); ++x) {
+            const std::size_t at = ((y * kWide) + x) * 4;
+            differ += rounded->at(at) != plain->at(at) ? 1 : 0;
+            between_colours += rounded->at(at) != 128 && rounded->at(at) != 255 ? 1 : 0;
+        }
+    }
+    CHECK(differ > 0);
+    CHECK(between_colours > 0);
+    // The HUD's place, all one grey, as it was.
+    std::size_t not_grey = 0;
+    for (std::size_t y = 200 * kScale; y < 230 * kScale; ++y) {
+        for (std::size_t x = 20 * kScale; x < 300 * kScale; ++x) {
+            not_grey += rounded->at(((y * kWide) + x) * 4) != 128 ? 1 : 0;
+        }
+    }
+    CHECK(not_grey == 0);
 }

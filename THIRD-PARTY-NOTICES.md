@@ -13,6 +13,13 @@ full licence texts are in each library's source, under `build/<preset>/_deps/` a
 | [glaze](https://github.com/stephenberry/glaze) (Stephen Berry) | JSON, in the `lv-export` development tool | MIT | no |
 | [Catch2](https://github.com/catchorg/Catch2) | the tests | BSL-1.0 | no |
 
+Adapted into this repository (not downloaded):
+
+- **xBR** (Hyllian, from libretro's [glsl-shaders](https://github.com/libretro/glsl-shaders), `xbr/shaders/`):
+  `src/lvr/gpu_xbr.frag`, adapted from `xbr-lv2.glsl` (which incorporates ideas from Joshua Street's SABR
+  shader), the screen's xbr look. MIT; its copyright and permission notice is kept at the top of the file and is
+  part of the game's binary.
+
 Not part of the build or of any binary, and not in this repository:
 
 - **DOSBox-X** (GPL), patched by `tools/dosbox/` into a scriptable reference to compare the game with the

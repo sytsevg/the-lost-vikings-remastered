@@ -32,7 +32,8 @@ rewind, a quicksave, and the player's profile on disk that keeps the last two ar
   the Modern visuals, ADR-0005)
 - Parallax: the SNES backdrops behind the levels and the village's scenes, from the user's own ROM image (built,
   2026-11-24; HANDOVER.md, "Parallax")
-- **Screen look** (built, 2026-11-25; HANDOVER.md, "Screen look"): a television's, flat, F11
+- **Screen look** (built, 2026-11-25; HANDOVER.md, "Screen look"): a television's, flat, F11; and the pixels
+  rounded off by xBR
 - Modern sound: the effects placed by position, and extra effects (notes below)
 - Dropped (the user, 2026-11-25): art packs (sprites replaced one for one) and the SNES version's sound
 

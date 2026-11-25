@@ -21,10 +21,10 @@ comments and other docs points here). A decision that was later replaced is not 
   start of M8 (2026-11-24): the visuals go with the rules, chosen at launch, nothing switched while playing.
   Vanilla rules show the Classic picture (the CPU renderer); Remaster rules the Modern one (the GPU renderer, with
   smooth movement and what M8 adds after it). Presentation only all the same: the simulation doesn't know.
-- **The screen's look** (2026-11-25): how the window shows the finished picture: as it is, or as a television
-  would. A display setting of the Modern visuals, not part of the rules: F11 changes it at any moment,
-  `--shader` at the start, and the profile keeps it (ADR-0011). Remaster rules only (the user): Vanilla's window
-  stays the CPU renderer's.
+- **The screen's look** (2026-11-25): how the window shows the finished picture: as it is, as a television
+  would, or with its stair-steps rounded off (Hyllian's xBR). A display setting of the Modern visuals, not part
+  of the rules: F11 changes it at any moment, anywhere in the game, `--shader` at the start, and the profile
+  keeps it (ADR-0011). Remaster rules only (the user): Vanilla's window stays the CPU renderer's.
 - **The Modern visuals' effects** (2026-11-25): light, glow and particles drawn in the game's own pixels (every
   light worked out per pixel of the picture, in steps of brightness; particles a pixel each in the game's fixed
   colours), not smoothed over it. A light is cast: it brightens what it falls on and the map's ground stops it.
@@ -222,8 +222,16 @@ publishing: its author asks not to link his download files directly.
   the lines close where a line is less than four of the window's pixels high; a slot mask of red, green and blue
   at the window's pixels, light spread around what is bright, flat glass a little darker at the corners, in
   linear light. (First it had 240 lines whatever the zoom: zoomed out each line took one of two rows and dropped
-  the other, and the text could not be read.) Never in a picture of a whole level (a development tool's) or the checks. Tried and dropped (the user,
-  2026-11-25): a VGA monitor's look (480 fine lines, as the DOS game was seen; only blurry) and curved glass.
+  the other, and the text could not be read.) Never in a picture of a whole level (a development tool's) or the
+  checks. Tried and dropped (the user, 2026-11-25): a VGA monitor's look (480 fine lines, as the DOS game was
+  seen; only blurry) and curved glass.
+- **The xbr look** (built and approved by the user, 2026-11-25; Hyllian's xBR-lv2, MIT, adapted: THIRD-PARTY-NOTICES.md). xBR
+  rounds a picture's stair-steps off from each pixel's neighbours and blends their edges. The blending makes new
+  colours, which can't be palette indices, so it is a last pass over the finished picture (`gpu_xbr.frag`),
+  which is then drawn in the game's whole pixels: what moves between ticks isn't moved (no smooth movement), and
+  the tiles join up. One look at a time: this or the television's. Tried and dropped (the user, 2026-11-25:
+  "doesn't work"): xBR without blending (Hyllian's noblend rules) on each tile and sprite's piece by itself as it
+  is drawn, which kept palette indices and smooth movement.
 
 ### ADR-0011: Remaster rules
 Only under Remaster rules (ADR-0005). First called the QoL rules.

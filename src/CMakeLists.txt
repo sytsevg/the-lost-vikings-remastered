@@ -157,7 +157,7 @@ if(LVR_BUILD_APPS)
     set(lvr_shader_dir ${CMAKE_CURRENT_BINARY_DIR}/shaders)
     file(MAKE_DIRECTORY ${lvr_shader_dir})
     foreach(shader gpu_quad.vert gpu_quad.frag gpu_show.vert gpu_show.frag gpu_over.frag gpu_mark.frag gpu_gauge.frag
-            gpu_crt.frag)
+            gpu_crt.frag gpu_xbr.frag)
         add_custom_command(
             OUTPUT ${lvr_shader_dir}/${shader}.inc
             COMMAND ${LVR_GLSLC} -O -mfmt=c -o ${lvr_shader_dir}/${shader}.inc

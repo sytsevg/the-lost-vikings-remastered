@@ -90,6 +90,8 @@ were dropped by the user, 2026-11-25). The screen's look is built ("Screen look"
   and sharper, and the VGA look dropped):** a television, F11 ("Screen look" below). Its numbers (beam, mask,
   glow, lines, corners) are in `GpuRenderer::State::show_look`; a test card of stripes, greys and colours is in
   `gamedata/previews/shaders/` (not in the repository).
+- **The xbr look (built and approved by the user on the host, 2026-11-25):** after the television on F11
+  ("Screen look" below). The unblended one, each tile and piece rounded by itself, was dropped by the user.
 - **After that the user picks the next M8 item.** Left on the roadmap's list: sound placed by position. More
   effects can be added to the table any time (water and lava cross-fading between their colour steps was talked
   about, not tried).
@@ -196,8 +198,8 @@ it is, or as a television would (lines with dark gaps, soft along them, a slot m
 at the corners). A line for each of the picture's rows as shown: 240 at the original's view, 360 and 480 zoomed
 out, so zoomed out nothing is dropped (with a fixed 240 every other row of the text was, the user found it
 unreadable); its softness is in the picture's pixels, and where a line is less than four of the window's pixels
-high the gaps close. F11 switches it; `--shader none|tv` at the start; the profile keeps the one the window
-ended with (`screen.txt`, `load_screen_look`). Everything on the screen goes through it, the minimap and the
+high the gaps close. F11 goes none, tv, xbr; `--shader NAME` at the start; the profile keeps the one
+the window ended with (`screen.txt`, `load_screen_look`). Everything on the screen goes through it, the minimap and the
 rewind's bar too (the user). Tried and dropped after the user saw them on the host: a VGA monitor's look (480 fine
 lines, a fine mask; "just blurry") and the television's curved glass with rounded corners.
 - **How:** `GpuRenderer::set_look`. With a look, `State::show` draws what it always draws into `crt_source` (a
@@ -207,6 +209,13 @@ lines, a fine mask; "just blurry") and the television's curved glass with rounde
 - **Tuned on a test card**, not on the game's pictures (and one of small shapes a pixel wide, zoomed out, for
   the text): white 254, the greys within a few steps of the picture's. Made gentler and sharper after the user's
   first look (a weaker mask and glow, shallower gaps, softness 0.4 of a pixel).
+- **xbr** (approved; ADR-0006, "The xbr look"; Hyllian's xBR-lv2, MIT, THIRD-PARTY-NOTICES.md): the
+  stair-steps of the pixels rounded off and their edges blended, a last pass (`show_xbr`, `gpu_xbr.frag`) over
+  the finished picture drawn in the game's whole pixels into `crt_source` (no smooth movement; the pass finds
+  the picture's pixels on the grid where it was drawn, `fit` wide; the minimap and a sliding HUD lie off that
+  grid); the tiles join up. Checked on a card of lines, circles, steps, small shapes and a round sprite of our
+  own (`gamedata/previews/shaders/xbr-card-*`). The unblended one (each tile and piece rounded by itself, so
+  smooth movement stayed) was tried and dropped by the user.
 
 ### Parallax (built, 2026-11-24)
 
