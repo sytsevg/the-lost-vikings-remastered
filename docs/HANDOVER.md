@@ -62,6 +62,13 @@ renderer must still make the Classic picture; under Remaster rules a visual may 
 The rest of the list is in [`ROADMAP.md`](ROADMAP.md): events in animations and effects on them, lights and
 shaders, art packs, sound placed by position.
 
+- **The jumble at the top left (fixed, 2026-11-24).** Zooming out while the world holds (every level opens with
+  its password box, which waits for a key) created what the larger view showed at once; their first turn, where
+  their animations put their pieces in place, only comes with the next tick. Meanwhile their pieces were drawn
+  where the pieces' last owners had left them, and the Remaster layer's back pool (from piece 512) is new at the
+  level's start: at (0, 0), stacked in the level's corner. `World::set_view` now leaves the creating to the next
+  tick's start (`view_to_fill`, saved: kStateVersion 2), as the original creates what comes into view: right
+  before its first turn. While the world holds, the newly shown part has no entities yet.
 - **Smooth movement (built, 2026-11-24).** The GPU renderer keeps a picture as its list of
   atlas rectangles and draws it when it is shown, as large as it is shown (`GpuRenderer::keep`, `show`), with
   every entity's pieces and the camera moved evenly over the tick instead of in the original's three
@@ -133,8 +140,6 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   showing everyone. A fix: the fade drawn from the picture before the pass. It changes the goldens of every
   replay that changes scene (the goldens hold our renderer's picture of the original's state); not checked in
   DOSBox (the user dropped that).
-- **A jumble of tiles or pixels at the top left as a level loads** (seen by the user in the M8 window, 2026-11-24;
-  not seen in dumps of a level change, either renderer, zoomed or not). Wants a screenshot; to come back to.
 - **Frames now and then a refresh or more late** in the window (the user's AMD Radeon 890M, RADV), mostly noticed
   while moving. `--slow-frames` shows the time is spent waiting for the window's next picture (the card or the
   compositor holding frames), not in the game's step, its drawing, or its uploads; it was there before smooth

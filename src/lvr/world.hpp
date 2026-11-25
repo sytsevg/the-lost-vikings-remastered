@@ -101,6 +101,8 @@ struct WorldState {
     int first_placed_slot = kVikingSlots;  // the slots before it aren't for placements (a cutscene: 1)
     int strip_x = 0;                       // the camera, in cells, when placements last came into view
     int strip_y = 0;
+    // Remaster rules' zoom changed the view: the placements it shows are created at the next tick's start (set_view)
+    bool view_to_fill = false;
     int gravity = 0;                 // the level's, added to a falling entity's speed every tick
     int level_push = 0;              // the same across
     std::uint16_t keys_before = 0;   // the keys held at the last tick's start
@@ -412,7 +414,10 @@ class World : public WorldState {
     void create_in_view(ViewPart part);
     // Remaster rules' zoom: the view shows `width` x `height` pixels of the level from now on. A larger view
     // grows around the middle of the one before; a smaller one has the Viking being played in its middle. Both
-    // within the level, which must be at least that large.
+    // within the level, which must be at least that large. The placements the view now shows are created at the
+    // next tick's start, as the original creates what comes into view: right before their first turn. (Made at
+    // once while the world holds, for a text that waits for a key, they would be drawn before any of their
+    // animations put their pieces anywhere: where the pieces' last owners left them.)
     void set_view(int width, int height);
     // Where the camera is put by that, without doing it.
     Camera camera_for_view(int width, int height) const noexcept;

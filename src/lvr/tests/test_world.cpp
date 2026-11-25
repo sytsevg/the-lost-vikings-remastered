@@ -10,7 +10,9 @@
 #include <vector>
 
 #include "assets/objects.hpp"
+#include "lvr/camera.hpp"
 #include "lvr/entity.hpp"
+#include "lvr/level.hpp"
 #include "lvr/world.hpp"
 
 using namespace lvr;
@@ -403,4 +405,32 @@ TEST_CASE("world: Vanilla rules have the original's 20 slots; Remaster rules hav
     CHECK(world.at(kRemasterSlots) == nullptr);
     world.set_rules(Rules::kVanilla);
     CHECK(world.slots() == kSlots);
+}
+
+TEST_CASE("zoom: what a larger view shows is created at the next tick's start, right before its first turn") {
+    // A level of 100 x 50 cells, the view at its top left corner; a placement at 500 across, outside the active
+    // area (the view and 16 pixels around it) until the view is twice as wide.
+    Ticking t;
+    t.world.set_rules(Rules::kRemaster);
+    t.world.map = Map{.width = 100, .height = 50, .cells = std::vector<Cell>(5000)};
+    set_camera_limits(t.world.camera, 100, 50);
+    t.world.placements = {Placement{.x = 500, .y = 100, .width = 16, .height = 16, .kind = 1}};
+    t.world.create_in_view(ViewPart::kWhole);
+    CHECK_FALSE(t.world.entities.at(0));
+    // Zoomed out while the world holds (a text waits for a key): nothing is made, so nothing is drawn yet (made now,
+    // its pieces would be drawn before an animation put them anywhere).
+    t.world.set_view(640, 352);
+    CHECK(t.world.camera.view_width == 640);
+    CHECK_FALSE(t.world.entities.at(0));
+    // The next tick makes it first, and gives it its turn.
+    t.world.step(0);
+    REQUIRE(t.world.entities.at(0));
+    CHECK(t.world.entities.at(0)->x == 500);
+    CHECK(t.log == std::vector<std::string>{"update 0", "after_move 0"});
+    CHECK_FALSE(t.world.view_to_fill);
+    // Only once: a tick after that doesn't make it again.
+    t.world.step(1);
+    t.world.step(2);
+    t.world.step(0);
+    CHECK_FALSE(t.world.entities.at(1));
 }

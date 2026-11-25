@@ -283,7 +283,7 @@ void World::set_view(int width, int height) {
                 (before.y / kTextCell) - (camera.y / kTextCell));
     strip_x = cell_of(camera.x);
     strip_y = cell_of(camera.y);
-    create_in_view(ViewPart::kWhole);
+    view_to_fill = true;
 }
 
 void World::create_scrolled_in() {
@@ -482,6 +482,9 @@ void World::tick_part(int part) {
     if (part == 0) {
         switch_viking();
         check_viking_in_view();
+        if (std::exchange(view_to_fill, false)) {
+            create_in_view(ViewPart::kWhole);
+        }
         create_scrolled_in();
     }
     run(part);
