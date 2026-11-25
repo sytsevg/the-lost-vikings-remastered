@@ -299,15 +299,15 @@ TEST_CASE("tick: the countdown, and the turn of an entity that left the active a
 TEST_CASE("tick: keys newly pressed; a push becomes a move, its sprite follows in three shares, the camera too") {
     Ticking t;
     t.world.has_vikings = true;
-    t.world.camera.max_x = 2000;
-    t.world.camera.max_y = 2000;
-    t.world.camera.x = 400;
-    t.world.camera.y = 400;
+    t.world.host().camera.max_x = 2000;
+    t.world.host().camera.max_y = 2000;
+    t.world.host().camera.x = 400;
+    t.world.host().camera.y = 400;
     Logged& viking = t.add(1, 400 + 176, 400 + 88);  // at the right edge of the camera's box
-    t.world.shown_viking = 0;
+    t.world.host().shown_viking = 0;
     std::uint16_t seen_pressed = 0;
     viking.on_update = [&seen_pressed](World& world, Logged& self) {
-        seen_pressed = world.pressed;
+        seen_pressed = world.host().pressed;
         CHECK(self.push_x == 0);  // a tick's push starts from nothing
         self.push_x = 7 * 256;
     };
@@ -318,11 +318,11 @@ TEST_CASE("tick: keys newly pressed; a push becomes a move, its sprite follows i
     CHECK(viking.x == 583);
     CHECK(viking.push_x == 7);
     CHECK(t.world.pieces.at(static_cast<std::size_t>(piece)).x == 568 + 3);
-    CHECK(t.world.camera.x == 403);
+    CHECK(t.world.host().camera.x == 403);
     t.world.step(1);
     t.world.step(2);
     CHECK(t.world.pieces.at(static_cast<std::size_t>(piece)).x == 568 + 7);
-    CHECK(t.world.camera.x == 407);
+    CHECK(t.world.host().camera.x == 407);
     t.world.step(0, 0x0100);  // still held: not newly pressed
     CHECK(seen_pressed == 0);
     t.world.step(0, 0x8100);
@@ -416,21 +416,21 @@ TEST_CASE("zoom: what a larger view shows is created at the next tick's start, r
     Ticking t;
     t.world.set_rules(Rules::kRemaster);
     t.world.map = Map{.width = 100, .height = 50, .cells = std::vector<Cell>(5000)};
-    set_camera_limits(t.world.camera, 100, 50);
+    set_camera_limits(t.world.host().camera, 100, 50);
     t.world.placements = {Placement{.x = 500, .y = 100, .width = 16, .height = 16, .kind = 1}};
-    t.world.create_in_view(ViewPart::kWhole);
+    t.world.create_in_views();
     CHECK_FALSE(t.world.entities.at(0));
     // Zoomed out while the world holds (a text waits for a key): nothing is made, so nothing is drawn yet (made now,
     // its pieces would be drawn before an animation put them anywhere).
-    t.world.set_view(640, 352);
-    CHECK(t.world.camera.view_width == 640);
+    t.world.set_view(0, 640, 352);
+    CHECK(t.world.host().camera.view_width == 640);
     CHECK_FALSE(t.world.entities.at(0));
     // The next tick makes it first, and gives it its turn.
     t.world.step(0);
     REQUIRE(t.world.entities.at(0));
     CHECK(t.world.entities.at(0)->x == 500);
     CHECK(t.log == std::vector<std::string>{"update 0", "after_move 0"});
-    CHECK_FALSE(t.world.view_to_fill);
+    CHECK_FALSE(t.world.host().view_to_fill);
     // Only once: a tick after that doesn't make it again.
     t.world.step(1);
     t.world.step(2);

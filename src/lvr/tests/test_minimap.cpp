@@ -58,13 +58,13 @@ TEST_CASE("minimap: what a view shows is seen, to the minimap's pixel, and stays
     CHECK_FALSE(was_seen(seen, 80, 43));
     CHECK_FALSE(was_seen(seen, 79, 44));
     // A view moved by less than a cell shows that much more, not a cell.
-    world.camera.x = 6;
+    world.host().camera.x = 6;
     reveal(seen, world);
     CHECK(was_seen(seen, 80, 43));  // level pixels 320-323
     CHECK(was_seen(seen, 81, 43));  // the view reaches 2 of its 4
     CHECK_FALSE(was_seen(seen, 82, 43));
-    world.camera.x = 400;
-    world.camera.y = 380;
+    world.host().camera.x = 400;
+    world.host().camera.y = 380;
     reveal(seen, world);
     CHECK(was_seen(seen, 0, 0));  // what was seen before
     CHECK(was_seen(seen, 100, 95));
@@ -72,17 +72,17 @@ TEST_CASE("minimap: what a view shows is seen, to the minimap's pixel, and stays
     CHECK_FALSE(was_seen(seen, 180, 138));
     CHECK_FALSE(was_seen(seen, 179, 139));
     // A view past the map's edges shows what there is.
-    world.camera.x = 900;
-    world.camera.y = 600;
-    world.camera.view_width = 640;
-    world.camera.view_height = 480;
+    world.host().camera.x = 900;
+    world.host().camera.y = 600;
+    world.host().camera.view_width = 640;
+    world.host().camera.view_height = 480;
     reveal(seen, world);
     CHECK(was_seen(seen, 239, 159));
     // Another map: nothing of it was seen.
     world.map = Map{.width = 4, .height = 4, .cells = std::vector<Cell>(16)};
-    world.camera = {};
-    world.camera.view_width = 16;
-    world.camera.view_height = 16;
+    world.host().camera = {};
+    world.host().camera.view_width = 16;
+    world.host().camera.view_height = 16;
     reveal(seen, world);
     CHECK(seen.size() == 16 * 16);
     CHECK(seen.at(0));
@@ -92,8 +92,8 @@ TEST_CASE("minimap: what a view shows is seen, to the minimap's pixel, and stays
 
 TEST_CASE("minimap: the whole map by what its cells are, a ladder with its rungs, and what of it was seen") {
     World world = sample_world();
-    world.camera.x = 320;
-    world.camera.y = 320;
+    world.host().camera.x = 320;
+    world.host().camera.y = 320;
     std::vector<bool> seen;
     reveal(seen, world);
     world.entities.at(0) = std::make_unique<Still>();  // it is only a map: no Viking or enemy is on it

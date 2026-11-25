@@ -36,7 +36,7 @@ class GameOver : public Entity {
             case State::kPasswordComing:
                 return when_password_coming(world);
             case State::kPasswordShown:
-                if (any(world.pressed, key::kF, key::kS) || any(world.pressed, key::kE, key::kD)) {
+                if (any(world.host().pressed, key::kF, key::kS) || any(world.host().pressed, key::kE, key::kD)) {
                     world.clear_text();
                     s.state = State::kPasswordGoing;
                 }
@@ -64,15 +64,15 @@ class GameOver : public Entity {
         world.sound(*this, effect::kDirge);
         world.game_over_scene.letters_fall = false;
         count_down();
-        world.current_viking = 0;
+        world.host().viking = 0;
         countdown = 200;
         s.state = State::kWaiting;
     }
     void when_waiting(World& world) {
-        if (any(world.pressed, key::kEnter, key::kF)) {
+        if (any(world.host().pressed, key::kEnter, key::kF)) {
             return revive(world);
         }
-        if (any(world.pressed, key::kS, key::kE, key::kD)) {
+        if (any(world.host().pressed, key::kS, key::kE, key::kD)) {
             return show_password(world, false);
         }
         if (countdown != 0) {
@@ -86,15 +86,15 @@ class GameOver : public Entity {
         return show_choice(world);
     }
     void when_asking(World& world) {
-        if ((world.held & key::kLeft) != 0) {
+        if ((world.host().held & key::kLeft) != 0) {
             s.yes = true;
-        } else if ((world.held & key::kRight) != 0) {
+        } else if ((world.host().held & key::kRight) != 0) {
             s.yes = false;
-        } else if (any(world.held, key::kEnter, key::kF) || world.typed == 'Y' || world.typed == 'N') {
+        } else if (any(world.host().held, key::kEnter, key::kF) || world.typed == 'Y' || world.typed == 'N') {
             world.clear_text();
             s.state = State::kAnswered;
             return;
-        } else if (any(world.pressed, key::kS, key::kE, key::kD)) {
+        } else if (any(world.host().pressed, key::kS, key::kE, key::kD)) {
             return show_password(world, true);
         } else if (countdown == 0) {
             countdown = kBlinkTicks;
@@ -147,7 +147,7 @@ class GameOver : public Entity {
         world.animate(*this);
     }
     void when_leaving(World& world) {
-        if (countdown == 0 || any(world.pressed, key::kEnter, key::kF)) {
+        if (countdown == 0 || any(world.host().pressed, key::kEnter, key::kF)) {
             world.stop_sound(*this, effect::kDirge);
             world.game_over_scene.give_up = true;
             s.state = State::kDone;

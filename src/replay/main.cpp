@@ -14,6 +14,9 @@
 //                      must keep everything a replay needs
 //       --saves        the world written out and read back (lvr/archive.hpp) before every step: what is written
 //                      must be all of it
+//       --rollback N   GGPO's sync test (ADR-0012): before every step the last N run again from the snapshot
+//                      before them, without pictures; they must come to the same state, and the play goes on from
+//                      there
 //       --data DIR     the game's files (default gamedata/original)
 //       --out DIR      where a difference is written (default gamedata/previews/match): per replay
 //                      NAME-shown.png (the picture at the first refresh that differs) and NAME.txt (which
@@ -57,6 +60,7 @@ struct Options {
     bool gpu = false;
     bool copies = false;
     bool saves = false;
+    std::size_t rollback = 0;
     std::vector<fs::path> replays;
 };
 
@@ -83,6 +87,7 @@ PlayerPtr open_engine(const Options& options, const Replay& replay) {
         .transform([&options](auto player) {
             player->saves = options.saves;
             player->copies = options.copies;
+            player->rollback = options.rollback;
             return player;
         })
         .transform([](auto player) -> std::unique_ptr<Player> { return player; });
@@ -199,10 +204,10 @@ bool run(const Options& options, const fs::path& path) {
 }
 
 void print_usage() {
-    std::println(
-        stderr,
-        "usage: lv-replay [--check | --record | --shot FILE.png] [--gpu] [--copies] [--saves] [--data DIR] [--out DIR] "
-        "REPLAY...");
+    std::println(stderr,
+                 "usage: lv-replay [--check | --record | --shot FILE.png] [--gpu] [--copies] [--saves] [--rollback N] "
+                 "[--data DIR] [--out DIR] "
+                 "REPLAY...");
 }
 
 int run_all(int argc, char** argv) {
@@ -220,6 +225,8 @@ int run_all(int argc, char** argv) {
             options.copies = true;
         } else if (arg == "--saves") {
             options.saves = true;
+        } else if (arg == "--rollback" && i + 1 < args.size()) {
+            options.rollback = static_cast<std::size_t>(std::stoul(std::string{args[++i]}));
         } else if (arg == "--shot" && i + 1 < args.size()) {
             options.mode = Mode::kShot;
             options.shot = args[++i];

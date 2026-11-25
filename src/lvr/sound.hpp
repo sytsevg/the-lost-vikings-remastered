@@ -5,6 +5,8 @@
 // exactly these.
 
 #include <cstdint>
+#include <deque>
+#include <vector>
 
 namespace lvr {
 
@@ -26,8 +28,35 @@ struct SoundCue {
     // Where it happened, an entity's: its middle, in the level's pixels (the Modern sound places its effects by it).
     std::int16_t x = 0;
     std::int16_t y = 0;
+    // Online (ADR-0012): heard by that player alone (his inventory's clicks); -1: by everyone.
+    int heard_by = -1;
 
     bool operator==(const SoundCue&) const = default;
+};
+
+// Online, rollback runs steps again (ADR-0012): what each asks of the sound is heard once. The ledger keeps what was
+// played for every step that may still run again. A step's cues as it comes out of it, the first time or again:
+// those it hadn't asked for before are to be played now; those played for it before that it doesn't ask for any
+// more were undone (an effect of them still sounding is to be stopped). A cue is the same as one played before by
+// what it is, its number, its tune and its entity, and the how-manieth such it is in the step (not where it was:
+// a step run again may have its entity a pixel elsewhere).
+class CueLedger {
+  public:
+    struct Heard {
+        std::vector<SoundCue> play;
+        std::vector<SoundCue> undone;
+    };
+    Heard heard(std::uint32_t step, const std::vector<SoundCue>& asked);
+    // The steps before `step` are confirmed: none of them runs again, and they are forgotten.
+    void confirm(std::uint32_t step);
+    std::size_t steps_kept() const noexcept { return played_.size(); }
+
+  private:
+    struct Played {
+        std::uint32_t step;
+        std::vector<SoundCue> cues;
+    };
+    std::deque<Played> played_;  // by step, the oldest first
 };
 
 }  // namespace lvr

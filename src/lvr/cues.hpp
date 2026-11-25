@@ -15,7 +15,7 @@ namespace lvr {
 class World;
 
 // A speed as a cue's value: pixels a tick, in 256ths.
-constexpr std::uint16_t speed(double pixels) noexcept {
+consteval std::uint16_t speed(double pixels) noexcept {
     return static_cast<std::uint16_t>(px(pixels));
 }
 

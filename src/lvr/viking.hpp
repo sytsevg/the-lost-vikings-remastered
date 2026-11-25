@@ -190,7 +190,10 @@ class Viking : public Entity {
     void set_falling(bool on) { set_flag(entity_flag::kFalls, on); }
     void keep_on_ground() { set_flag(entity_flag::kPutOnGround); }
     void face(World& world, bool left);
-    bool played(const World& world) const { return slot == world.current_viking; }
+    bool played(const World& world) const { return world.is_played(slot); }
+    // The keys he goes by (ADR-0012): his player's, or those of the last one who played him (as the original's
+    // Vikings not being played read its one keyboard in some of their states).
+    const Player& input(const World& world) const { return world.keys_of(slot); }
     bool on_ground(const World& world) const;
     // Where each one's own behaviour asks: Olaf doesn't stand on a shield held up.
     bool on_own_ground(const World& world) const;
@@ -241,7 +244,7 @@ class Viking : public Entity {
     void climb(World& world);
     void pace_climb(World& world);
     // His top speed across as a gamepad's stick is pushed (Remaster rules), walking or steered in the air.
-    static int paced_speed(const World& world, int top_speed);
+    int paced_speed(const World& world, int top_speed) const;
     // A climbing step has ended: the next one, by the keys.
     void climbing(World& world);
     Animation next_step(const std::array<Animation, 3>& from, Animation otherwise) const;

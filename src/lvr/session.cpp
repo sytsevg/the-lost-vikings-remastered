@@ -132,21 +132,21 @@ Screen::Part between(const Screen::Part& from, const Screen::Part& to, int pictu
 
 }  // namespace
 
-bool Session::zoom(int by) noexcept {
+bool Session::zoom(int by) {
     if (!takes_play_keys()) {
         return false;
     }
     zoom_ = std::clamp(zoom_ + by, 0, static_cast<int>(kZoomViews.size()) - 1);
-    play_.view = kZoomViews[static_cast<std::size_t>(zoom_)];  // (clamped above)
+    play_.choose_view(player_, kZoomViews[static_cast<std::size_t>(zoom_)]);  // (clamped above)
     return true;
 }
 
-void Session::set_zoom_level(int level) noexcept {
+void Session::set_zoom_level(int level) {
     if (play_.world.rules != Rules::kRemaster) {
         return;
     }
     zoom_ = std::clamp(level, 0, static_cast<int>(kZoomViews.size()) - 1);
-    play_.view = kZoomViews[static_cast<std::size_t>(zoom_)];  // (clamped above)
+    play_.choose_view(player_, kZoomViews[static_cast<std::size_t>(zoom_)]);  // (clamped above)
 }
 
 void Session::set_volume(int music, int effects) {
@@ -157,7 +157,7 @@ void Session::set_volume(int music, int effects) {
 
 // The view the zoom asks for here.
 std::array<int, 2> Session::wanted_view() const {
-    return whole_view_ ? *whole_view_ : play_.world.view_for(kZoomViews.at(static_cast<std::size_t>(zoom_)));
+    return whole_view_ ? *whole_view_ : play_.world.view_for(player_, kZoomViews.at(static_cast<std::size_t>(zoom_)));
 }
 
 bool Session::hold_view(int x, int y, int width, int height) {
@@ -201,18 +201,20 @@ bool Session::view_whole_level() {
     }
     World& world = play_.world;
     whole_view_ = {world.map.pixel_width(), world.map.pixel_height() + kHudRows};
-    world.set_view((*whole_view_)[0], (*whole_view_)[1]);
+    world.set_view(player_, (*whole_view_)[0], (*whole_view_)[1]);
     grows_from_.reset();
     shrinking_ = false;
     return true;
 }
 
 // Before a step: the world's view becomes the wanted one. A larger one at once (its pictures then open up from
-// the old view); a smaller one when the pictures have closed in on it.
-void Session::change_view() {
+// the old view); a smaller one when the pictures have closed in on it. Given to the step as the player's view
+// (StepInput: online every machine has it at the same step), or `at_once` set on the world, which is held (the
+// menu: nothing steps).
+void Session::change_view(bool at_once) {
     World& world = play_.world;
     const auto [width, height] = wanted_view();
-    const Camera& camera = world.camera;
+    const Camera& camera = world.players.at(static_cast<std::size_t>(player_)).camera;
     if (width == camera.view_width && height == camera.view_height) {
         shrinking_ = false;
         return;
@@ -222,7 +224,7 @@ void Session::change_view() {
                                    .y = static_cast<float>(camera.y),
                                    .width = static_cast<float>(camera.view_width),
                                    .height = static_cast<float>(camera.view_height)};
-        world.set_view(width, height);
+        set_view(width, height, at_once);
         zoom_pictures_ = 0;
         shrinking_ = false;
     } else if (!shrinking_) {
@@ -230,9 +232,35 @@ void Session::change_view() {
         grows_from_.reset();
         zoom_pictures_ = 0;
     } else if (zoom_pictures_ >= kZoomPictures) {
-        world.set_view(width, height);
+        set_view(width, height, at_once);
         shrinking_ = false;
     }
+}
+
+void Session::set_view(int width, int height, bool at_once) {
+    if (at_once) {
+        play_.world.set_view(player_, width, height);
+    } else {
+        view_now_ = {width, height};
+    }
+}
+
+StepInput Session::input_of(std::uint16_t keyboard, const Play::MenuKeys& keys, Pace pace) {
+    StepInput input = StepInput::one(keyboard, pace);
+    input.menu = keys;
+    input.typed = std::exchange(typed_, 0);
+    PlayerInput& own = input.players.at(player_);
+    const auto& chosen = kZoomViews.at(static_cast<std::size_t>(zoom_));
+    own.zoom = {static_cast<std::int16_t>(chosen[0]), static_cast<std::int16_t>(chosen[1])};
+    if (view_now_) {
+        own.view = {static_cast<std::int16_t>((*view_now_)[0]), static_cast<std::int16_t>((*view_now_)[1])};
+        view_now_.reset();
+    }
+    return input;
+}
+
+void Session::zoom_back() {
+    play_.zoom_back(player_, kZoomViews.at(static_cast<std::size_t>(zoom_)));
 }
 
 // The part of this picture's playfield that is shown: all of it, or on the way between two views.
@@ -251,7 +279,7 @@ Screen::Part Session::part_shown(const View& view) {
         }
     } else if (shrinking_) {
         const auto [width, height] = wanted_view();
-        const Camera to = play_.world.camera_for_view(width, height);
+        const Camera to = play_.world.camera_for_view(player_, width, height);
         part = between(whole,
                        {.x = static_cast<float>(to.x - view.camera_x),
                         .y = static_cast<float>(to.y - view.camera_y),
@@ -352,7 +380,7 @@ void Session::update_minimap() {
     SeenLevel& seen = seen_[world.level];
     seen.width = world.map.width * kMinimapCell;
     seen.height = world.map.height * kMinimapCell;
-    reveal(seen.seen, world);  // (what was kept for a map of another size is dropped there)
+    reveal(seen.seen, world, player_);  // (what was kept for a map of another size is dropped there)
     minimap_ = draw_minimap(world, seen.seen);
 }
 
@@ -368,7 +396,7 @@ Screen Session::picture(bool dimmed) {
     // (The painter is the same from scene to scene: the original never clears the buffer its packed frames are
     // unpacked into, so a piece that hasn't had a frame of its own yet shows what the last one left there.)
     const World& world = play_.shown();
-    View view = view_of(world, loaded, painter_, pictures_);
+    View view = view_of(world, loaded, painter_, pictures_, player_);
     if (dimmed && view.darken == std::array<std::uint8_t, 3>{}) {
         view.darken = kMenuTint;
     }
@@ -394,7 +422,8 @@ Screen Session::picture(bool dimmed) {
     screen.level_x = view.camera_x;
     screen.level_y = view.camera_y;
     screen.fading = play_.fade.has_value();
-    screen.motion.scroll = {world.camera.x, world.camera.y};
+    const Camera& camera = world.players.at(static_cast<std::size_t>(player_)).camera;
+    screen.motion.scroll = {camera.x, camera.y};
     screen.motion.view = {view.width, view.height};
     screen.motion.sprites.reserve(view.sprites.size());
     for (const DrawnSprite& sprite : view.sprites) {
@@ -403,7 +432,10 @@ Screen Session::picture(bool dimmed) {
     for (int who = 0; who < kVikingSlots && world.has_vikings; ++who) {
         if (const Entity* viking = world.at(who); viking != nullptr && !viking->dead) {
             screen.vikings.at(static_cast<std::size_t>(who)) = {
-                .x = viking->x, .y = viking->y, .there = true, .played = who == world.current_viking};
+                .x = viking->x,
+                .y = viking->y,
+                .there = true,
+                .played = who == world.players.at(static_cast<std::size_t>(player_)).viking};
         }
     }
     return screen;
@@ -411,6 +443,9 @@ Screen Session::picture(bool dimmed) {
 
 void Session::hear(const std::vector<SoundCue>& asked) {
     for (const SoundCue& cue : asked) {
+        if (cue.heard_by >= 0 && std::cmp_not_equal(cue.heard_by, player_)) {
+            continue;  // online: another player's alone (his inventory's)
+        }
         switch (cue.kind) {
             case SoundCue::Kind::kEffect:
                 classic_->play_effect(cue.value);  // (the original's: as it is)
@@ -447,7 +482,7 @@ audio::Placement Session::placed(const SoundCue& cue) const {
     // How far to either side the view's edges are heard (of 63): not all the way, as nothing on screen is that far
     // off to one ear.
     constexpr int kEdge = 48;
-    const Camera& camera = play_.world.camera;
+    const Camera& camera = play_.world.players.at(static_cast<std::size_t>(player_)).camera;
     // One sound for many things across the level (the fire jets' roar, for all that are on): not where the one that
     // started it is.
     if (cue.entity < 0 || cue.value == effect::kRoar || camera.view_width <= 0 || camera.view_height <= 0) {
@@ -528,14 +563,16 @@ bool Session::gauge_shown(const World& world) const {
 
 std::vector<Screen> Session::back_to(const Kept& step) {
     (void)play_.restore(step.before);  // (of this scene: what is kept is let go when another starts)
+    zoom_back();
     // The step again, for its pictures only: what it asks of the sound isn't heard, and the play is put back.
     const bool ended = play_.ended;
     std::vector<Screen> shown;
-    play_.menu_keys = step.keys;
-    play_.world.pace = step.pace;
-    const int refreshes = play_.step(step.keyboard, [&] { shown.push_back(picture()); });
+    StepInput again = StepInput::one(step.keyboard, step.pace);
+    again.menu = step.keys;
+    const int refreshes = play_.step(again, [&] { shown.push_back(picture()); });
     const bool plain = refreshes == 3 && shown.size() == 3 && !play_.scene_loaded && !play_.in_menu();
     (void)play_.restore(step.before);  // (the same scene as a moment ago)
+    zoom_back();
     play_.ended = ended;
     play_.scene_loaded = false;
     if (!plain) {
@@ -610,7 +647,7 @@ void Session::half_refresh_sound(std::vector<std::int16_t>& out) {
 std::vector<Screen> Session::held() {
     constexpr int kTick = 3;
     scrolled_.reset();  // (the next step's pictures aren't moved from where the camera was before)
-    change_view();
+    change_view(true);
     cues.clear();
     std::vector<Screen> shown;
     for (int refresh = 0; refresh < kTick; ++refresh) {
@@ -649,6 +686,7 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys, P
         if (play_.restore(*quick_)) {
             play_.scene_sound();
         }
+        zoom_back();
         play_.world.title.cheat = true;
         rewind_.clear();  // what led up to here is no longer what came before
         effects_.clear();
@@ -683,11 +721,10 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys, P
         }
     }
     cues.clear();
-    play_.menu_keys = keys;
-    play_.world.pace = pace;
-    change_view();
+    change_view(false);
     moving_ = true;
-    const int refreshes = play_.step(keyboard, [&] { frames.push_back({.screen = picture(), .cues = take_cues()}); });
+    const int refreshes = play_.step(input_of(keyboard, keys, pace),
+                                     [&] { frames.push_back({.screen = picture(), .cues = take_cues()}); });
     moving_ = false;
     // A step that shows fewer pictures than its refreshes (a wait for a key: a text box, a password) shows the last
     // one again for the rest. While the zoom changes the view that held its change up: one stage a step, each shown

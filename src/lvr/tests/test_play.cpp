@@ -47,11 +47,11 @@ TEST_CASE("real data: level 1 loaded, its world at the start and what it shows",
     CHECK(world.entities[1]->kind == 0);
     CHECK(world.entities[2]->kind == 2);
     CHECK(world.entities[0]->health == 6);
-    CHECK(world.current_viking == 0);
+    CHECK(world.host().viking == 0);
     CHECK(world.has_vikings);
     // The camera on Erik, at the bottom left of the level.
-    CHECK(world.camera.x == 0);
-    CHECK(world.camera.y == 304);
+    CHECK(world.host().camera.x == 0);
+    CHECK(world.host().camera.y == 304);
     // The level's always-active entity, and the placements in view at the start.
     REQUIRE(world.entities[3]);
     CHECK(world.entities[3]->kind == 0x48);
@@ -248,14 +248,14 @@ TEST_CASE("real data: a scene that is one picture takes the camera's limits from
     CHECK(title->graphics.picture.has_value());
     CHECK(title->level.map.cells.empty());
     const World at_title = start_world(*title);
-    CHECK(at_title.camera.x == 0);
-    CHECK(at_title.camera.y == 32);
+    CHECK(at_title.host().camera.x == 0);
+    CHECK(at_title.host().camera.y == 32);
     CHECK(at_title.scene == scene::kTitle);
 
     const auto starfield = load_slot(*files, scene::kStarfield, database::kSpaceship);
     REQUIRE(starfield);
     const World in_the_stars = start_world(*starfield);
-    CHECK(in_the_stars.camera.y == 24);
+    CHECK(in_the_stars.host().camera.y == 24);
     CHECK(in_the_stars.text.direct);  // its text is drawn straight onto the picture
     // The ship talks by itself: after its first wait a box is up, without a key.
     CHECK(in_the_stars.entities[0]->kind == 0xe7);
@@ -374,8 +374,8 @@ TEST_CASE("real data: a world written out reads back the same; its size is this 
     }
     // What is written changes when a kind's Saved, EntityState or WorldState does. When these sizes change, an
     // older quicksave no longer fits: raise kStateVersion (archive.hpp), and put the new sizes and version here.
-    CHECK(kStateVersion == 6);
-    CHECK(sizes == std::vector<std::size_t>{24738, 71310, 41710, 88282});
+    CHECK(kStateVersion == 7);
+    CHECK(sizes == std::vector<std::size_t>{25036, 71608, 42048, 88620});
 }
 
 TEST_CASE("real data: with the SNES image a scene that has a backdrop there is loaded with it", "[real-data]") {

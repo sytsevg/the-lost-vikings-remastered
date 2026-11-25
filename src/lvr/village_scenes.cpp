@@ -246,9 +246,9 @@ class VillageVoices : public Entity {
             target = viking;
             const Entity* he = world.at(viking);
             constexpr int kAtRest = 4;
-            if (he == nullptr || world.current_viking != viking ||
-                static_cast<std::uint16_t>(world.camera.moved_x) >= kAtRest ||
-                static_cast<std::uint16_t>(world.camera.moved_y) >= kAtRest) {
+            if (he == nullptr || !world.is_played(viking) ||
+                static_cast<std::uint16_t>(world.camera_on(viking).moved_x) >= kAtRest ||
+                static_cast<std::uint16_t>(world.camera_on(viking).moved_y) >= kAtRest) {
                 if (viking == 2) {
                     return;
                 }
@@ -331,7 +331,7 @@ class VillageThing : public Entity {
             cue::clear(),
         }};
         if (!s.touched) {
-            if (saw.viking == kNobody || (world.pressed & key::kS) == 0) {
+            if (saw.viking == kNobody || (world.keys_of(saw.viking).pressed & key::kS) == 0) {
                 return;
             }
             target = saw.viking;

@@ -271,7 +271,7 @@ void Viking::being_hurt(World& world) {
 }
 
 void Viking::hurt_after_acting(World& world) {
-    if ((world.pressed & key::kE) != 0 && use_item(world)) {
+    if ((input(world).pressed & key::kE) != 0 && use_item(world)) {
         return;
     }
     hurt_after_item(world);
@@ -308,7 +308,7 @@ void Viking::hurt_after_item(World& world) {
             world.flip_across(*this);
         }
         lower_shield(world);
-        if ((world.pressed & key::kS) != 0 && act(world)) {
+        if ((input(world).pressed & key::kS) != 0 && act(world)) {
             return;
         }
         return standing_after_acting(world);
@@ -563,7 +563,7 @@ void Viking::resume_harmed(World& world) {
             if (message != 0 && told_while_hurt(world)) {
                 return;
             }
-            if ((world.pressed & key::kS) != 0 && act(world)) {
+            if ((input(world).pressed & key::kS) != 0 && act(world)) {
                 return;
             }
             return hurt_after_acting(world);
@@ -574,16 +574,17 @@ void Viking::resume_harmed(World& world) {
             if (found(Test::kDeadly) && deadly(world)) {
                 return;
             }
-            if (found(Test::kWall) || found(Test::kDeadly) || message != 0 || (world.pressed & key::kSOrE) != 0) {
+            if (found(Test::kWall) || found(Test::kDeadly) || message != 0 ||
+                (input(world).pressed & key::kSOrE) != 0) {
                 s.returns_to_landing = false;
             }
-            if ((world.pressed & key::kS) != 0 && act(world)) {
+            if ((input(world).pressed & key::kS) != 0 && act(world)) {
                 return;
             }
             return dizzy_after_acting(world);
         case At::kDizzyInTheAir:
             if (found(Test::kWall) || (landed() || found(Test::kFloorOrCeiling)) || found(Test::kDeadly) ||
-                (world.pressed & key::kSOrE) != 0) {
+                (input(world).pressed & key::kSOrE) != 0) {
                 s.returns_to_landing = false;
             }
             if (found(Test::kWall)) {
@@ -599,7 +600,7 @@ void Viking::resume_harmed(World& world) {
             if (found(Test::kDeadly) && deadly(world)) {
                 return;
             }
-            if ((world.pressed & key::kS) != 0 && act(world)) {
+            if ((input(world).pressed & key::kS) != 0 && act(world)) {
                 return;
             }
             return dizzy_after_acting(world);

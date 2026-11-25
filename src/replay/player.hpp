@@ -39,6 +39,10 @@ class LvrPlayer : public Player {
     // The same with the world written out and read back into a world made anew for the level (lvr/archive.hpp):
     // what a save holds must be all a replay needs. A world that can't be read back ends the run with an error.
     bool saves = false;
+    // GGPO's sync test (rollback, ADR-0012): before every step the last `rollback` steps are run again from the
+    // snapshot before the first of them, without their pictures, and the play goes on from there. They must come
+    // to the state the straight run had (its hash), and the replay must still match its golden.
+    std::size_t rollback = 0;
 
   private:
     LvrPlayer(Replay replay, assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, SharedGraphics shared,
@@ -49,6 +53,18 @@ class LvrPlayer : public Player {
 
     Draw draw_;
     bool save_failed_ = false;  // a world written out didn't read back as it was
+    // The sync test: the play before each of the last steps, with its input; where a step run again came out
+    // otherwise than the first time.
+    struct Kept {
+        Play::Snapshot before;  // with what was done before the step (the replay's `place`)
+        StepInput input;
+        std::optional<std::array<std::int16_t, 2>> place;
+    };
+    void place_vikings(const std::array<std::int16_t, 2>& at);
+    std::deque<Kept> back_;
+    std::optional<std::size_t> rolled_otherwise_;
+    std::vector<std::uint8_t> written_;  // (the hash's buffer, kept)
+    void run_again();
     Replay replay_;
     assets::GameFiles files_;  // the scenes the play goes on to are loaded from them
     SharedGraphics shared_;

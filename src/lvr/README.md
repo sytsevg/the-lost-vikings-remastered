@@ -32,7 +32,7 @@ Target `lvr::engine`, plain C++ on `lvr::assets`.
 - `archive.hpp`: the game's state written out and read back: fixed-width, field by field (ADR-0020).
 - `entity.hpp`: `Entity`, the base class of every kind (ADR-0018): what the engine reads and moves of each.
 - `movement.*`: speed and gravity into a tick's push, and the move itself.
-- `world.*`: `World`: the map, the entity slots (20, or 512 under Remaster rules), the pieces, the camera; kinds' records, creating and removing
+- `world.*`: `World`: the map, the entity slots (20, or 512 under Remaster rules), the pieces, the players (each one's keys, Viking and camera: ADR-0012); kinds' records, creating and removing
   entities, placements and the active area. Grows with the engine.
 - `terrain.*`: what an entity finds around it and how the map stops it (walls, floors, slopes, the ground).
 - `hits.*`: which entities touch which, and who stands on or hangs under an entity.

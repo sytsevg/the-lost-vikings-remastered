@@ -31,6 +31,23 @@ if(LVR_BUILD_APPS)
         SYSTEM EXCLUDE_FROM_ALL)
     FetchContent_MakeAvailable(SDL3)
     lvr_silence_dependency_warnings(${sdl3_SOURCE_DIR})
+
+    # SDL3_net (zlib): the sockets for co-op online (ADR-0012), on the SDL3 above. Patched to set TCP_NODELAY and,
+    # on Linux, TCP_QUICKACK on its stream sockets (it sets neither and gives no access to the socket).
+    set(SDLNET_INSTALL OFF CACHE BOOL "" FORCE)
+    set(SDLNET_SAMPLES OFF CACHE BOOL "" FORCE)
+    set(BUILD_SHARED_LIBS OFF)  # (its default is shared, on a shared SDL3; this one's is static)
+    set(sdl_net_patch ${CMAKE_CURRENT_LIST_DIR}/sdl_net.patch)
+    FetchContent_Declare(SDL3_net
+        GIT_REPOSITORY https://github.com/libsdl-org/SDL_net.git
+        GIT_TAG release-3.2.0
+        GIT_SHALLOW TRUE
+        # (applied once: a source that has it already is left as it is)
+        PATCH_COMMAND sh -c "git apply --reverse --check ${sdl_net_patch} 2>/dev/null || git apply ${sdl_net_patch}"
+        SYSTEM EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(SDL3_net)
+    unset(BUILD_SHARED_LIBS)
+    lvr_silence_dependency_warnings(${sdl3_net_SOURCE_DIR})
 endif()
 
 # ymfm: the OPL3 (YMF262) for the Classic sound (ADR-0015, ADR-0009). No tags upstream: a pinned commit. It has no

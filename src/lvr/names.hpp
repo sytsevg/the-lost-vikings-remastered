@@ -273,7 +273,7 @@ constexpr std::int16_t wrapped(int value) noexcept {
 }
 
 // A speed in pixels a tick, as the 256ths of a pixel that speeds and moves are kept in: px(2.5) is 0x0280.
-constexpr std::int16_t px(double pixels) noexcept {
+consteval std::int16_t px(double pixels) noexcept {
     return static_cast<std::int16_t>(pixels * 256.0);
 }
 

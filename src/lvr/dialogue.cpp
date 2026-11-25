@@ -195,6 +195,9 @@ void TextLayer::put_line(const Line& given, Texts texts) {
     }
     if (line.kind == Line::Kind::kBox || line.kind == Line::Kind::kText || line.kind == Line::Kind::kCharacter) {
         pending = true;
+        in_level = line.in_level;
+        origin_x = line.origin_x;
+        origin_y = line.origin_y;
     }
     switch (line.kind) {
         case Line::Kind::kBox: {
@@ -239,6 +242,7 @@ void TextLayer::put_line(const Line& given, Texts texts) {
             shown.fill(0);
             pending = false;
             draws = 0;
+            in_level = false;
             return;
         case Line::Kind::kColour: {
             // 5 bits a colour, doubled into the VGA's 6, shown as 8.

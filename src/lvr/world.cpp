@@ -16,7 +16,8 @@ class Unwritten : public Entity {
     void update(World& /*world*/) override {}
 };
 
-constexpr int kMargin = 16;  // the active area: the view and this much around it
+constexpr int kMargin = 16;   // the active area: the view and this much around it
+constexpr int kTextCell = 8;  // a cell of the text layer, across and down
 
 }  // namespace
 
@@ -122,11 +123,17 @@ void World::remove(int slot) {
         created->creator = kNobody;
     }
     if (!ending && entity->placement >= 0 && entity->has_flag(entity_flag::kCreatedAgainAtOnce)) {
-        const Entity* again =
-            create_if_in(entity->placement, View{.left = wrapped(camera.x - kMargin),
-                                                 .right = wrapped(camera.x + camera.view_width + kMargin),
-                                                 .top = wrapped(camera.y - kMargin),
-                                                 .bottom = wrapped(camera.y + camera.view_height + kMargin)});
+        const Entity* again = nullptr;
+        for (const Player& player : playing()) {  // in any player's view
+            const Camera& camera = player.camera;
+            again = create_if_in(entity->placement, View{.left = wrapped(camera.x - kMargin),
+                                                         .right = wrapped(camera.x + camera.view_width + kMargin),
+                                                         .top = wrapped(camera.y - kMargin),
+                                                         .bottom = wrapped(camera.y + camera.view_height + kMargin)});
+            if (again != nullptr) {
+                break;
+            }
+        }
         // Created in the slot of the one whose turn it is (it removed itself), or below it: the tick's turns have
         // passed it by, and it has its first one after the tick's moves (where the others look at what they ran
         // into): it is there and shows, but doesn't move yet.
@@ -176,7 +183,14 @@ Entity* World::create_if_in(int index, const View& view) {
     return create_placed(index);
 }
 
-void World::create_in_view(ViewPart part) {
+void World::create_in_views() {
+    for (const Player& player : playing()) {
+        create_in_view(player, ViewPart::kWhole);
+    }
+}
+
+void World::create_in_view(const Player& player, ViewPart part) {
+    const Camera& camera = player.camera;
     View view{.left = wrapped(camera.x - kMargin),
               .right = wrapped(camera.x + camera.view_width + kMargin),
               .top = wrapped(camera.y - kMargin),
@@ -249,7 +263,8 @@ bool World::load(Reader& from) {
     return from.ok();
 }
 
-std::array<int, 2> World::view_for(std::array<int, 2> asked) const noexcept {
+std::array<int, 2> World::view_for(int player, std::array<int, 2> asked) const {
+    const Camera& camera = players.at(static_cast<std::size_t>(player)).camera;
     if (rules != Rules::kRemaster || scene > scene::kLastLevel || !has_hud || map.cells.empty() ||
         map.pixel_width() < kViewWidth || map.pixel_height() < kViewHeight) {
         return {camera.view_width, camera.view_height};
@@ -257,14 +272,16 @@ std::array<int, 2> World::view_for(std::array<int, 2> asked) const noexcept {
     return {std::min(asked[0], map.pixel_width()), std::min(asked[1], map.pixel_height())};
 }
 
-Camera World::camera_for_view(int width, int height) const noexcept {
+Camera World::camera_for_view(int player, int width, int height) const {
+    const Player& whose = players.at(static_cast<std::size_t>(player));
+    const Camera& camera = whose.camera;
     Camera placed = camera;
     const bool larger = width > camera.view_width || height > camera.view_height;
     placed.view_width = width;
     placed.view_height = height;
     placed.covered = height > kViewHeight ? kHudRows : 0;  // a larger view has the HUD over its bottom
     set_camera_limits(placed, map.width, map.height);
-    const Entity* viking = current_viking != kNobody ? at(current_viking) : nullptr;
+    const Entity* viking = whose.viking != kNobody ? at(whose.viking) : nullptr;
     if (larger || viking == nullptr) {
         start_camera(placed, camera.x + (camera.view_width / 2),
                      camera.y + ((camera.view_height - camera.covered) / 2));
@@ -274,40 +291,51 @@ Camera World::camera_for_view(int width, int height) const noexcept {
     return placed;
 }
 
-void World::set_view(int width, int height) {
-    constexpr int kTextCell = 8;
+void World::set_view(int player, int width, int height) {
+    Player& whose = players.at(static_cast<std::size_t>(player));
+    Camera& camera = whose.camera;
     const Camera before = camera;
-    camera = camera_for_view(width, height);
-    // The text stays where it is in the level, as nearly as its cells allow.
-    text.resize(width / kTextCell, height / kTextCell, (before.x / kTextCell) - (camera.x / kTextCell),
-                (before.y / kTextCell) - (camera.y / kTextCell));
-    strip_x = cell_of(camera.x);
-    strip_y = cell_of(camera.y);
-    view_to_fill = true;
+    camera = camera_for_view(player, width, height);
+    // The text stays where it is in the level, as nearly as its cells allow. (It is the first player's view's.)
+    // Online a box at a place of the level stays there (Line::in_level): only the room the layer has changes.
+    if (player == 0 && online && text.in_level) {
+        text.columns = std::clamp(width / kTextCell, 0, kTextLayerColumns);
+        text.rows = std::clamp(height / kTextCell, 0, kTextLayerRows);
+    } else if (player == 0) {
+        text.resize(width / kTextCell, height / kTextCell, (before.x / kTextCell) - (camera.x / kTextCell),
+                    (before.y / kTextCell) - (camera.y / kTextCell));
+    }
+    whose.strip_x = cell_of(camera.x);
+    whose.strip_y = cell_of(camera.y);
+    whose.view_to_fill = true;
 }
 
 void World::hold_camera(int x, int y, int width, int height) {
-    set_view(width, height);
+    set_view(0, width, height);
+    Player& player = host();
+    Camera& camera = player.camera;
     camera.x = std::clamp(x, 0, std::max(0, camera.max_x));
     camera.y = std::clamp(y, 0, std::max(0, camera.max_y));
     camera.moved_x = camera.moved_y = 0;
-    strip_x = cell_of(camera.x);
-    strip_y = cell_of(camera.y);
+    player.strip_x = cell_of(camera.x);
+    player.strip_y = cell_of(camera.y);
     camera_held = true;
 }
 
 void World::create_scrolled_in() {
-    const int across = cell_of(camera.x);
-    if (across != strip_x) {
-        const bool left = wrapped(across) < wrapped(strip_x);
-        strip_x = across;
-        create_in_view(left ? ViewPart::kLeft : ViewPart::kRight);
-    }
-    const int down = cell_of(camera.y);
-    if (down != strip_y) {
-        const bool up = wrapped(down) < wrapped(strip_y);
-        strip_y = down;
-        create_in_view(up ? ViewPart::kTop : ViewPart::kBottom);
+    for (Player& player : playing()) {
+        const int across = cell_of(player.camera.x);
+        if (across != player.strip_x) {
+            const bool left = wrapped(across) < wrapped(player.strip_x);
+            player.strip_x = across;
+            create_in_view(player, left ? ViewPart::kLeft : ViewPart::kRight);
+        }
+        const int down = cell_of(player.camera.y);
+        if (down != player.strip_y) {
+            const bool up = wrapped(down) < wrapped(player.strip_y);
+            player.strip_y = down;
+            create_in_view(player, up ? ViewPart::kTop : ViewPart::kBottom);
+        }
     }
 }
 
@@ -415,12 +443,80 @@ void World::show_pieces(const Entity& entity) {
     }
 }
 
-void World::read_keys(std::uint16_t keys) noexcept {
-    pressed = static_cast<std::uint16_t>(keys & ~unsigned{keys_before});
-    held = keys_before = keys;
+void World::read_keys(const StepInput& input) {
+    for (std::size_t i = 0; std::cmp_less(i, player_count); ++i) {
+        Player& player = players.at(i);
+        const std::uint16_t keys = input.players.at(i).keys;
+        player.pressed = static_cast<std::uint16_t>(keys & ~unsigned{player.keys_before});
+        player.held = player.keys_before = keys;
+        player.pace = input.players.at(i).pace;
+    }
 }
 
-bool World::well_in_view(const Entity& entity) const noexcept {
+int World::player_of(int slot) const noexcept {
+    for (int who = 0; who < player_count; ++who) {
+        const Player& player = players[static_cast<std::size_t>(who)];
+        if (player.controls && player.viking == slot) {
+            return who;
+        }
+    }
+    return kNobody;
+}
+
+bool World::is_played(int slot) const noexcept {
+    return player_of(slot) != kNobody;
+}
+
+const Camera& World::camera_on(int slot) const noexcept {
+    const int who = player_of(slot);
+    return who != kNobody ? players[static_cast<std::size_t>(who)].camera : host().camera;
+}
+
+void World::move_player(int who, int slot) {
+    Player& player = players.at(static_cast<std::size_t>(who));
+    if (player.viking == slot) {
+        return;
+    }
+    if (player.controls && player.viking != kNobody) {  // the Viking he leaves: to the first in its line
+        int next = kNobody;
+        for (int other = 0; other < player_count; ++other) {
+            const Player& viewer = players.at(static_cast<std::size_t>(other));
+            if (other != who && !viewer.controls && viewer.viking == player.viking &&
+                (next == kNobody || viewer.in_line < players.at(static_cast<std::size_t>(next)).in_line)) {
+                next = other;
+            }
+        }
+        if (next != kNobody) {
+            players.at(static_cast<std::size_t>(next)).controls = true;
+            keys_from.at(static_cast<std::size_t>(player.viking)) = next;
+        }
+    }
+    const int owner = slot != kNobody ? player_of(slot) : kNobody;
+    player.viking = slot;
+    player.controls = owner == kNobody;
+    if (slot == kNobody) {
+        return;
+    }
+    if (owner == kNobody) {
+        keys_from.at(static_cast<std::size_t>(slot)) = who;
+    } else {
+        player.in_line = ++line_joins;
+    }
+}
+
+void World::choose_vikings() {
+    for (int i = 0; i < player_count; ++i) {
+        Player& player = players.at(static_cast<std::size_t>(i));
+        player.viking = has_vikings && i < kVikingSlots ? i : 0;
+        player.controls = true;
+        player.in_line = 0;
+    }
+    for (int viking = 0; viking < kVikingSlots; ++viking) {
+        keys_from.at(static_cast<std::size_t>(viking)) = viking < player_count ? viking : 0;
+    }
+}
+
+bool World::well_in_view(const Entity& entity, const Camera& camera) const noexcept {
     constexpr int kInset = 31;  // this far inside the view on every side (258 across and 114 down in the original's)
     const int left = wrapped(camera.x + kInset);
     const int top = wrapped(camera.y + kInset);
@@ -430,19 +526,77 @@ bool World::well_in_view(const Entity& entity) const noexcept {
 
 bool World::can_be_spoken_to(const Entity& entity) const noexcept {
     constexpr int kAtRest = 4;
-    return entity.slot == current_viking && static_cast<std::uint16_t>(camera.moved_x) < kAtRest &&
-           static_cast<std::uint16_t>(camera.moved_y) < kAtRest && well_in_view(entity);
+    const Camera& camera = camera_on(entity.slot);
+    return is_played(entity.slot) && static_cast<std::uint16_t>(camera.moved_x) < kAtRest &&
+           static_cast<std::uint16_t>(camera.moved_y) < kAtRest && well_in_view(entity, camera);
 }
 
+namespace {
+
+// The text cell of the level a camera's corner is in.
+std::array<std::int16_t, 2> text_corner(const Camera& camera) noexcept {
+    return {static_cast<std::int16_t>(static_cast<std::uint16_t>(camera.x) / kTextCell),
+            static_cast<std::int16_t>(static_cast<std::uint16_t>(camera.y) / kTextCell)};
+}
+
+}  // namespace
+
 void World::say_at_point(int number, int anchor, int x, int y) {
-    if (const auto line = box_at_point(texts, number, anchor, x, y, camera.x, camera.y, text.columns, text.rows)) {
-        lines.push_back(*line);
+    // Laid out in the view of the player it is said to (an Aside); else in the first player's, whose the text
+    // layer is.
+    const bool aside = talking_to != kNobody;
+    const Camera& camera = aside ? players.at(static_cast<std::size_t>(talking_to)).camera : host().camera;
+    const int columns = aside ? std::min(camera.view_width / kTextCell, kTextLayerColumns) : text.columns;
+    const int rows = aside ? std::min(camera.view_height / kTextCell, kTextLayerRows) : text.rows;
+    if (auto line = box_at_point(texts, number, anchor, x, y, camera.x, camera.y, columns, rows)) {
+        line->in_level = true;  // (used online: there it stays at its place of the level in every view)
+        const auto [left, top] = text_corner(camera);
+        line->origin_x = left;
+        line->origin_y = top;
+        say(*line);
     }
 }
 
 void World::say_at_cell(int number, int anchor, int column, int row) {
-    if (const auto line = box_at(texts, number, anchor, column, row)) {
-        lines.push_back(*line);
+    if (auto line = box_at(texts, number, anchor, column, row)) {
+        if (talking_to != kNobody) {  // in the middle of his view, as the text layer would put it in a larger one
+            const Camera& camera = players.at(static_cast<std::size_t>(talking_to)).camera;
+            const int columns = std::min(camera.view_width / kTextCell, kTextLayerColumns);
+            const int rows = std::min(camera.view_height / kTextCell, kTextLayerRows);
+            line->column = static_cast<std::uint16_t>(line->column + ((columns - kOriginalTextColumns) / 2));
+            line->row = static_cast<std::uint16_t>(line->row + ((rows - kOriginalTextRows) / 2));
+            line->by_point = true;
+        }
+        say(*line);
+    }
+}
+
+void World::show_players_lines() {
+    for (Player& player : playing()) {
+        if (player.waiting_for_key) {
+            if ((player.pressed & key::kAction) == 0) {
+                player.held = player.pressed = 0;
+                continue;
+            }
+            player.waiting_for_key = false;  // answered: the key does nothing else
+            player.held = player.pressed = 0;
+        }
+        while (player.next_line < player.lines.size()) {
+            const Line line = player.lines[player.next_line++];
+            if (line.kind == Line::Kind::kClear) {
+                player.said.clear();
+            } else if (line.kind == Line::Kind::kWaitForKey) {
+                player.waiting_for_key = true;
+                player.held = player.pressed = 0;
+                break;
+            } else {
+                player.said.push_back(line);
+            }
+        }
+        if (!player.waiting_for_key) {
+            player.lines.clear();
+            player.next_line = 0;
+        }
     }
 }
 
@@ -460,11 +614,11 @@ void World::speak_at_cell(std::uint16_t colour, int number, int anchor, int colu
     clear_text();
 }
 
-bool World::show_lines(std::uint16_t keys) {
+bool World::show_lines(const StepInput& input) {
     while (next_line < lines.size()) {
-        // The Viking being played is shown, whatever its blink was at.
-        if (current_viking != kNobody) {
-            if (const Entity* viking = at(current_viking)) {
+        // The Vikings being played are shown, whatever their blink was at.
+        for (const Player& player : playing()) {
+            if (const Entity* viking = player.controls && player.viking != kNobody ? at(player.viking) : nullptr) {
                 Piece& piece = piece_at(viking->sprite.first);
                 piece.blinked_off = false;
                 piece.redraw = 2;
@@ -476,10 +630,10 @@ bool World::show_lines(std::uint16_t keys) {
             count_picture(pieces);
             count_picture(pieces);
         }
-        read_keys(keys);
+        read_keys(input);
         if (line.kind == Line::Kind::kWaitForKey) {
             // The wait's first pass, at once: no key can be new in it.
-            read_keys(keys);
+            read_keys(input);
             turn_colours();
             waiting_for_key = true;
             return true;
@@ -490,19 +644,29 @@ bool World::show_lines(std::uint16_t keys) {
     return false;
 }
 
-void World::step(int part, std::uint16_t keys) {
+void World::step(int part, const StepInput& input) {
     if (part == 0) {
-        read_keys(keys);
+        read_keys(input);
     }
     tick_part(part);
 }
 
 void World::tick_part(int part) {
+    if (online) {
+        // What was said to each player alone, and each one's inventory, are part of the tick (offline they hold
+        // it: Play::step).
+        if (part == 0) {
+            show_players_lines();
+        }
+        inventories_in_tick(*this, part);
+    }
     if (part == 0) {
         switch_viking();
         check_viking_in_view();
-        if (std::exchange(view_to_fill, false)) {
-            create_in_view(ViewPart::kWhole);
+        for (Player& player : playing()) {
+            if (std::exchange(player.view_to_fill, false)) {
+                create_in_view(player, ViewPart::kWhole);
+            }
         }
         create_scrolled_in();
     }
@@ -585,12 +749,15 @@ void World::run(int part, bool starting) {
     // Vikings are taken moves its director to scroll.)
     // The tick's first picture measures how far the Viking is out of the box; the other two only move their share
     // of that, also when he died in between (the last Viking's death leaves nobody to follow).
-    if (camera_held) {
-        camera.moved_x = camera.moved_y = 0;
-    } else if (const Entity* viking = current_viking != kNobody ? at(current_viking) : nullptr) {
-        follow(camera, viking->x, viking->y, part);
-    } else if (part != 0) {
-        follow(camera, 0, 0, part);
+    for (Player& player : playing()) {  // each player's view his Viking
+        Camera& camera = player.camera;
+        if (camera_held) {
+            camera.moved_x = camera.moved_y = 0;
+        } else if (const Entity* viking = player.viking != kNobody ? at(player.viking) : nullptr) {
+            follow(camera, viking->x, viking->y, part);
+        } else if (part != 0) {
+            follow(camera, 0, 0, part);
+        }
     }
     if (part == 2) {
         mark_outside_active_area();
@@ -713,71 +880,82 @@ World::Offset World::offset_to(const Entity& entity, int slot) const {
 }
 
 void World::switch_viking() {
-    const bool previous = (pressed & key::kPrevious) != 0;
-    if (!has_vikings || current_viking == kNobody || (!previous && (pressed & key::kNext) == 0)) {
+    if (!has_vikings) {
         return;
     }
-    int viking = current_viking;
-    while (true) {
-        viking =
-            previous ? (viking == 0 ? kVikingSlots - 1 : viking - 1) : (viking == kVikingSlots - 1 ? 0 : viking + 1);
-        if (viking == current_viking) {
-            return;  // no other has health left
+    for (int who = 0; who < player_count; ++who) {
+        Player& player = players.at(static_cast<std::size_t>(who));
+        const bool previous = (player.pressed & key::kPrevious) != 0;
+        if (player.viking == kNobody || (!previous && (player.pressed & key::kNext) == 0)) {
+            continue;
         }
-        const Entity* other = at(viking);
-        if (other != nullptr && other->health != 0) {
-            break;
+        int viking = player.viking;
+        bool found = false;
+        while (!found) {
+            viking = previous ? (viking == 0 ? kVikingSlots - 1 : viking - 1)
+                              : (viking == kVikingSlots - 1 ? 0 : viking + 1);
+            if (viking == player.viking) {
+                break;  // no other has health left
+            }
+            const Entity* other = at(viking);
+            found = other != nullptr && other->health != 0;
         }
+        if (!found) {
+            continue;
+        }
+        Piece& piece = pieces.at(static_cast<std::size_t>(entities.at(static_cast<std::size_t>(viking))->sprite.first) %
+                                 pieces.size());
+        piece.blinked_off = false;
+        piece.redraw = 2;
+        move_player(who, viking);
+        player.camera.moved_x = player.camera.moved_y = kJustSwitched;
     }
-    Piece& piece = pieces.at(static_cast<std::size_t>(entities.at(static_cast<std::size_t>(viking))->sprite.first) %
-                             pieces.size());
-    piece.blinked_off = false;
-    piece.redraw = 2;
-    current_viking = viking;
-    camera.moved_x = camera.moved_y = kJustSwitched;
 }
 
 void World::check_viking_in_view() {
     constexpr int kSlack = 12;
-    if (!has_vikings || current_viking == kNobody) {
+    if (!has_vikings) {
         return;
     }
-    const Entity* viking = at(current_viking);
-    if (viking == nullptr) {
-        return;
-    }
-    // 12 pixels of slack on every side; while the camera is at the top, nothing is too high or too low.
-    const bool in_view = wrapped(viking->x - camera.x + kSlack) >= 0 &&
-                         wrapped(camera.x + camera.view_width + kSlack - viking->x) >= 0 &&
-                         (camera.y == 0 || (wrapped(viking->y - camera.y + kSlack) >= 0 &&
-                                            wrapped(camera.y + camera.view_height - viking->y) >= 0));
-    if (!in_view) {
-        held = pressed = 0;
-        return;
-    }
-    if (shown_viking != current_viking) {
-        if (shown_viking != kNobody) {
-            const Entity* before = at(shown_viking);
-            if (before != nullptr && !before->dead) {
-                show(pieces, *before, true);
-            }
+    for (Player& player : playing()) {
+        const Entity* viking = player.controls && player.viking != kNobody ? at(player.viking) : nullptr;
+        if (viking == nullptr) {
+            continue;
         }
-        shown_viking = current_viking;
-        blink = kBlinkTicks;
+        // 12 pixels of slack on every side; while the camera is at the top, nothing is too high or too low.
+        const Camera& camera = player.camera;
+        const bool in_view = wrapped(viking->x - camera.x + kSlack) >= 0 &&
+                             wrapped(camera.x + camera.view_width + kSlack - viking->x) >= 0 &&
+                             (camera.y == 0 || (wrapped(viking->y - camera.y + kSlack) >= 0 &&
+                                                wrapped(camera.y + camera.view_height - viking->y) >= 0));
+        if (!in_view) {
+            player.held = player.pressed = 0;
+            continue;
+        }
+        if (player.shown_viking != player.viking) {
+            if (player.shown_viking != kNobody) {
+                const Entity* before = at(player.shown_viking);
+                if (before != nullptr && !before->dead) {
+                    show(pieces, *before, true);
+                }
+            }
+            player.shown_viking = player.viking;
+            player.blink = kBlinkTicks;
+        }
+        if (player.blink == 0) {
+            continue;
+        }
+        --player.blink;
+        if ((static_cast<unsigned>(player.blink) & 2U) != 0) {  // hidden two ticks out of four
+            --player.blink;
+            Piece& piece = piece_at(viking->sprite.first);
+            piece.blinked_off = true;
+            piece.redraw = 0;
+            piece.erase = 2;
+            continue;
+        }
+        show(pieces, *viking, true);
     }
-    if (blink == 0) {
-        return;
-    }
-    --blink;
-    if ((static_cast<unsigned>(blink) & 2U) != 0) {  // hidden two ticks out of four
-        --blink;
-        Piece& piece = piece_at(viking->sprite.first);
-        piece.blinked_off = true;
-        piece.redraw = 0;
-        piece.erase = 2;
-        return;
-    }
-    show(pieces, *viking, true);
 }
 
 void World::fall_back_viking() {
@@ -785,20 +963,38 @@ void World::fall_back_viking() {
         const Entity* viking = at(slot);
         return viking != nullptr && !viking->dead;
     };
-    if (current_viking == kNobody || alive(current_viking)) {
-        return;
+    // A dead Viking's player first, then his viewers in their line's order.
+    std::array<int, kMostPlayers> order{};
+    std::size_t count = 0;
+    for (const bool players_first : {true, false}) {
+        const std::size_t first = count;
+        for (int who = 0; who < player_count; ++who) {
+            const Player& player = players.at(static_cast<std::size_t>(who));
+            if (player.controls == players_first && player.viking != kNobody && !alive(player.viking)) {
+                order.at(count++) = who;
+            }
+        }
+        std::sort(order.begin() + static_cast<std::ptrdiff_t>(first),
+                  order.begin() + static_cast<std::ptrdiff_t>(count), [this](int one, int other) {
+                      return players.at(static_cast<std::size_t>(one)).in_line <
+                             players.at(static_cast<std::size_t>(other)).in_line;
+                  });
     }
-    camera.moved_x = camera.moved_y = kJustSwitched;
-    int viking = current_viking;
-    for (int i = 0; i < kVikingSlots - 1; ++i) {
-        viking = viking == kVikingSlots - 1 ? 0 : viking + 1;
-        if (alive(viking)) {
-            current_viking = viking;
-            return;
+    for (std::size_t i = 0; i < count; ++i) {
+        const int who = order.at(i);
+        Player& player = players.at(static_cast<std::size_t>(who));
+        player.camera.moved_x = player.camera.moved_y = kJustSwitched;
+        int viking = player.viking;
+        int next = kNobody;
+        for (int tried = 0; tried < kVikingSlots - 1 && next == kNobody; ++tried) {
+            viking = viking == kVikingSlots - 1 ? 0 : viking + 1;
+            next = alive(viking) ? viking : kNobody;
+        }
+        move_player(who, next);
+        if (next == kNobody) {
+            game_over = true;
         }
     }
-    current_viking = kNobody;
-    game_over = true;
 }
 
 void World::count_down_shake() noexcept {
@@ -888,27 +1084,48 @@ void World::shift_sprites(int picture) {
     }
 }
 
-void World::mark_outside_active_area() {
+World::View World::active_area(const Camera& camera) noexcept {
     // The area's left and top edges stop at the level's; its right edge is measured from where the left edge
     // would be without that, its bottom edge from the top edge as stopped.
     const int unclamped_left = wrapped(camera.x - kMargin);
-    const View area{
-        .left = std::max(unclamped_left, 0),
-        .right = wrapped(unclamped_left + camera.view_width + (2 * kMargin)),
-        .top = std::max<int>(wrapped(camera.y - kMargin), 0),
-        .bottom = wrapped(std::max<int>(wrapped(camera.y - kMargin), 0) + camera.view_height + (2 * kMargin))};
+    return View{.left = std::max(unclamped_left, 0),
+                .right = wrapped(unclamped_left + camera.view_width + (2 * kMargin)),
+                .top = std::max<int>(wrapped(camera.y - kMargin), 0),
+                .bottom = wrapped(std::max<int>(wrapped(camera.y - kMargin), 0) + camera.view_height + (2 * kMargin))};
+}
+
+bool World::outside(const Entity& entity, const View& area) noexcept {
+    return wrapped(entity.x + entity.half_width) < area.left || wrapped(entity.x - entity.half_width) >= area.right ||
+           wrapped(entity.y + entity.half_height) < area.top || wrapped(entity.y - entity.half_height) >= area.bottom;
+}
+
+void World::mark_outside_active_area() {
     for (int slot = kVikingSlots; slot < slots(); ++slot) {
         Entity* entity = at(slot);
         if (entity == nullptr || entity->stays_active()) {
             continue;
         }
-        if (wrapped(entity->x + entity->half_width) < area.left ||
-            wrapped(entity->x - entity->half_width) >= area.right ||
-            wrapped(entity->y + entity->half_height) < area.top ||
-            wrapped(entity->y - entity->half_height) >= area.bottom) {
+        if (std::ranges::all_of(
+                playing(), [entity](const Player& player) { return outside(*entity, active_area(player.camera)); })) {
             entity->set_flag(entity_flag::kLeftTheActiveArea);
         }
     }
+}
+
+bool World::at_edge_of_view(const Entity& entity, bool across, bool forwards, int far, int near) const noexcept {
+    const int at = across ? entity.x : entity.y;
+    const auto past = [&](const Player& player) {
+        const Camera& camera = player.camera;
+        const int corner = across ? camera.x : camera.y;
+        const int size = across ? camera.view_width : camera.view_height;
+        const int edge = wrapped(forwards ? corner + size + far : corner - near);
+        return forwards ? at >= edge : at < edge;
+    };
+    const auto in_area = [&entity](const Player& player) { return !outside(entity, active_area(player.camera)); };
+    if (std::ranges::none_of(playing(), in_area)) {
+        return std::ranges::all_of(playing(), past);
+    }
+    return std::ranges::all_of(playing(), [&](const Player& player) { return !in_area(player) || past(player); });
 }
 
 }  // namespace lvr

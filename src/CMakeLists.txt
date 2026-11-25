@@ -32,6 +32,13 @@ add_library(lvr::input ALIAS lvr_input)
 target_include_directories(lvr_input PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 lvr_target_defaults(lvr_input)
 
+# Co-op online (ADR-0012): rollback, plain C++ (the sockets are lvr_transport's).
+add_library(lvr_net STATIC
+    net/rollback.cpp)
+add_library(lvr::net ALIAS lvr_net)
+target_include_directories(lvr_net PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+lvr_target_defaults(lvr_net)
+
 # ymfm (third party, BSD-3): its sources as they are, warnings off.
 add_library(lvr_ymfm STATIC  # the OPL family only (ymfm_opl.cpp also has the OPL4's PCM and the Y8950's ADPCM)
     ${ymfm_SOURCE_DIR}/src/ymfm_opl.cpp
@@ -95,6 +102,7 @@ add_library(lvr_engine STATIC
     lvr/ship_scenes.cpp
     lvr/title.cpp
     lvr/village_scenes.cpp
+    lvr/sound.cpp
     lvr/sprites.cpp
     lvr/terrain.cpp
     lvr/tomator.cpp
@@ -147,6 +155,14 @@ if(LVR_BUILD_APPS)
     target_include_directories(lvr_image PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(lvr_image PUBLIC lvr::assets PRIVATE SDL3::SDL3)
     lvr_target_defaults(lvr_image)
+
+    # --- transport: co-op online's sockets, TCP and UDP through SDL3_net (ADR-0012) ---
+    add_library(lvr_transport STATIC
+        net/transport.cpp)
+    add_library(lvr::transport ALIAS lvr_transport)
+    target_include_directories(lvr_transport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(lvr_transport PRIVATE SDL3::SDL3 SDL3_net::SDL3_net)
+    lvr_target_defaults(lvr_transport)
 
     # --- lv-export: dev tool, writes the game data out as PNG + JSON for inspection (not shipped) ---
     add_executable(lv-export exporter/main.cpp)
@@ -207,6 +223,7 @@ if(LVR_BUILD_TESTS)
         audio/tests/test_sequencer.cpp
         exporter/tests/test_level_dump.cpp
         input/tests/test_input.cpp
+        net/tests/test_rollback.cpp
         replay/tests/test_golden.cpp
         replay/tests/test_replay.cpp
         lvr/tests/test_archive.cpp
@@ -225,12 +242,13 @@ if(LVR_BUILD_TESTS)
         lvr/tests/test_movement.cpp
         lvr/tests/test_profile.cpp
         lvr/tests/test_play.cpp
+        lvr/tests/test_players.cpp
         lvr/tests/test_render.cpp
         lvr/tests/test_session.cpp
         lvr/tests/test_sprites.cpp
         lvr/tests/test_terrain.cpp
         lvr/tests/test_world.cpp)
-    target_link_libraries(lvr_tests PRIVATE lvr::assets lvr::audio lvr::input lvr::engine
+    target_link_libraries(lvr_tests PRIVATE lvr::assets lvr::audio lvr::input lvr::net lvr::engine
                                             lvr::level_dump lvr::replay lvr::session
                                             Catch2::Catch2WithMain)
     # Tests tagged [real-data] use the user's own game files when present and are skipped otherwise.
@@ -240,8 +258,8 @@ if(LVR_BUILD_TESTS)
     lvr_target_warnings(lvr_tests)
     # SDL3-backed code is only built with LVR_BUILD_APPS.
     if(LVR_BUILD_APPS)
-        target_sources(lvr_tests PRIVATE image/tests/test_png.cpp lvr/tests/test_gpu.cpp)
-        target_link_libraries(lvr_tests PRIVATE lvr::image lvr::gpu)
+        target_sources(lvr_tests PRIVATE image/tests/test_png.cpp lvr/tests/test_gpu.cpp net/tests/test_transport.cpp)
+        target_link_libraries(lvr_tests PRIVATE lvr::image lvr::gpu lvr::transport)
     endif()
     include(Catch)
     # Catch2's tags become CTest labels.

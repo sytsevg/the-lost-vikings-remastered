@@ -39,10 +39,20 @@ rewind, a quicksave, and the player's profile on disk that keeps the last two ar
 - Dropped (the user, 2026-11-25): art packs (sprites replaced one for one) and the SNES version's sound
 
 ## M9: Co-op online
-[`decisions.md`](decisions.md), ADR-0012. Online only (the user, 2026-11-25: no local co-op).
-- Two or three players, each on a machine of their own with a full screen and the view of their own Viking;
-  lockstep or rollback
-- The active area: every player's view together, or everything running (to be decided: ADR-0011)
+[`decisions.md`](decisions.md), ADR-0012. Online only (the user, 2026-11-25: no local co-op); up to three, by
+rollback. In this order, a commit each:
+- Players in the world: keys, a camera and a Viking each; one player exactly as before (built, 2026-11-25:
+  HANDOVER.md, "Players in the world")
+- Several views and the rules of play online: the active area every view's together, a Viking's player and
+  viewers, the texts that stop the game and those that don't, an inventory each and handing over within reach,
+  the host's keys
+- Rollback-ready play: all of a step's state in its snapshot, steps run again without pictures, each sound played
+  once, the state hashed; the sync test on every replay
+- Rollback after GGPO's design: prediction, a window of 8 steps, input delay, time sync, the out-of-step check
+- The transport: SDL3_net, UDP with TCP behind it
+- The front end: hosting and joining, the names under the Vikings, the latency in the menu, a mark while waiting
+- Joining a game under way, and joining again
+- Hosting and joining from the menu
 
 ## M10: Extra sound effects (Modern sound)
 - **What:** new effects on top of the original's: an electric buzz near the electric traps, the bow drawn and

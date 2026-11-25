@@ -2,10 +2,13 @@
 
 #include <algorithm>
 #include <format>
+#include <optional>
 #include <string_view>
 #include <utility>
 
 #include "assets/catalog.hpp"
+#include "assets/hash.hpp"
+#include "lvr/archive.hpp"
 #include "lvr/kinds.hpp"
 
 namespace lvr {
@@ -17,6 +20,71 @@ namespace {
 int shaken(int camera, const World::Shake& shake, int limit) noexcept {
     const auto plus = static_cast<std::uint16_t>(static_cast<std::uint16_t>(camera) + shake.offset);
     return plus <= static_cast<std::uint16_t>(limit) ? wrapped(plus) : wrapped(camera - shake.offset);
+}
+
+// Online (ADR-0012): every layer of text, into a player's view of it. What is at a place of the level (Line::
+// in_level) is there in every view that has that place; what is at a place of the screen is in the middle of each
+// view as the first player's has it (the shared layer), or only in its own player's view (said to him alone). The
+// boxes' colour is the viewer's own text's, else the shared layer's, else another player's.
+void compose_text(View& view, const World& world, int viewer, const Camera& camera) {
+    constexpr int kCell = 8;
+    const int left = static_cast<std::uint16_t>(camera.x) / kCell;  // the view's first text cell, in the level
+    const int top = static_cast<std::uint16_t>(camera.y) / kCell;
+    const int columns = std::min(view.width / kCell, kTextColumns);
+    const int rows = std::min(view.height / kCell, kTextRows);
+    view.text.fill(0);
+    // A layer's cells, its first at (across, down) of the view's; true if any was put.
+    const auto put = [&](const TextLayer& layer, int across, int down) {
+        bool any = false;
+        const auto& cells = layer.seen();
+        for (int row = 0; row < layer.rows; ++row) {
+            for (int column = 0; column < layer.columns; ++column) {
+                const std::uint8_t character =
+                    cells.at((static_cast<std::size_t>(row) * kTextLayerColumns) + static_cast<std::size_t>(column));
+                const int to_column = across + column;
+                const int to_row = down + row;
+                if (character == 0 || to_column < 0 || to_column >= columns || to_row < 0 || to_row >= rows) {
+                    continue;
+                }
+                view.text.at((static_cast<std::size_t>(to_row) * kTextColumns) + static_cast<std::size_t>(to_column)) =
+                    character;
+                any = true;
+            }
+        }
+        return any;
+    };
+    const TextLayer& shared = world.text;
+    const bool shared_shown = shared.in_level ? put(shared, shared.origin_x - left, shared.origin_y - top)
+                                              : put(shared, (columns - shared.columns) / 2, (rows - shared.rows) / 2);
+    std::optional<assets::Rgb> own;
+    std::optional<assets::Rgb> other;
+    for (int who = 0; who < world.player_count; ++who) {
+        const Player& player = world.players.at(static_cast<std::size_t>(who));
+        TextLayer colours;  // what his kColour lines leave
+        bool any = false;
+        for (const Line& line : player.said) {
+            if (line.kind == Line::Kind::kColour) {
+                colours.show(line, world.texts);
+                continue;
+            }
+            if (!line.in_level && who != viewer) {
+                continue;
+            }
+            TextLayer one;
+            one.columns = kTextLayerColumns;
+            one.rows = kTextLayerRows;
+            one.show(line, world.texts);
+            any = put(one, line.in_level ? line.origin_x - left : 0, line.in_level ? line.origin_y - top : 0) || any;
+        }
+        if (any && colours.colour3) {
+            if (who == viewer) {
+                own = colours.colour3;
+            } else if (!other) {
+                other = colours.colour3;
+            }
+        }
+    }
+    view.colour3 = own ? own : (shared_shown || !other ? shared.colour3 : other);
 }
 
 }  // namespace
@@ -241,10 +309,11 @@ std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files
     return loaded;
 }
 
-World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rules, std::array<int, 2> view) {
+World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rules, const Views& views, int players) {
     const Level& level = loaded.level;
     World world;
     world.set_rules(rules);
+    world.player_count = std::clamp(players, 1, kMostPlayers);
     // A scene that is one picture has no map of its own: the one before it stays (and with it the camera's limits).
     world.map = level.map.cells.empty() && map_before != nullptr ? *map_before : level.map;
     world.placements = level.placements;
@@ -302,18 +371,24 @@ World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rule
     world.cues.push_back(SoundCue{.kind = SoundCue::Kind::kStopAll});
     world.cues.push_back(
         SoundCue{.kind = SoundCue::Kind::kMusicAction, .value = level.music.at_start, .tune = level.music.tune});
-    world.current_viking = 0;
-    set_camera_limits(world.camera, level.width, level.height);
-    if (const Entity* first = world.entities[0].get()) {
-        start_camera(world.camera, first->x, first->y);
+    world.choose_vikings();
+    for (Player& player : world.playing()) {  // each view on its player's Viking
+        set_camera_limits(player.camera, level.width, level.height);
+        const Entity* viking = world.at(player.viking);
+        if (const Entity* first = viking != nullptr ? viking : world.entities[0].get()) {
+            start_camera(player.camera, first->x, first->y);
+        }
+        player.strip_x = cell_of(player.camera.x);
+        player.strip_y = cell_of(player.camera.y);
     }
-    world.strip_x = cell_of(world.camera.x);
-    world.strip_y = cell_of(world.camera.y);
     world.create_always_active();
-    world.create_in_view(ViewPart::kWhole);
-    if (const auto [width, height] = world.view_for(view);
-        width != world.camera.view_width || height != world.camera.view_height) {
-        world.set_view(width, height);  // (Remaster rules: as zoomed out as the player has it)
+    world.create_in_views();
+    for (int who = 0; who < world.player_count; ++who) {  // (Remaster rules: as zoomed out as each player has it)
+        const Camera& camera = world.players.at(static_cast<std::size_t>(who)).camera;
+        if (const auto [width, height] = world.view_for(who, views.at(static_cast<std::size_t>(who)));
+            width != camera.view_width || height != camera.view_height) {
+            world.set_view(who, width, height);
+        }
     }
     return world;
 }
@@ -344,16 +419,51 @@ constexpr int kNoBlankColumn = 21;
 bool Play::restore(const Snapshot& from) {
     const bool another = from.loaded != loaded_;
     world = from.world;
+    state_ = from.state;
     loaded_ = from.loaded;
     owned_ = from.owner;
-    if (const auto [width, height] = world.view_for(view);
-        width != world.camera.view_width || height != world.camera.view_height) {
-        world.set_view(width, height);
-    }
     cleared_.reset();
     fade.reset();
-    menu_ = Menu::kNone;
+    fading_out_.reset();
     return another;
+}
+
+std::uint64_t Play::state_hash(std::vector<std::uint8_t>& buffer) const {
+    buffer.clear();
+    Writer to{buffer};
+    world.save(to);
+    to(state_);
+    return assets::fnv1a64(std::as_bytes(std::span{buffer}));
+}
+
+void Play::take(const StepInput& input) {
+    menu_keys = input.menu;
+    if (input.typed != 0) {
+        world.typed = input.typed;
+    }
+    for (int who = 0; who < world.player_count; ++who) {
+        const PlayerInput& given = input.players.at(static_cast<std::size_t>(who));
+        if (given.zoom[0] != 0 && given.zoom[1] != 0) {
+            state_.views.at(static_cast<std::size_t>(who)) = {given.zoom[0], given.zoom[1]};
+        }
+        if (given.view[0] == 0 || given.view[1] == 0) {
+            continue;
+        }
+        const Camera& camera = world.players.at(static_cast<std::size_t>(who)).camera;
+        if (const auto [width, height] = world.view_for(who, {given.view[0], given.view[1]});
+            width != camera.view_width || height != camera.view_height) {
+            world.set_view(who, width, height);
+        }
+    }
+}
+
+void Play::zoom_back(int player, std::array<int, 2> zoom) {
+    state_.views.at(static_cast<std::size_t>(player)) = zoom;
+    const Camera& camera = world.players.at(static_cast<std::size_t>(player)).camera;
+    if (const auto [width, height] = world.view_for(player, zoom);
+        width != camera.view_width || height != camera.view_height) {
+        world.set_view(player, width, height);
+    }
 }
 
 void Play::scene_sound() {
@@ -365,8 +475,8 @@ void Play::scene_sound() {
 }
 
 bool Play::pause_wanted() const noexcept {
-    return world.has_vikings && !leaving() && (world.pressed & key::kEnter) != 0 && world.lines.empty() &&
-           !world.inventory.open;
+    return world.has_vikings && !leaving() && (world.host().pressed & key::kEnter) != 0 && world.lines.empty() &&
+           !world.host().inventory.open;
 }
 
 void Play::menu_text(int number, int column) {
@@ -377,11 +487,11 @@ void Play::menu_text(int number, int column) {
 
 void Play::open_menu(bool quit_box) {
     // The picture a little darker, unless something darkens it already; then the text is black, else white.
-    menu_tinted_ = world.tint == std::array<std::uint8_t, 3>{};
-    if (menu_tinted_) {
+    state_.menu_tinted = world.tint == std::array<std::uint8_t, 3>{};
+    if (state_.menu_tinted) {
         world.tint = kMenuTint;
     }
-    world.text.colour3 = menu_tinted_ ? assets::Rgb{} : assets::Rgb{.r = 255, .g = 255, .b = 255};
+    world.text.colour3 = state_.menu_tinted ? assets::Rgb{} : assets::Rgb{.r = 255, .g = 255, .b = 255};
     world.sound(effect::kMenuOpens);
     if (const auto box = box_at(world.texts, quit_box ? kQuitText : kGiveUpText, tail::kNone, quit_box ? 13 : 15, 12)) {
         world.text.show(*box, world.texts);
@@ -396,18 +506,19 @@ void Play::open_menu(bool quit_box) {
                             world.texts);
         }
     }
-    menu_blink_ = kBlinkStart;
-    menu_choice_ = 1;
-    menu_ = quit_box ? Menu::kQuitBox : Menu::kPause;
+    state_.menu_blink = kBlinkStart;
+    state_.menu_choice = 1;
+    state_.menu = quit_box ? Menu::kQuitBox : Menu::kPause;
 }
 
-bool Play::menu_pass(std::uint16_t keys, const std::function<void()>& picture, int& refreshes) {
+bool Play::menu_pass(const StepInput& input, const std::function<void()>& picture, int& refreshes) {
     refreshes += 3;
-    world.read_keys(static_cast<std::uint16_t>(keys | demo_keys_));
-    --menu_blink_;
-    if ((menu_blink_ & 0x0fU) == 0) {  // the chosen word goes, or is back
-        const bool no = menu_choice_ != 0;
-        if ((menu_blink_ & 0x10U) != 0) {
+    world.read_keys(with_demo(input));
+    const Player& host = world.host();
+    --state_.menu_blink;
+    if ((state_.menu_blink & 0x0fU) == 0) {  // the chosen word goes, or is back
+        const bool no = state_.menu_choice != 0;
+        if ((state_.menu_blink & 0x10U) != 0) {
             menu_text(kBlankText, no ? kNoBlankColumn : kYesColumn);
         } else {
             menu_text(no ? kNoText : kYesText, no ? kNoColumn : kYesColumn);
@@ -415,22 +526,22 @@ bool Play::menu_pass(std::uint16_t keys, const std::function<void()>& picture, i
         picture();
     }
     bool moved = false;  // the word left behind is shown again
-    if ((world.pressed & key::kLeft) != 0 && menu_choice_ != 0) {
-        menu_choice_ = 0;
-        menu_blink_ = kBlinkStart;
+    if ((host.pressed & key::kLeft) != 0 && state_.menu_choice != 0) {
+        state_.menu_choice = 0;
+        state_.menu_blink = kBlinkStart;
         menu_text(kNoText, kNoColumn);
         moved = true;
     }
-    if ((world.pressed & key::kRight) != 0 && menu_choice_ == 0) {
-        menu_choice_ = 1;
-        menu_blink_ = kBlinkStart;
+    if ((host.pressed & key::kRight) != 0 && state_.menu_choice == 0) {
+        state_.menu_choice = 1;
+        state_.menu_blink = kBlinkStart;
         menu_text(kYesText, kYesColumn);
         moved = true;
     }
     std::optional<std::uint16_t> choice;
-    if ((world.pressed & key::kF) != 0) {
-        choice = menu_choice_;
-    } else if ((world.pressed & key::kEnter) != 0 || (!menu_keys.yes && menu_keys.no)) {
+    if ((host.pressed & key::kF) != 0) {
+        choice = state_.menu_choice;
+    } else if ((host.pressed & key::kEnter) != 0 || (!menu_keys.yes && menu_keys.no)) {
         choice = 1;
     } else if (menu_keys.yes) {
         choice = 0;
@@ -441,19 +552,19 @@ bool Play::menu_pass(std::uint16_t keys, const std::function<void()>& picture, i
         }
         return false;
     }
-    world.read_keys(static_cast<std::uint16_t>(keys | demo_keys_));
+    world.read_keys(with_demo(input));
     for (int i = 0; i < 2; ++i) {  // the playfield drawn again, twice
         count_picture(world.pieces);
         picture();
         ++refreshes;
     }
-    const bool quit_box = menu_ == Menu::kQuitBox;
+    const bool quit_box = state_.menu == Menu::kQuitBox;
     if (*choice == 0) {
         world.game_over = true;
     }
     world.text.show({.kind = Line::Kind::kClear}, world.texts);
-    menu_ = Menu::kNone;
-    if (menu_tinted_ && !(quit_box && world.game_over)) {  // quitting, the picture stays dark
+    state_.menu = Menu::kNone;
+    if (state_.menu_tinted && !(quit_box && world.game_over)) {  // quitting, the picture stays dark
         world.tint = {};
     }
     if (quit_box) {
@@ -508,7 +619,7 @@ int Play::change_scene(const std::function<void()>& picture) {
     } else if (world.game_over_scene.give_up) {
         slot = scene::kLogo;
     }
-    demo_wanted_ = demo_wanted_ || world.title.demo_wanted;
+    state_.demo_wanted = state_.demo_wanted || world.title.demo_wanted;
     std::expected<LoadedLevel, std::string> next =
         std::unexpected{std::string{"the scene after this one can't be loaded without the game's files"}};
     if (files_ != nullptr) {
@@ -522,7 +633,7 @@ int Play::change_scene(const std::function<void()>& picture) {
         return kFadeSteps;
     }
     auto loaded = std::make_unique<LoadedLevel>(std::move(*next));
-    World started = prepare_world(*loaded, &world.map, world.rules, view);
+    World started = prepare_world(*loaded, &world.map, world.rules, state_.views, world.player_count);
     started.cues.front().value = leaving_level.music.at_end == 1 ? 1 : 0;  // what plays stops, or the music stays
     // What goes on from scene to scene.
     started.seed = world.seed;
@@ -532,14 +643,18 @@ int Play::change_scene(const std::function<void()>& picture) {
     started.scene = slot;
     started.previous_scene = world.scene;
     started.next_scene = loaded->level.next_slot;
-    started.attract = playback_;
-    if (playback_) {
+    started.attract = state_.playback;
+    if (state_.playback) {
         started.demo_seed = 30;
     }
     started.title.cheat = world.title.cheat;
+    started.online = world.online;
     started.text.draws = world.text.draws;                    // the count of text draws isn't a scene's
     started.last_nearest_viking = world.last_nearest_viking;  // nor is who was last found nearest (ds:03CA)
-    started.keys_before = world.keys_before;  // a key held over the change isn't newly pressed after it (ds:03BA)
+    for (std::size_t i = 0; i < started.players.size(); ++i) {
+        // A key held over the change isn't newly pressed after it (ds:03BA).
+        started.players.at(i).keys_before = world.players.at(i).keys_before;
+    }
     // A quirk of the original: a scene sets up only its own colour cycles; those the scene before had more of
     // are still there, and run if the new scene's bits say so.
     for (std::size_t i = started.cycles.size(); i < world.cycles.size(); ++i) {
@@ -578,16 +693,18 @@ int Play::change_scene(const std::function<void()>& picture) {
     return kFadeSteps + 4 + kFadeSteps + 1;
 }
 
-View view_of(const World& world, const LoadedLevel& loaded, PiecePainter& painter,
-             std::vector<PiecePicture>& pictures) {
+View view_of(const World& world, const LoadedLevel& loaded, PiecePainter& painter, std::vector<PiecePicture>& pictures,
+             int player) {
+    const Player& whose = world.players.at(static_cast<std::size_t>(player));
+    const Camera& camera = whose.camera;
     View view;
-    view.camera_x = shaken(world.camera.x, world.shake_x, world.camera.max_x);
-    view.camera_y = shaken(world.camera.y, world.shake_y, world.camera.max_y);
-    view.width = world.camera.view_width;
-    view.height = world.camera.view_height;
+    view.camera_x = shaken(camera.x, world.shake_x, camera.max_x);
+    view.camera_y = shaken(camera.y, world.shake_y, camera.max_y);
+    view.width = camera.view_width;
+    view.height = camera.view_height;
     // The text layer scrolls with the camera's last three bits, and shakes with the view.
-    view.text_x = -static_cast<int>(static_cast<std::uint16_t>(world.camera.x) & 7U) - (view.camera_x - world.camera.x);
-    view.text_y = -static_cast<int>(static_cast<std::uint16_t>(world.camera.y) & 7U) - (view.camera_y - world.camera.y);
+    view.text_x = -static_cast<int>(static_cast<std::uint16_t>(camera.x) & 7U) - (view.camera_x - camera.x);
+    view.text_y = -static_cast<int>(static_cast<std::uint16_t>(camera.y) & 7U) - (view.camera_y - camera.y);
     view.map = loaded.level.map.cells.empty() ? nullptr : &world.map;
     for (const auto& entity : world.entities) {
         if (entity) {
@@ -615,8 +732,12 @@ View view_of(const World& world, const LoadedLevel& loaded, PiecePainter& painte
                         .flipped = picture.flipped,
                         .moves = picture.piece < moves.size() ? moves[picture.piece] : std::array<int, 2>{}});
     }
-    view.text = world.text.seen();
-    view.colour3 = world.text.colour3;
+    if (world.online) {
+        compose_text(view, world, player, camera);
+    } else {
+        view.text = world.text.seen();
+        view.colour3 = world.text.colour3;
+    }
     view.palette = world.palette;
     for (std::size_t i = 0; i < view.darken.size(); ++i) {
         view.darken.at(i) = world.tint.at(i) | world.tint2.at(i);
@@ -633,16 +754,16 @@ View view_of(const World& world, const LoadedLevel& loaded, PiecePainter& painte
             }
             hud.vikings.at(static_cast<std::size_t>(who)) = HudView::Viking{
                 .shown = true,
-                .portrait = viking->dead ? HudView::Portrait::kDead
-                                         : (who == world.current_viking ? HudView::Portrait::kChosen
-                                                                        : HudView::Portrait::kWaiting),
+                .portrait = viking->dead
+                                ? HudView::Portrait::kDead
+                                : (who == whose.viking ? HudView::Portrait::kChosen : HudView::Portrait::kWaiting),
                 // With the shield item's point the second set of health pictures is shown.
                 .health = (viking->health + (world.armour.at(static_cast<std::size_t>(who)) != 0 ? 4 : 0)) / 2};
         }
         for (std::size_t square = 0; square < 12; ++square) {
             hud.icons.at(square) = world.shown_items.at(square);
         }
-        if (const Inventory& inventory = world.inventory; inventory.open) {
+        if (const Inventory& inventory = whose.inventory; inventory.open) {
             // The cursor's square, as the blinking last left it. Choosing: its item, with or without the picker.
             // Carrying: the carried item or nothing; the pickers stay on the Vikings' chosen squares.
             constexpr int kTrashCanIcon = 23;
@@ -699,12 +820,12 @@ void Play::start_demo(int& slot) {
     constexpr std::array<std::uint16_t, 6> kDemoRecordings{418, 419, 420, 422, 421, 448};
     constexpr std::uint16_t kIntroRecording = 443;
     constexpr std::uint16_t kEmptyRecording = 444;
-    demo_count_ = demo_word_ = demo_keys_ = 0;
-    const bool wanted = demo_wanted_;
-    demo_wanted_ = false;
-    playback_ = slot == scene::kStarfield || slot == scene::kEnding || slot == scene::kShip || wanted;
-    if (!playback_ || files_ == nullptr) {
-        playback_ = false;
+    state_.demo_count = state_.demo_word = state_.demo_keys = 0;
+    const bool wanted = state_.demo_wanted;
+    state_.demo_wanted = false;
+    state_.playback = slot == scene::kStarfield || slot == scene::kEnding || slot == scene::kShip || wanted;
+    if (!state_.playback || files_ == nullptr) {
+        state_.playback = false;
         return;
     }
     std::uint16_t entry = kEmptyRecording;
@@ -712,38 +833,40 @@ void Play::start_demo(int& slot) {
         entry = kIntroRecording;
     } else if (slot != scene::kVillageDemo && slot != scene::kStarfield && slot != scene::kEnding &&
                slot != scene::kShip) {
-        slot = kDemoLevels.at(static_cast<std::size_t>(demo_index_));
-        entry = kDemoRecordings.at(static_cast<std::size_t>(demo_index_));
+        slot = kDemoLevels.at(static_cast<std::size_t>(state_.demo_index));
+        entry = kDemoRecordings.at(static_cast<std::size_t>(state_.demo_index));
     }
-    recording_.clear();
-    demo_at_ = 0;
+    state_.recording.clear();
+    state_.demo_at = 0;
     if (const auto bytes = assets::load_entry(files_->archive(), entry)) {
         for (std::size_t i = 0; i + 1 < bytes->size(); i += 2) {
-            recording_.push_back(static_cast<std::uint16_t>(std::to_integer<unsigned>((*bytes)[i]) |
-                                                            (std::to_integer<unsigned>((*bytes)[i + 1]) << 8U)));
+            state_.recording.push_back(static_cast<std::uint16_t>(std::to_integer<unsigned>((*bytes)[i]) |
+                                                                  (std::to_integer<unsigned>((*bytes)[i + 1]) << 8U)));
         }
     }
 }
 
 void Play::play_demo() {
     constexpr std::uint16_t kEnds = key::kEnter;  // the pause key, and a recording's last word
-    if (!playback_) {
+    if (!state_.playback) {
         return;
     }
-    const bool ended_now = (world.held & kEnds) != 0;
+    const bool ended_now = (world.host().held & kEnds) != 0;
     if (ended_now) {
-        demo_count_ = demo_word_ = 0xffff;
+        state_.demo_count = state_.demo_word = 0xffff;
     }
-    if (demo_count_ != 0) {
-        --demo_count_;
-        demo_keys_ |= demo_word_;
+    if (state_.demo_count != 0) {
+        --state_.demo_count;
+        state_.demo_keys |= state_.demo_word;
     } else {
-        const std::uint16_t word = demo_at_ < recording_.size() ? recording_.at(demo_at_) : kEnds;
-        const std::uint16_t ticks =
-            demo_at_ + 1 < recording_.size() ? recording_.at(demo_at_ + 1) : std::uint16_t{0xffff};
-        demo_keys_ = demo_word_ = word;
-        demo_count_ = static_cast<std::uint16_t>(ticks - 1U);
-        demo_at_ += 2;
+        const std::uint16_t word =
+            state_.demo_at < state_.recording.size() ? state_.recording.at(state_.demo_at) : kEnds;
+        const std::uint16_t ticks = state_.demo_at + 1 < state_.recording.size()
+                                        ? state_.recording.at(state_.demo_at + 1)
+                                        : std::uint16_t{0xffff};
+        state_.demo_keys = state_.demo_word = word;
+        state_.demo_count = static_cast<std::uint16_t>(ticks - 1U);
+        state_.demo_at += 2;
     }
     if (!ended_now) {
         return;
@@ -751,28 +874,28 @@ void Play::play_demo() {
     // What follows the scene that was played.
     switch (world.scene) {
         case scene::kIntro:  // its recording's end: the village's demo; a key: level 1
-            if (world.held != 0xffff) {
-                demo_wanted_ = true;
+            if (world.host().held != 0xffff) {
+                state_.demo_wanted = true;
             } else {
                 world.next_scene = 0;
-                world.current_viking = 0;
+                world.host().viking = 0;
             }
             break;
         case scene::kVillageDemo:
-            world.current_viking = 0;
+            world.host().viking = 0;
             break;
         case scene::kStarfield:
-            demo_wanted_ = true;
+            state_.demo_wanted = true;
             break;
         case scene::kEnding:
             world.next_scene = scene::kLogo;
             break;
         default:  // one of the title's demos: the next one the next time, and the logos again
-            demo_index_ = (demo_index_ + 1) % 6;
+            state_.demo_index = (state_.demo_index + 1) % 6;
             world.next_scene = scene::kLogo;
             break;
     }
-    playback_ = false;
+    state_.playback = false;
     world.leave = true;
 }
 

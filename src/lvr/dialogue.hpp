@@ -42,6 +42,12 @@ struct Line {
     // Its cell was worked out from a point of the level, in the layer as large as it is. Without this, the cell
     // is one of the original's 40 x 22, which a larger layer has in its middle.
     bool by_point = false;
+    // Online (ADR-0012): a box at a point of the level stays there, in every player's view: its cells count from
+    // this cell of the level (the corner of the view it was laid out in). Without it a line is at its place on
+    // the screen.
+    bool in_level = false;
+    std::int16_t origin_x = 0;
+    std::int16_t origin_y = 0;
 
     bool operator==(const Line&) const = default;
 };
@@ -83,6 +89,10 @@ class TextLayer {
     std::array<std::uint8_t, std::size_t{kTextLayerColumns} * kTextLayerRows> shown{};  // then: as last drawn
     bool pending = false;                                                               // text to draw
     int draws = 0;                                                                      // draws since the last clear
+    // Online: what it shows is at a place of the level (Line::in_level), its first cell at this cell of the level.
+    bool in_level = false;
+    int origin_x = 0;
+    int origin_y = 0;
 
     bool operator==(const TextLayer&) const = default;
 

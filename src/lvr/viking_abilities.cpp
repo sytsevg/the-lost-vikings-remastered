@@ -25,7 +25,7 @@ void Viking::charging(World& world) {
 }
 
 void Viking::charging_after_acting(World& world) {
-    if ((world.pressed & key::kE) != 0 && use_item(world)) {
+    if ((input(world).pressed & key::kE) != 0 && use_item(world)) {
         return;
     }
     charging_after_item(world);
@@ -33,7 +33,7 @@ void Viking::charging_after_acting(World& world) {
 
 void Viking::charging_after_item(World& world) {
     // He charges on until the charge's animation ends, or the key of the way he faces is let go.
-    if (!animation_waits() || (world.held & (facing_left() ? key::kLeft : key::kRight)) == 0) {
+    if (!animation_waits() || (input(world).held & (facing_left() ? key::kLeft : key::kRight)) == 0) {
         s.doing = Doing::kStoppingCharge;
         world.play(*this, anim::kErikStopsCharging);
         return on_his_feet(world);
@@ -74,14 +74,14 @@ void Viking::head_hits(World& world) {
 }
 
 void Viking::head_hit(World& world) {
-    if ((world.pressed & key::kS) != 0 && act(world)) {
+    if ((input(world).pressed & key::kS) != 0 && act(world)) {
         return;
     }
     head_hit_after_acting(world);
 }
 
 void Viking::head_hit_after_acting(World& world) {
-    if ((world.pressed & key::kE) != 0 && use_item(world)) {
+    if ((input(world).pressed & key::kE) != 0 && use_item(world)) {
         return;
     }
     head_hit_after_item(world);
@@ -111,7 +111,7 @@ void Viking::bounce(World& world) {
 }
 
 void Viking::bouncing_after_acting(World& world) {
-    if ((world.pressed & key::kE) != 0 && use_item(world)) {
+    if ((input(world).pressed & key::kE) != 0 && use_item(world)) {
         return;
     }
     bouncing_after_item(world);
@@ -144,7 +144,7 @@ void Viking::on_his_feet(World& world) {
 }
 
 void Viking::on_his_feet_after_acting(World& world) {
-    if ((world.pressed & key::kE) != 0 && use_item(world)) {
+    if ((input(world).pressed & key::kE) != 0 && use_item(world)) {
         return;
     }
     on_his_feet_after_item(world);
@@ -163,7 +163,7 @@ void Viking::turn_shield(World& world) {
             world.play(*this, anim::kOlafStopsShieldUp);
         }
     }
-    if ((world.pressed & key::kS) != 0 && act(world)) {
+    if ((input(world).pressed & key::kS) != 0 && act(world)) {
         return;
     }
     standing_after_acting(world);
@@ -189,11 +189,11 @@ void Viking::hang(World& world) {
 
 void Viking::hanging(World& world) {
     if (played(world)) {
-        if ((world.pressed & key::kFOrD) != 0) {
+        if ((input(world).pressed & key::kFOrD) != 0) {
             s.doing = Doing::kOther;
             return turn_shield(world);
         }
-        if ((world.pressed & key::kE) != 0 && use_item(world)) {
+        if ((input(world).pressed & key::kE) != 0 && use_item(world)) {
             return;
         }
         return hanging_after_item(world);
@@ -202,9 +202,9 @@ void Viking::hanging(World& world) {
 }
 
 void Viking::hanging_after_item(World& world) {
-    if ((world.held & key::kLeft) != 0) {
+    if ((input(world).held & key::kLeft) != 0) {
         face(world, true);
-    } else if ((world.held & key::kRight) != 0) {
+    } else if ((input(world).held & key::kRight) != 0) {
         face(world, false);
     }
     wait(At::kHanging, {Test::kWall});
@@ -243,7 +243,7 @@ void Viking::baleog_goes_on(World& world) {
         case At::kDrawingBow:
             return baleog_waits(world, animation_waits() ? At::kDrawingBow : At::kAiming);
         case At::kAiming:
-            if ((world.held & key::kD) != 0) {
+            if ((input(world).held & key::kD) != 0) {
                 return baleog_waits(world, At::kAiming);
             }
             world.play(*this, anim::kBaleogLooses);
@@ -292,7 +292,7 @@ void Viking::resume_ability(World& world) {
             if (message != 0 && told(world)) {
                 return;
             }
-            if ((world.pressed & key::kS) != 0 && act(world)) {
+            if ((input(world).pressed & key::kS) != 0 && act(world)) {
                 return;
             }
             return charging_after_acting(world);
@@ -324,7 +324,7 @@ void Viking::resume_ability(World& world) {
             if (message != 0 && told(world)) {
                 return;
             }
-            if ((world.pressed & key::kS) != 0 && act(world)) {
+            if ((input(world).pressed & key::kS) != 0 && act(world)) {
                 return;
             }
             return bouncing_after_acting(world);
@@ -373,7 +373,7 @@ void Viking::resume_ability(World& world) {
             if (!animation_waits()) {
                 return keys(world);
             }
-            if ((world.pressed & key::kS) != 0 && act(world)) {
+            if ((input(world).pressed & key::kS) != 0 && act(world)) {
                 return;
             }
             return on_his_feet_after_acting(world);

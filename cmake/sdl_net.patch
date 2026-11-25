@@ -1,0 +1,57 @@
+diff --git a/src/SDL_net.c b/src/SDL_net.c
+index a4f90fa..8d11f44 100644
+--- a/src/SDL_net.c
++++ b/src/SDL_net.c
+@@ -171,6 +171,7 @@ static int WindowsPoll(struct pollfd *fds, unsigned int nfds, int timeout)
+ #include <sys/socket.h>
+ #include <arpa/inet.h>
+ #include <netinet/in.h>
++#include <netinet/tcp.h>  // the-lost-vikings-remastered: TCP_NODELAY, TCP_QUICKACK
+ #include <net/if.h>
+ #include <netdb.h>
+ #include <errno.h>
+@@ -1435,6 +1436,18 @@ struct NET_StreamSocket
+     Uint64 simulated_failure_until;
+ };
+ 
++// the-lost-vikings-remastered (co-op online): a stream socket that carries small messages at once. Nagle's
++// algorithm off (TCP_NODELAY), and on Linux acknowledgements sent at once (TCP_QUICKACK, which the kernel turns off
++// again: set after every read too). If either can't be set, the socket works as it would have.
++static void SetLowLatency(Socket handle)
++{
++    int one = 1;
++    setsockopt(handle, IPPROTO_TCP, TCP_NODELAY, (const char *) &one, sizeof (one));
++#ifdef TCP_QUICKACK
++    setsockopt(handle, IPPROTO_TCP, TCP_QUICKACK, (const char *) &one, sizeof (one));
++#endif
++}
++
+ NET_StreamSocket *NET_CreateClient(NET_Address *addr, Uint16 port, SDL_PropertiesID props)
+ {
+     if (addr == NULL) {
+@@ -1477,6 +1490,7 @@ NET_StreamSocket *NET_CreateClient(NET_Address *addr, Uint16 port, SDL_Propertie
+         SDL_SetError("Failed to make new socket non-blocking");
+         return NULL;
+     }
++    SetLowLatency(sock->handle);
+ 
+     const int rc = connect(sock->handle, addrwithport->ai_addr, (SockLen) addrwithport->ai_addrlen);
+ 
+@@ -1665,6 +1679,7 @@ bool NET_AcceptClient(NET_Server *server, NET_StreamSocket **client_stream)
+             CloseSocketHandle(handle);
+             return SDL_SetError("Failed to make incoming socket non-blocking");
+         }
++        SetLowLatency(handle);
+ 
+         char portbuf[16];
+         const int gairc = getnameinfo((struct sockaddr *) &from, fromlen, NULL, 0, portbuf, sizeof (portbuf), NI_NUMERICSERV);
+@@ -1883,6 +1898,9 @@ int NET_ReadFromStreamSocket(NET_StreamSocket *sock, void *buf, int buflen)
+     }
+ 
+     UpdateStreamSocketSimulatedFailure(sock);
++#ifdef TCP_QUICKACK
++    SetLowLatency(sock->handle);  // (the kernel turns TCP_QUICKACK off again)
++#endif
+ 
+     return br;
+ }

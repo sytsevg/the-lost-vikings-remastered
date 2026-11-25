@@ -1141,8 +1141,7 @@ class FlyingRobot : public Enemy {
             world.spawn(*this, factory_kind::kDroppedShot, x + (facing_left() ? 3 : -3), y + 18);
         }
         stay_in_view(world);
-        const int edge = speed_y >= 0 ? world.camera.y + world.camera.view_height : world.camera.y - 16;
-        if (speed_y >= 0 ? y >= edge : y < edge) {
+        if (world.at_edge_of_view(*this, false, speed_y >= 0, 0, 16)) {
             bob(world);
         }
         if (countdown == 0) {
@@ -1248,8 +1247,7 @@ class Drone : public Enemy {
     void carry_on(World& world) {
         stay_in_view(world);
         // At the view's bottom (going down) or 16 pixels over its top (going up) it turns too.
-        const int edge = speed_y >= 0 ? world.camera.y + world.camera.view_height : world.camera.y - 16;
-        if (speed_y >= 0 ? y >= edge : y < edge) {
+        if (world.at_edge_of_view(*this, false, speed_y >= 0, 0, 16)) {
             bob();
         }
         if (speed_y != kBob && countdown == 0) {  // it has gone up long enough

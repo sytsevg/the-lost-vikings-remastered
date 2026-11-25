@@ -34,7 +34,7 @@ struct Stage {
         texts.insert(texts.end(), {6, 3, 'H', 'I', 0});
         world.texts = texts;
         world.programs = programs;
-        world.camera.max_x = world.camera.max_y = 2000;
+        world.host().camera.max_x = world.host().camera.max_y = 2000;
         world.map =
             Map{.width = 20, .height = 10, .cells = std::vector<Cell>(200, Cell{.metatile = 0, .tile_type = 0x0c})};
         world.make = [](std::uint16_t kind) -> std::unique_ptr<Entity> {
@@ -107,7 +107,7 @@ TEST_CASE("hint: it greets the Viking being played once; later it answers when a
     Entity* erik = world.create({.kind = kind::kErik, .x = 160, .y = 100});
     world.create({.kind = kind::kBaleog, .x = 0, .y = 0});
     world.create({.kind = kind::kOlaf, .x = 0, .y = 0});
-    world.shown_viking = 0;
+    world.host().shown_viking = 0;
     Entity* hint = world.create({.kind = kind::kHint, .x = 230, .y = 100, .argument = 0x0105});
     stage.tick();
     CHECK(hint->acts_as == tile::kThing);
@@ -153,10 +153,10 @@ TEST_CASE("hint: it greets the Viking being played once; later it answers when a
     world.hints_seen = 0;
     Entity* far = world.create({.kind = kind::kHint, .x = 160, .y = 100, .argument = 0x0203});
     far->box = erik->box;
-    world.camera.moved_x = 9;  // the camera is still moving
-    world.camera.locked_x = world.camera.locked_y = true;
+    world.host().camera.moved_x = 9;  // the camera is still moving
+    world.host().camera.locked_x = world.host().camera.locked_y = true;
     stage.tick();
-    world.camera.moved_x = 9;
+    world.host().camera.moved_x = 9;
     stage.tick();
     CHECK(world.lines.empty());
 }
@@ -171,7 +171,7 @@ TEST_CASE("world: who can be spoken to") {
     erik->x = 20;                                  // too near the view's edge
     CHECK_FALSE(world.can_be_spoken_to(*erik));
     erik->x = 160;
-    world.camera.moved_y = 4;
+    world.host().camera.moved_y = 4;
     CHECK_FALSE(world.can_be_spoken_to(*erik));
 }
 

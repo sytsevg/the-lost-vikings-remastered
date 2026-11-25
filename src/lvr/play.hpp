@@ -61,10 +61,11 @@ inline constexpr std::array<std::uint8_t, 3> kMenuTint{8, 8, 8};
 std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files, int slot, int database_entry,
                                                   const assets::SnesRom* snes = nullptr);
 
-// The level's world before its first tick.
-// Under Remaster rules a level's world is made with the view the zoom asks for (`view`, World::view_for).
+// The level's world before its first tick, for as many players (ADR-0012), each one's view on his Viking.
+// Under Remaster rules a level's world is made with the views the players' zoom asks for (`views`,
+// World::view_for).
 World prepare_world(const LoadedLevel& loaded, const Map* map_before = nullptr, Rules rules = Rules::kVanilla,
-                    std::array<int, 2> view = {kViewWidth, kViewHeight});
+                    const Views& views = kOriginalViews, int players = 1);
 
 // The level's world as it starts: the Vikings where they start, the camera on the first, the placements that are
 // always active or in view, and the one tick the original runs before the first picture. `loaded` must outlive it.
@@ -97,38 +98,40 @@ class Play {
     // One step. `picture` is called each time the world is to be shown. Returns how many refreshes of the display
     // the step takes (a tick's three, three for a wait's pass; a change of scene: 145 more); a step can show fewer
     // pictures than that.
+    // The players' input: each one's keys and stick (ADR-0012); the first player's drive the menus and the texts.
     template <typename Picture>
-    int step(std::uint16_t keys, const Picture& picture) {
+    int step(StepInput input, const Picture& picture) {
         constexpr int kTick = 3;
         int refreshes = kTick;
         bool said = false;
         scene_loaded = false;
+        take(input);
         if (world.waiting_for_key) {
-            world.read_keys(keys);
-            if ((world.pressed & key::kAction) == 0) {
+            world.read_keys(input);
+            if ((world.host().pressed & key::kAction) == 0) {
                 world.turn_colours();
                 picture();
                 return refreshes;
             }
-            world.read_keys(keys);
+            world.read_keys(input);
             world.waiting_for_key = false;
             said = true;
         } else {
             refreshes = 0;
             const std::function<void()> shown = [&picture] { picture(); };
-            if (menu_ == Menu::kQuitBox) {
-                if (menu_pass(keys, shown, refreshes) && world.game_over) {  // "yes", or the game was over anyway
+            if (state_.menu == Menu::kQuitBox) {
+                if (menu_pass(input, shown, refreshes) && world.game_over) {  // "yes", or the game was over anyway
                     ended = true;
                 }
                 return refreshes;
             }
-            if (menu_ == Menu::kPause) {
-                if (!menu_pass(keys, shown, refreshes)) {
+            if (state_.menu == Menu::kPause) {
+                if (!menu_pass(input, shown, refreshes)) {
                     return refreshes;
                 }
                 // The tick it held goes on from here.
             } else {
-                world.read_keys(static_cast<std::uint16_t>(keys | demo_keys_));
+                world.read_keys(with_demo(input));
                 play_demo();
                 if (world.title.quit) {
                     ended = true;
@@ -149,20 +152,23 @@ class Play {
                 // Loading a scene lets go of every key: for what is left of this step none is down. One still
                 // held is read again in the next step, and is newly pressed there if a wait for a key read
                 // the empty keyboard in between.
-                keys = 0;
+                for (PlayerInput& player : input.players) {
+                    player.keys = 0;
+                }
                 menu_keys.previous_level = menu_keys.next_level = false;
             }
-            if (world.inventory.open || inventory_wanted(world)) {
+            if (!world.online && (world.host().inventory.open || inventory_wanted(world, 0))) {
                 // The inventory screen holds the tick: a pass and a picture a step, one refresh each. Opening
-                // it shows the playfield once more, and its first pass follows at once.
-                if (!world.inventory.open) {
-                    open_inventory(world);
+                // it shows the playfield once more, and its first pass follows at once. (Online it doesn't hold
+                // the game: World::tick_part.)
+                if (!world.host().inventory.open) {
+                    open_inventory(world, 0);
                     count_picture(world.pieces);
                     picture();
                     ++refreshes;
-                    world.read_keys(keys);
+                    world.read_keys(input);
                 }
-                const bool closed = inventory_pass(world);
+                const bool closed = inventory_pass(world, 0);
                 world.update_hud();
                 picture();
                 ++refreshes;
@@ -179,7 +185,7 @@ class Play {
             switch_sound();
             // After the tick: Alt+X, Alt+Q or F10, unless something is being said.
             if (menu_keys.quit && world.lines.empty()) {
-                if (playback_ || loaded_->level.quits_at_once) {  // a demo, or a scene that isn't played: at once
+                if (state_.playback || loaded_->level.quits_at_once) {  // a demo, or a scene that isn't played: at once
                     ended = true;
                     return refreshes;
                 }
@@ -190,7 +196,7 @@ class Play {
             change_level();
             said = world.next_line < world.lines.size();
         }
-        if (world.show_lines(keys)) {
+        if (world.show_lines(input)) {
             refreshes += kTick;  // the wait's first pass
         }
         if (said) {
@@ -198,27 +204,69 @@ class Play {
         }
         return refreshes;
     }
+    // One player's: the original's keyboard word, with the menu keys as they are set (menu_keys).
+    template <typename Picture>
+    int step(std::uint16_t keys, const Picture& picture) {
+        StepInput input = StepInput::one(keys);
+        input.menu = menu_keys;
+        return step(input, picture);
+    }
 
-    // The play as it is now, to come back to: a copy of the world, and the level it is a world of (kept loaded for
-    // as long as the snapshot is). For Remaster rules' rewind and the quicksave.
+    // The pause menu (Esc or P: text 2) and the quit box (Alt+X, Alt+Q, F10: text 3 with the level's
+    // password): the game holds while the chosen word blinks. Left and right choose, fire takes the choice, Esc
+    // or P and the N key are "no", the Y key "yes". Giving up is the game over; quitting ends the game.
+    enum class Menu : std::uint8_t { kNone, kPause, kQuitBox };
+    // What the play keeps from step to step beside its world, as plain data: with the world it is all a step
+    // starts from (ADR-0012: what rollback goes back to). The pause menu or the quit box, the original's sound
+    // switches, a demo being played, and the view each player has chosen (Remaster rules' zoom: a scene starts
+    // with it).
+    struct PlayState {
+        Menu menu = Menu::kNone;
+        std::uint16_t menu_choice = 1;  // 0 yes, 1 no
+        std::uint16_t menu_blink = 0;   // counts down a pass; every 16th changes the chosen word
+        bool menu_tinted = false;       // the menu darkened the picture itself
+        bool effects_on = true;
+        bool music_on = true;
+        // Demos: the scenes played from a recording (the village's, the ending's, and the levels the title shows).
+        bool playback = false;
+        bool demo_wanted = false;              // the next scene is one: the title asked, or the scene before it
+        int demo_index = 0;                    // which of the title's demo levels is next
+        std::vector<std::uint16_t> recording;  // pairs: for how many ticks, which keys
+        std::size_t demo_at = 0;
+        std::uint16_t demo_count = 0;
+        std::uint16_t demo_word = 0;
+        std::uint16_t demo_keys = 0;
+        Views views = kOriginalViews;
+    };
+
+    // The play as it is now, to come back to: a copy of the world and the play's own state, and the level it is a
+    // world of (kept loaded for as long as the snapshot is). For Remaster rules' rewind and the quicksave, and
+    // online for rollback.
     struct Snapshot {
         World world;
+        PlayState state;
         const LoadedLevel* loaded = nullptr;
         std::shared_ptr<LoadedLevel> owner;
     };
-    Snapshot snapshot() const { return {.world = world, .loaded = loaded_, .owner = owned_}; }
-    // Back to a snapshot, with the view `view` asks for (the zoom isn't part of the play). True if it is of
-    // another scene than the one played now: the caller then has that scene's sound start again (scene_sound)
-    // once it is where it stays.
+    Snapshot snapshot() const { return {.world = world, .state = state_, .loaded = loaded_, .owner = owned_}; }
+    // Back to a snapshot, exactly. True if it is of another scene than the one played now: the caller then has
+    // that scene's sound start again (scene_sound) once it is where it stays.
     bool restore(const Snapshot& from);
-    // Remaster rules' zoom: the view asked for, which a level is started with and a snapshot brought back to.
-    std::array<int, 2> view{kViewWidth, kViewHeight};
+    // A player's chosen view becomes `zoom`, at once (the zoom is the player's, not the play's: after a rewind or a
+    // quicksave brought back, the one he has now).
+    void zoom_back(int player, std::array<int, 2> zoom);
+    // A player's chosen view, for the next scene's start (a step's input says it too: StepInput).
+    void choose_view(int player, std::array<int, 2> zoom) { state_.views.at(static_cast<std::size_t>(player)) = zoom; }
+    const PlayState& state() const noexcept { return state_; }
+    // The play's state written out (the world, World::save, then its PlayState) into `buffer`, and its 64-bit FNV-1a:
+    // what two machines compare to find one out of step, and the sync test compares (ADR-0012).
+    std::uint64_t state_hash(std::vector<std::uint8_t>& buffer) const;
     // What is heard stops and the scene's music starts, as when the scene was loaded; the step counts as one that
     // loaded a scene.
     void scene_sound();
     // The pause menu or the quit box is open; a scene is played from a recording.
-    bool in_menu() const noexcept { return menu_ != Menu::kNone; }
-    bool playing_demo() const noexcept { return playback_; }
+    bool in_menu() const noexcept { return state_.menu != Menu::kNone; }
+    bool playing_demo() const noexcept { return state_.playback; }
 
     World world;
 
@@ -228,19 +276,9 @@ class Play {
   public:
     // The user's SNES image, for the scenes' backdrops (Remaster rules; load_slot). Must outlive the play.
     const assets::SnesRom* snes = nullptr;
-    // The keys the menus read as held, apart from the keyboard word: set before a step.
-    struct MenuKeys {
-        bool yes = false;   // Y
-        bool no = false;    // N
-        bool quit = false;  // Alt+X, Alt+Q or F10
-        // Alt+S, Alt+M: the key was pressed (or repeated) with Alt held, and hasn't been acted on yet. A tick acts
-        // on it after its pictures, and clears it.
-        bool effects = false;
-        bool music = false;
-        // F5, F6: the level keys, which only do something once the title was given the cheat's password.
-        bool previous_level = false;
-        bool next_level = false;
-    };
+    // The keys the menus read as held, apart from the keyboard word: the step's (StepInput::menu), as the step has
+    // left them (it clears Alt+S and Alt+M once it acted on them).
+    using MenuKeys = lvr::MenuKeys;
     MenuKeys menu_keys;
     // While a scene fades out or in: how much darker every colour is shown (0-70).
     std::optional<std::uint8_t> fade;
@@ -257,15 +295,15 @@ class Play {
     // After a tick (the original's 08C8): Alt+S switches the effects off or on, Alt+M the music.
     void switch_sound() {
         if (menu_keys.effects) {
-            effects_on_ = !effects_on_;
+            state_.effects_on = !state_.effects_on;
             world.cues.push_back(
-                {.kind = SoundCue::Kind::kEffectsOn, .value = static_cast<std::uint16_t>(effects_on_ ? 1 : 0)});
+                {.kind = SoundCue::Kind::kEffectsOn, .value = static_cast<std::uint16_t>(state_.effects_on ? 1 : 0)});
             menu_keys.effects = false;
         }
         if (menu_keys.music) {
-            music_on_ = !music_on_;
+            state_.music_on = !state_.music_on;
             world.cues.push_back(
-                {.kind = SoundCue::Kind::kMusicOn, .value = static_cast<std::uint16_t>(music_on_ ? 1 : 0)});
+                {.kind = SoundCue::Kind::kMusicOn, .value = static_cast<std::uint16_t>(state_.music_on ? 1 : 0)});
             menu_keys.music = false;
         }
     }
@@ -282,8 +320,6 @@ class Play {
             world.level_done = true;
         }
     }
-    bool effects_on_ = true;
-    bool music_on_ = true;
     bool leaving() const noexcept {
         return world.game_over || world.level_done || world.game_over_scene.try_again ||
                world.game_over_scene.give_up || world.leave;
@@ -300,37 +336,29 @@ class Play {
     // The scene fades out, the next is loaded and runs its first tick, and fades in. Returns the refreshes.
     int change_scene(const std::function<void()>& picture);
 
-    // The pause menu (Esc or P: text 2) and the quit box (Alt+X, Alt+Q, F10: text 3 with the level's
-    // password): the game holds while the chosen word blinks. Left and right choose, fire takes the choice, Esc
-    // or P and the N key are "no", the Y key "yes". Giving up is the game over; quitting ends the game.
-    enum class Menu : std::uint8_t { kNone, kPause, kQuitBox };
     bool pause_wanted() const noexcept;
     void open_menu(bool quit_box);
     // One pass: three refreshes. True when a choice closed the menu.
-    bool menu_pass(std::uint16_t keys, const std::function<void()>& picture, int& refreshes);
+    bool menu_pass(const StepInput& input, const std::function<void()>& picture, int& refreshes);
+    // The input with a recording's keys (a demo's) as the first player's too.
+    StepInput with_demo(StepInput input) const noexcept {
+        input.players[0].keys = static_cast<std::uint16_t>(input.players[0].keys | state_.demo_keys);
+        return input;
+    }
     void menu_text(int number, int column);
+    // What a step's input sets before anything runs: the menu keys, the character typed, the players' views.
+    void take(const StepInput& input);
 
-    Menu menu_ = Menu::kNone;
-    std::uint16_t menu_choice_ = 1;  // 0 yes, 1 no
-    std::uint16_t menu_blink_ = 0;   // counts down a pass; every 16th changes the chosen word
-    bool menu_tinted_ = false;       // the menu darkened the picture itself
-
+    PlayState state_;
     const assets::GameFiles* files_ = nullptr;
     const LoadedLevel* loaded_;
     std::shared_ptr<LoadedLevel> owned_;    // shared with the snapshots of it
     std::optional<SceneGraphics> cleared_;  // the scene's graphics after the menu's clear
-    // Demos: the scenes played from a recording (the village's, the ending's, and the levels the title shows).
-    bool playback_ = false;
-    bool demo_wanted_ = false;              // the next scene is one: the title asked, or the scene before it
-    int demo_index_ = 0;                    // which of the title's demo levels is next
-    std::vector<std::uint16_t> recording_;  // pairs: for how many ticks, which keys
-    std::size_t demo_at_ = 0;
-    std::uint16_t demo_count_ = 0;
-    std::uint16_t demo_word_ = 0;
-    std::uint16_t demo_keys_ = 0;
 };
 
-// What a picture of the world shows. The sprites' pictures are made into `pictures`, which the view points into.
-View view_of(const World& world, const LoadedLevel& loaded, PiecePainter& painter, std::vector<PiecePicture>& pictures);
+// What a picture of the world shows, in a player's view (the first player's: the original's). The sprites' pictures
+// are made into `pictures`, which the view points into.
+View view_of(const World& world, const LoadedLevel& loaded, PiecePainter& painter, std::vector<PiecePicture>& pictures,
+             int player = 0);
 
 }  // namespace lvr

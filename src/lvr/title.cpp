@@ -26,7 +26,7 @@ class Logo : public Entity {
             count_down_from(argument != 0 ? argument : 60);
             return;
         }
-        if (countdown == 0 || (world.pressed & key::kEnter) != 0 || (world.pressed & key::kF) != 0) {
+        if (countdown == 0 || (world.host().pressed & key::kEnter) != 0 || (world.host().pressed & key::kF) != 0) {
             world.leave = true;
         }
     }
@@ -39,12 +39,12 @@ class Logo : public Entity {
 class Title : public Entity {
   public:
     void update(World& world) override {
-        const bool confirm = (world.pressed & key::kEnter) != 0 || (world.pressed & key::kF) != 0;
+        const bool confirm = (world.host().pressed & key::kEnter) != 0 || (world.host().pressed & key::kF) != 0;
         switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kTitleStands);
                 world.animate(*this);
-                world.current_viking = 0;
+                world.host().viking = 0;
                 count_down_from(kPatience);
                 s.state = State::kTitle;
                 return;
@@ -91,10 +91,10 @@ class Title : public Entity {
                 s.state = State::kMenu;
                 break;
             case State::kMenu:
-                if ((world.pressed & key::kUp) != 0) {
+                if ((world.host().pressed & key::kUp) != 0) {
                     s.choice = s.choice == 0 ? 2 : s.choice - 1;
                     chosen(world);
-                } else if ((world.pressed & key::kDown) != 0) {
+                } else if ((world.host().pressed & key::kDown) != 0) {
                     s.choice = s.choice == 2 ? 0 : s.choice + 1;
                     chosen(world);
                 } else if (world.typed == 'N' ||
@@ -240,10 +240,10 @@ class Title : public Entity {
                        .row = 18,
                        .value = world.password.at(i)});
         }
-        const bool up = (world.held & key::kUp) != 0;
-        const bool down = !up && (world.held & key::kDown) != 0;
-        const bool faster_down = !up && !down && (world.held & key::kPrevious) != 0;
-        const bool faster_up = !up && !down && !faster_down && (world.held & key::kNext) != 0;
+        const bool up = (world.host().held & key::kUp) != 0;
+        const bool down = !up && (world.host().held & key::kDown) != 0;
+        const bool faster_down = !up && !down && (world.host().held & key::kPrevious) != 0;
+        const bool faster_up = !up && !down && !faster_down && (world.host().held & key::kNext) != 0;
         if (up || down || faster_up || faster_down) {
             if (countdown == 0) {
                 countdown = up || down ? 3 : 2;
@@ -252,14 +252,14 @@ class Title : public Entity {
             }
             return false;
         }
-        if (world.typed == kBackspace || (world.held & key::kLeft) != 0) {
+        if (world.typed == kBackspace || (world.host().held & key::kLeft) != 0) {
             if (s.at != 0) {
                 world.typed = 0;
                 move(world, false);
             }
             return false;
         }
-        if ((world.held & key::kRight) != 0) {
+        if ((world.host().held & key::kRight) != 0) {
             move(world, true);
             return false;
         }

@@ -85,12 +85,11 @@ class Enemy : public Entity {
                find_viking_beside(world, *this, Side::kAhead, vikings()).has_value();
     }
 
-    // He turns before he walks out of the view (16 pixels of slack either side).
+    // He turns before he walks out of the view (16 pixels of slack either side): with several players, out of
+    // every view he is in (World::at_edge_of_view).
     void stay_in_view(World& world) {
         const bool to_the_right = (speed_x >= 0) != facing_left();
-        const auto edge = static_cast<std::int16_t>(static_cast<std::uint16_t>(
-            world.camera.x + (to_the_right ? world.camera.view_width + kViewMargin : -kViewMargin)));
-        if (to_the_right ? x >= edge : x < edge) {
+        if (world.at_edge_of_view(*this, true, to_the_right, kViewMargin, kViewMargin)) {
             world.flip_across(*this);
         }
     }

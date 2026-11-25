@@ -95,7 +95,7 @@ int small(int position) noexcept {
 
 }  // namespace
 
-void reveal(std::vector<bool>& seen, const World& world) {
+void reveal(std::vector<bool>& seen, const World& world, int player) {
     const Map& map = world.map;
     const int width = map.width * kMinimapCell;
     const int height = map.height * kMinimapCell;
@@ -103,7 +103,7 @@ void reveal(std::vector<bool>& seen, const World& world) {
     if (seen.size() != pixels) {
         seen.assign(pixels, false);
     }
-    const Camera& camera = world.camera;
+    const Camera& camera = world.players.at(static_cast<std::size_t>(player)).camera;
     const int left = std::max(0, small(std::max(camera.x, 0)));
     const int top = std::max(0, small(std::max(camera.y, 0)));
     const int right = std::min(width - 1, small(camera.x + camera.view_width - 1));

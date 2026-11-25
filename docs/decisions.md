@@ -65,8 +65,9 @@ comments and other docs points here). A decision that was later replaced is not 
 - One tick is three refreshes of the original's display: 59.71 Hz (Mode X has 527 lines), so 19.90 Hz, 50.24 ms
   ([`original/timing.md`](original/timing.md)). The game keeps that rate with its own clock, whatever the host's
   monitor does. Input is read once per tick.
-- State can be copied and hashed. That gives replays (an input log), goldens (a hash per refresh), and later
-  rewind (a ring of snapshots) and online co-op (lockstep or rollback) without restructuring.
+- State can be copied and hashed. That gives replays (an input log), goldens (a hash per refresh), rewind (a ring
+  of snapshots), and online co-op by rollback (ADR-0012), without restructuring: a step run again from a snapshot,
+  shown or not, must come out the same.
 
 ### ADR-0018: An entity is a class with explicit states
 - One class per kind, derived from `Entity`, with plain data members and an enum of states: one state for each
@@ -94,8 +95,9 @@ comments and other docs points here). A decision that was later replaced is not 
 - Which tests run, and in which order, is behaviour: the list is part of the kind.
 
 ### ADR-0020: The game's state can be written out and read back
-- **Why:** a quicksave in a file now; later, in co-op over a network, the snapshots a server sends its clients
-  to keep them in step. So it is every kind's state that is written, not the keys that led to it.
+- **Why:** a quicksave in a file; in co-op over a network (ADR-0012), the state hashed to find a machine out of
+  step, and the snapshot a player who joins a game under way is sent. So it is every kind's state that is written,
+  not the keys that led to it.
 - **How** (`archive.hpp`): a plain struct is taken apart field by field (glaze's reflection of aggregates, by
   position, no names), and each field written with a fixed width, the low byte first: a bool as a byte, an enum
   as its number, arrays and vectors element by element. Nothing is written as the memory it sits in, so the
@@ -114,8 +116,8 @@ comments and other docs points here). A decision that was later replaced is not 
   each level and the scenes by default, every replay with `--all`); that every kind keeps its state in its `Saved`
   is checked without playing (`scripts/kind_state.py`).
 - A world is 25 to 40 KB written out under Vanilla rules and 70 to 90 KB under Remaster rules (most of it the
-  larger layer of sprite pieces). Fine for a file; a snapshot sent many times a second will want only what
-  changed.
+  larger layer of sprite pieces). Fine for a file. The snapshot sent to a player joining under way is to be
+  written smaller: integers of variable length (LEB128, signed ones zigzagged), and without the free sprite pieces.
 
 ## Data
 
@@ -177,6 +179,7 @@ permissively licensed; the project's own code is MIT ([`../THIRD-PARTY-NOTICES.m
 | Library | Use | Licence |
 |---|---|---|
 | SDL3 | window, input, audio, PNG | zlib |
+| SDL3_net | co-op online's TCP and UDP (patched: `cmake/sdl_net.patch`) | zlib |
 | ymfm | OPL3 emulation (Classic sound) | BSD-3 |
 | TinySoundFont | SoundFont synthesizer (Modern sound) | MIT |
 | glaze | JSON (`lv-export`) | MIT |
@@ -375,11 +378,55 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
 - **The quicksave is a file in the profile too** (`quicksave.bin`, ADR-0020): written when F7 keeps the play,
   read when the game starts. It begins with the state's version (ADR-0020) and ends with a sum over the world's
   bytes: a file of another version, or a damaged one, is said and left alone.
-- **An unlimited active area** is not built: one player doesn't need it. It comes back with co-op (ADR-0012),
-  where the players' views (each on their own machine) share one world: either the active area is every view's
-  together, or everything runs.
+- **An unlimited active area** is not built: one player doesn't need it. Online co-op (ADR-0012) makes it every
+  player's view together (the user, 2026-11-25; not everything running, which would lose the game's rhythm): an
+  entity is where any view with its 16 pixels reaches, and an enemy turns at the edge of the views it is in.
 
-### ADR-0012: Co-op online, for up to three
-- One to three players; with fewer players than Vikings, a player can switch to a Viking nobody plays.
-- Online only (the user, 2026-11-25: no local co-op, no split screen): each player on a machine of their own, with
-  a full screen and the view of their own Viking; lockstep or rollback (ADR-0003).
+### ADR-0012: Co-op online, for up to three, by rollback
+Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
+- **Online only** (the user: no local co-op, no split screen): up to three people, each on a machine of their own
+  with a full screen and the view of the Viking they play or watch. Remaster rules only; Vanilla rules, and one
+  player under Remaster rules, play as before.
+- **Rollback, as GGPO does it** (the user's checklist; GGPO is MIT: its design is taken, the code is ours). Every
+  machine runs the game and only inputs travel. A player's input that hasn't arrived is taken to be his last one
+  (holding a direction is the common case); when it comes otherwise, the game goes back to the first step it got
+  wrong and runs the steps from there again. A frame is a step, a tick of 50 ms: a window of 8 steps, and 0 to 2
+  steps of input delay chosen from the round trip at the start, which makes rollbacks rare. The machines are kept
+  together by their frame advantage: the one ahead waits a refresh now and then. Talked over and left (the user):
+  lockstep, and a host streaming its state to clients that only draw it.
+- **What rollback asks of the engine:** all of a step's state in a snapshot (the world, and the play's own: the
+  pause box, the fades, the demo), slots never pointers (ADR-0018); what is shown and heard only reads the
+  simulation, so a step run again without pictures changes the state as a shown one does, and a sound is keyed by
+  its step and its entity, so a step run again doesn't play it twice; determinism (ADR-0003). Checked by the sync
+  test, `lv-replay --rollback N`: every replay, each step run again after going back N steps, against its golden.
+  A step that changes the scene runs on confirmed inputs only, so a fade or a level's loading is never undone.
+- **Out of step:** the state of every 8th confirmed step is hashed and the hashes exchanged; on a difference the
+  first step that differs is logged, and each machine writes its state and its log of inputs (in `logs/` beside the
+  program) to be played offline.
+- **Transport:** SDL3_net. TCP for the handshake (the protocol's and the state's versions, the build's commit, the
+  game files' release, the names, the start); UDP for the inputs, every packet carrying each input the other side
+  hasn't acknowledged; the TCP connection carries them instead if UDP doesn't get through (TCP_NODELAY and, on
+  Linux, TCP_QUICKACK, which SDL3_net is patched to set: it sets neither). Through the host at first, so only the
+  host needs a port that can be reached; direct, no relay server.
+- **Only the host drives the game** (the user): the title, the passwords, the scenes, the pause box and giving up,
+  game over, the cheat's keys. The others play their Viking.
+- **A Viking has one player at most, and any number of viewers** (the user). The keys for the Viking before and
+  after move a player to the next living Viking: he plays him if nobody does, else he joins the end of his line of
+  viewers; the Viking he left goes to the first in his own line, or to nobody. One that nobody plays reads the keys
+  of the last who did, as the original's Vikings not being played read its one keyboard. At the start the host
+  plays Erik, the second to join Baleog, the third Olaf. A dead Viking's player and viewers move on to the next
+  living one; all three dead is game over, as before.
+- **What stops the game** (the user: gameplay shouldn't interrupt where that can be helped): only text shown on
+  every screen, a level's start and end and the scenes, which the host's key answers. Hints, remarks and the people
+  to talk to show only to the player whose Viking set them off, and his key answers them; his Viking stands
+  meanwhile and the world goes on. The inventory is each player's own and doesn't stop the world: an item is handed
+  to a Viking within reach (the original's 64 pixels) at once. The menu lies over the game going on. No rewind and
+  no quicksave online.
+- **A text box stays at its place in the level** (the user): the shared ones, the hints, the people talking, laid
+  out in the view of the player they are for (the host's for the shared ones) and shown where they are in every
+  player's view that has that place. One at a place of the screen (the password, a menu) is in the middle of each
+  screen; said to one player alone, only on his.
+- **The active area** is every player's view together (ADR-0011); a player's zoom is part of his input.
+- **Names** under the Vikings their players play or watch: PLAYER 1 to 3 at first, at most 8 letters. Every
+  player's latency in the menu. Hosting and joining from the command line first, then from the menu (a port, a
+  level's password and a name; an address and a name), kept in the profile.

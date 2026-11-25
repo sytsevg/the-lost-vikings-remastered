@@ -37,8 +37,9 @@ the project is and what is open: [`HANDOVER.md`](HANDOVER.md).
 
 The original numbers its scenes 0 to 47: the 37 levels, the game-over scene, the logos, the title, the galaxy
 between worlds, the village's scenes, the starfield and the ship. Each is loaded into a `World`: a map (or one
-picture), 20 entity slots, the sprite pieces, the camera, the level's switches, and what a level's rules need
-(the Viking being played, the inventory, the text being shown). The title, the menus and the cutscenes are entities
+picture), 20 entity slots, the sprite pieces, the level's switches, the players (one, or up to three online:
+each with his keys, the Viking he plays and the camera of his view; ADR-0012), and what a level's rules need (the
+inventory, the text being shown). The title, the menus and the cutscenes are entities
 like any other; a cutscene's script is a list of cues (`cues.hpp`).
 
 What carries from one scene to the next is little and listed in one place (`Play::change_scene`): the password,

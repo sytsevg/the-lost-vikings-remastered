@@ -238,7 +238,7 @@ void Viking::resume_moving(World& world) {
             if (message != 0 && told(world)) {
                 return;
             }
-            if (s.who == kind::kErik && (world.held & key::kF) != 0) {  // the key held: a higher jump
+            if (s.who == kind::kErik && (input(world).held & key::kF) != 0) {  // the key held: a higher jump
                 speed_y -= px(0.25);
             }
             return falling(world);
@@ -273,7 +273,7 @@ void Viking::resume_moving(World& world) {
             if (!played(world)) {
                 return climb(world);
             }
-            if ((world.pressed & key::kE) != 0 && use_item(world)) {
+            if ((input(world).pressed & key::kE) != 0 && use_item(world)) {
                 return;
             }
             return climbing(world);
@@ -341,18 +341,18 @@ void Viking::keys(World& world) {
     if (!played(world)) {
         return slow_down(world);
     }
-    if ((world.held & key::kAction) != 0) {
+    if ((input(world).held & key::kAction) != 0) {
         if (s.who == kind::kOlaf) {
-            if ((world.pressed & key::kFOrD) != 0) {
+            if ((input(world).pressed & key::kFOrD) != 0) {
                 return turn_shield(world);
             }
-        } else if ((world.pressed & key::kF) != 0) {
+        } else if ((input(world).pressed & key::kF) != 0) {
             return s.who == kind::kErik ? jump(world) : swing(world);
         }
-        if (s.who == kind::kErik && (world.pressed & key::kD) != 0 && speed_x >= kRunning) {
+        if (s.who == kind::kErik && (input(world).pressed & key::kD) != 0 && speed_x >= kRunning) {
             return charge(world);
         }
-        if ((world.pressed & key::kS) != 0 && act(world)) {
+        if ((input(world).pressed & key::kS) != 0 && act(world)) {
             return;
         }
     }
@@ -360,35 +360,35 @@ void Viking::keys(World& world) {
 }
 
 void Viking::standing_after_acting(World& world) {
-    if ((world.pressed & key::kE) != 0 && use_item(world)) {
+    if ((input(world).pressed & key::kE) != 0 && use_item(world)) {
         return;
     }
     standing_after_item(world);
 }
 
 void Viking::standing_after_item(World& world) {
-    if (s.who == kind::kBaleog && (world.held & key::kD) != 0) {
+    if (s.who == kind::kBaleog && (input(world).held & key::kD) != 0) {
         return draw_bow(world);
     }
     arrow_keys(world);
 }
 
 void Viking::arrow_keys(World& world) {
-    if ((world.held & key::kUp) != 0) {
+    if ((input(world).held & key::kUp) != 0) {
         if (find_beside(world, *this, Side::kAbove, types().ladder) &&
             find_at(world, *this, x, box.top, types().ladder)) {
             return onto_ladder(world, true);
         }
-    } else if ((world.held & key::kDown) != 0) {
+    } else if ((input(world).held & key::kDown) != 0) {
         if (find_beside(world, *this, Side::kBelow, types().ladder_top) &&
             !find_at(world, *this, x, box.bottom + 1, types().no_way_down)) {
             return onto_ladder(world, false);
         }
     }
-    if ((world.held & key::kLeft) != 0) {
+    if ((input(world).held & key::kLeft) != 0) {
         return walk(world, true);
     }
-    if ((world.held & key::kRight) != 0) {
+    if ((input(world).held & key::kRight) != 0) {
         return walk(world, false);
     }
     slow_down(world);
@@ -413,7 +413,7 @@ void Viking::walk(World& world, bool left) {
     // charge), and his walk's animation slower too, but less: at the square root of his pace (a quarter of his speed,
     // half of his steps), so his legs keep up with the floor (the user: at the same pace he slid ahead of them).
     constexpr int kFull = kFullPace;
-    const int pace = std::clamp(int{world.pace.across}, 1, kFull);
+    const int pace = std::clamp(int{input(world).pace.across}, 1, kFull);
     if (world.rules == Rules::kRemaster) {
         int steps = 1;  // in 16ths too: the smallest whose square is at least the pace's 16ths of 16
         while (steps * steps < pace * kFull) {
@@ -515,7 +515,7 @@ void Viking::falling(World& world) {
         if (!played(world)) {
             return drift(world);
         }
-        if ((world.pressed & key::kFOrD) != 0) {  // the shield up: he glides down
+        if ((input(world).pressed & key::kFOrD) != 0) {  // the shield up: he glides down
             s.shield_up = !s.shield_up;
             if (s.shield_up) {
                 s.glides_fast = speed_x >= kGlidingFast;
@@ -524,7 +524,7 @@ void Viking::falling(World& world) {
                 world.play(*this, looks().floats);
             }
         }
-        if ((world.pressed & key::kS) != 0 && act(world)) {
+        if ((input(world).pressed & key::kS) != 0 && act(world)) {
             return;
         }
         return falling_after_acting(world);
@@ -555,28 +555,28 @@ void Viking::falling(World& world) {
     if (!played(world)) {
         return drift(world);
     }
-    if ((world.pressed & key::kS) != 0 && act(world)) {
+    if ((input(world).pressed & key::kS) != 0 && act(world)) {
         return;
     }
     falling_after_acting(world);
 }
 
 void Viking::falling_after_acting(World& world) {
-    if ((world.pressed & key::kE) != 0 && use_item(world)) {
+    if ((input(world).pressed & key::kE) != 0 && use_item(world)) {
         return;
     }
     falling_after_item(world);
 }
 
 void Viking::falling_after_item(World& world) {
-    if ((world.held & key::kUp) != 0 && find_beside(world, *this, Side::kAbove, types().ladder) &&
+    if ((input(world).held & key::kUp) != 0 && find_beside(world, *this, Side::kAbove, types().ladder) &&
         find_at(world, *this, x, box.top, types().ladder)) {
         return onto_ladder(world, true);
     }
-    if ((world.held & kLeftOrRight) == 0) {
+    if ((input(world).held & kLeftOrRight) == 0) {
         return drift(world);
     }
-    const bool left = (world.held & key::kLeft) != 0;
+    const bool left = (input(world).held & key::kLeft) != 0;
     if (facing_left() != left) {
         speed_x = static_cast<std::int16_t>(-speed_x);
     }
@@ -586,7 +586,7 @@ void Viking::falling_after_item(World& world) {
     const int top_speed = paced_speed(world, s.who == kind::kErik ? kErikTopSpeed : kTopSpeed);
     if (speed_x < top_speed) {
         speed_x += (speed_x <= 0 ? px(1.5) : (speed_x < px(1) ? px(1) : px(0.75)));
-        if (world.rules == Rules::kRemaster && world.pace.across < kFullPace) {
+        if (world.rules == Rules::kRemaster && input(world).pace.across < kFullPace) {
             speed_x = static_cast<std::int16_t>(std::min(int{speed_x}, top_speed));
         }
     }
@@ -709,7 +709,7 @@ void Viking::dizzy_in_the_air(World& world) {
 }
 
 void Viking::dizzy_after_acting(World& world) {
-    if ((world.pressed & key::kE) != 0 && use_item(world)) {
+    if ((input(world).pressed & key::kE) != 0 && use_item(world)) {
         return;
     }
     dizzy_after_item(world);
@@ -770,15 +770,16 @@ void Viking::pace_climb(World& world) {
     if (world.rules != Rules::kRemaster) {
         return;
     }
-    const int way = (world.held & key::kUp) != 0 ? 1 : (world.held & key::kDown) != 0 ? -1 : 0;
-    sprite.pace = way != 0 && way == s.climbs ? std::clamp(world.pace.up_down, std::uint8_t{1}, kFullPace) : kFullPace;
+    const int way = (input(world).held & key::kUp) != 0 ? 1 : (input(world).held & key::kDown) != 0 ? -1 : 0;
+    sprite.pace =
+        way != 0 && way == s.climbs ? std::clamp(input(world).pace.up_down, std::uint8_t{1}, kFullPace) : kFullPace;
 }
 
-int Viking::paced_speed(const World& world, int top_speed) {
-    if (world.rules != Rules::kRemaster || world.pace.across >= kFullPace) {
+int Viking::paced_speed(const World& world, int top_speed) const {
+    if (world.rules != Rules::kRemaster || input(world).pace.across >= kFullPace) {
         return top_speed;
     }
-    return (top_speed * std::max(int{world.pace.across}, 1)) / kFullPace;
+    return (top_speed * std::max(int{input(world).pace.across}, 1)) / kFullPace;
 }
 
 void Viking::climb(World& world) {
@@ -793,10 +794,10 @@ void Viking::climbing(World& world) {
     }
     const VikingLooks& look = looks();
     const std::uint16_t frame = sprite.packed_frame;
-    if (s.who == kind::kErik && (world.pressed & key::kF) != 0) {
+    if (s.who == kind::kErik && (input(world).pressed & key::kF) != 0) {
         return jump(world);
     }
-    if ((world.held & key::kUp) != 0) {
+    if ((input(world).held & key::kUp) != 0) {
         if (frame == look.off_frame) {
             return stepped_off(world);
         }
@@ -811,7 +812,7 @@ void Viking::climbing(World& world) {
         pace_climb(world);
         return climb(world);
     }
-    if ((world.held & key::kDown) != 0) {
+    if ((input(world).held & key::kDown) != 0) {
         if (type_at(world, x, box.bottom + 1) != tile::kLadderTop) {
             if (find_at(world, *this, x, box.bottom + 1, types().landing)) {
                 return landed(world);
@@ -832,7 +833,7 @@ void Viking::climbing(World& world) {
         pace_climb(world);
         return climb(world);
     }
-    if ((world.held & kLeftOrRight) != 0) {
+    if ((input(world).held & kLeftOrRight) != 0) {
         if (frame == look.off_frame) {
             return stepped_off(world);
         }
@@ -918,11 +919,11 @@ class Shield : public Entity {
     // True if the level ends.
     static bool level_keys(World& world) {
         constexpr int kLastLevel = 36;
-        if (world.held == key::kAction) {
+        if (world.host().held == key::kAction) {
             if (world.scene == kLastLevel) {
                 return false;
             }
-        } else if (world.held == (key::kAction | key::kLeft)) {
+        } else if (world.host().held == (key::kAction | key::kLeft)) {
             if (world.scene == 0) {
                 return false;
             }

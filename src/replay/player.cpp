@@ -104,17 +104,25 @@ std::vector<Sound> LvrPlayer::take_sounds() {
 
 // One step of the replay: its pictures as the refreshes it takes. A step that shows fewer pictures than refreshes
 // starts with the last picture shown before it; one that shows more keeps its last ones.
+void LvrPlayer::place_vikings(const std::array<std::int16_t, 2>& at) {
+    for (std::size_t viking = 0; viking < kVikingSlots; ++viking) {
+        if (Entity* entity = play_.world.entities.at(viking).get()) {
+            entity->move_to(at[0], at[1]);
+        }
+    }
+}
+
 void LvrPlayer::play_step() {
+    if (rollback != 0) {
+        run_again();  // (before what the replay does between the steps)
+    }
     std::vector<Refresh> frames;
+    StepInput input = StepInput::one(replay_.steps[step_].keyboard);
     if (const std::optional<std::uint16_t> typed = replay_.steps[step_].typed) {
-        play_.world.typed = *typed;
+        input.typed = *typed;
     }
     if (const auto& place = replay_.steps[step_].place) {
-        for (std::size_t viking = 0; viking < kVikingSlots; ++viking) {
-            if (Entity* entity = play_.world.entities.at(viking).get()) {
-                entity->move_to((*place)[0], (*place)[1]);
-            }
-        }
+        place_vikings(*place);
     }
     Play::MenuKeys menu_keys;
     bool alt = false;
@@ -135,7 +143,7 @@ void LvrPlayer::play_step() {
     menu_keys.quit = menu_keys.quit || (alt && x_or_q);
     menu_keys.effects = alt && s;  // a tick acts on them while they are held, as the original does
     menu_keys.music = alt && m;
-    play_.menu_keys = menu_keys;
+    input.menu = menu_keys;
     if (copies) {
         World copy = play_.world;
         play_.world = std::move(copy);
@@ -156,7 +164,13 @@ void LvrPlayer::play_step() {
         }
         play_.world = std::move(read);
     }
-    const int refreshes = play_.step(replay_.steps[step_].keyboard, [&] {
+    if (rollback != 0) {
+        back_.push_back({.before = play_.snapshot(), .input = input, .place = replay_.steps[step_].place});
+        if (back_.size() > rollback) {
+            back_.pop_front();
+        }
+    }
+    const int refreshes = play_.step(input, [&] {
         frames.push_back(picture());
         frames.back().sounds = take_sounds();
     });
@@ -197,6 +211,29 @@ void LvrPlayer::play_step() {
     }
 }
 
+void LvrPlayer::run_again() {
+    if (back_.size() < rollback) {
+        return;
+    }
+    const std::uint64_t straight = play_.state_hash(written_);
+    const bool ended = play_.ended;
+    (void)play_.restore(back_.front().before);
+    for (std::size_t i = 0; i < back_.size(); ++i) {
+        const Kept& kept = back_[i];
+        if (i != 0 && kept.place) {
+            place_vikings(*kept.place);
+        }
+        // As the straight run took them: what each picture asks of the sound is taken with it, the rest after.
+        (void)play_.step(kept.input, [this] { (void)take_sounds(); });
+        (void)take_sounds();
+    }
+    play_.ended = ended;
+    play_.scene_loaded = false;
+    if (play_.state_hash(written_) != straight && !rolled_otherwise_) {
+        rolled_otherwise_ = step_;
+    }
+}
+
 std::expected<std::optional<Refresh>, std::string> LvrPlayer::next() {
     while (queued_.empty()) {
         if (play_.ended && !play_.error.empty()) {
@@ -209,6 +246,10 @@ std::expected<std::optional<Refresh>, std::string> LvrPlayer::next() {
         if (save_failed_) {
             return std::unexpected{std::format("step {}: the world written out didn't read back as it was", step_)};
         }
+        if (rolled_otherwise_) {
+            return std::unexpected{std::format("step {}: the steps run again from {} back came to another state",
+                                               *rolled_otherwise_, rollback)};
+        }
     }
     Refresh refresh = std::move(queued_.front());
     queued_.pop_front();
@@ -216,7 +257,8 @@ std::expected<std::optional<Refresh>, std::string> LvrPlayer::next() {
 }
 
 std::string LvrPlayer::entities() {
-    std::string lines = std::format("step {}\ncamera {},{}\n", step_, play_.world.camera.x, play_.world.camera.y);
+    std::string lines =
+        std::format("step {}\ncamera {},{}\n", step_, play_.world.host().camera.x, play_.world.host().camera.y);
     // As the reference's dump has them: a Viking who is gone shows his field 1A, FFFF.
     for (const auto& entity : play_.world.entities) {
         if (entity) {

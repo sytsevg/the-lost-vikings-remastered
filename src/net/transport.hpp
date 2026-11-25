@@ -1,0 +1,68 @@
+#pragma once
+
+// The transport for co-op online (ADR-0012), on SDL3_net: between the host and each client one TCP connection and
+// UDP. A message goes reliably (over TCP: the handshake, a snapshot) or fast (over UDP: the inputs, each of which
+// carries what the other side hasn't acknowledged, so a datagram lost costs nothing; over the TCP connection instead
+// while no UDP gets through, the fallback). The client's UDP is introduced to the host by a token the host gives it
+// over TCP, which also finds the way through a router's NAT. Pings both ways give each one's round trip. Nothing
+// here blocks but joining: the front end polls it every refresh.
+
+#include <cstdint>
+#include <expected>
+#include <memory>
+#include <optional>
+#include <span>
+#include <string>
+#include <vector>
+
+namespace lvr::net {
+
+enum class Channel : std::uint8_t { kReliable, kFast };
+
+// What came since the last poll.
+struct Event {
+    enum class Kind : std::uint8_t {
+        kJoined,   // host: a client connected (`peer` his number, from 1 on)
+        kMessage,  // `bytes` came from `peer` (on a client: 0, the host)
+        kLeft,     // the connection to `peer` is gone
+    };
+    Kind kind = Kind::kMessage;
+    int peer = 0;
+    std::vector<std::uint8_t> bytes;
+};
+
+class Transport {
+  public:
+    // Hosts a game on `port` (TCP and UDP both), for clients to join.
+    static std::expected<std::unique_ptr<Transport>, std::string> host(std::uint16_t port);
+    // Joins the game hosted at `address` (a name or a number), waiting up to `wait_ms` for the connection.
+    static std::expected<std::unique_ptr<Transport>, std::string> join(const std::string& address, std::uint16_t port,
+                                                                       int wait_ms = 5000);
+    Transport(const Transport&) = delete;
+    Transport& operator=(const Transport&) = delete;
+    Transport(Transport&&) = delete;
+    Transport& operator=(Transport&&) = delete;
+    ~Transport();
+
+    // What came, and the pings and UDP introductions due. Never blocks.
+    std::vector<Event> poll();
+    // To one peer (on a client, 0: the host). A message too long for a datagram goes over TCP.
+    void send(int peer, std::span<const std::uint8_t> bytes, Channel channel);
+    // Host: lets a client go.
+    void drop(int peer);
+    // The last round trip to the peer, in milliseconds, once a ping has come back.
+    std::optional<int> round_trip_ms(int peer) const;
+    // Whether UDP gets through to the peer (else the fast messages go over TCP).
+    bool fast_link(int peer) const;
+    // Tests: that many percent of the datagrams lost, both ways (SDL3_net's own simulation).
+    void simulate_loss(int percent);
+    bool hosting() const noexcept;
+    std::uint16_t port() const noexcept;
+
+  private:
+    struct Inner;
+    explicit Transport(std::unique_ptr<Inner> inner);
+    std::unique_ptr<Inner> inner_;
+};
+
+}  // namespace lvr::net

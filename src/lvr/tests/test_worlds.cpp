@@ -32,7 +32,7 @@ struct Stage {
     explicit Stage(int database = database::kPrehistoric, int vikings_at = 600) {
         world.programs = programs;
         world.database = database;
-        world.camera.max_x = world.camera.max_y = 2000;
+        world.host().camera.max_x = world.host().camera.max_y = 2000;
         world.map = Map{.width = kColumns,
                         .height = kRows,
                         .cells = std::vector<Cell>(std::size_t{kColumns} * kRows, Cell{.metatile = 0, .tile_type = 0})};
@@ -1738,7 +1738,7 @@ TEST_CASE("the ones to talk to say what they said before the dialogue table") {
                     world.texts = texts;
                     world.hints_seen = seen;
                     world.switches = switches;
-                    world.current_viking = current;
+                    world.host().viking = current;
                     for (int v = 0; v < 3; ++v) {
                         stage.move_viking(v, 104 + (4 * v), 100 + (2 * v));
                     }

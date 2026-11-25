@@ -442,10 +442,10 @@ class Lift : public Entity {
         }
         ridden = true;
         viking->push_y += speed_y;
-        if (rider == world.current_viking) {
-            if ((world.held & key::kUp) != 0) {
+        if (world.is_played(rider)) {
+            if ((world.keys_of(rider).held & key::kUp) != 0) {
                 go(world, true);
-            } else if ((world.held & key::kDown) != 0) {
+            } else if ((world.keys_of(rider).held & key::kDown) != 0) {
                 go(world, false);
             }
         }

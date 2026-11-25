@@ -55,8 +55,8 @@ void Viking::inflated_slow_down() {
 }
 
 void Viking::inflated_steer(World& world) {
-    const bool left = (world.held & key::kLeft) != 0;
-    if (left || (world.held & key::kRight) != 0) {
+    const bool left = (input(world).held & key::kLeft) != 0;
+    if (left || (input(world).held & key::kRight) != 0) {
         if (facing_left() != left) {
             speed_x = static_cast<std::int16_t>(-speed_x);
         }
@@ -72,10 +72,10 @@ void Viking::inflated_steer(World& world) {
 }
 
 void Viking::inflated_keys(World& world, bool also_act) {
-    if (also_act && (world.pressed & key::kS) != 0 && act(world)) {
+    if (also_act && (input(world).pressed & key::kS) != 0 && act(world)) {
         return;
     }
-    if ((world.pressed & key::kE) != 0 && use_item(world)) {
+    if ((input(world).pressed & key::kE) != 0 && use_item(world)) {
         return;
     }
     inflated_steer(world);
@@ -170,7 +170,8 @@ void Viking::inflated_turn(World& world) {
         }
         return inflated_float(world);
     }
-    if ((s.warned || !s.deflating) && ((world.pressed & key::kF) != 0 || (world.pressed & key::kD) != 0)) {
+    if ((s.warned || !s.deflating) &&
+        ((input(world).pressed & key::kF) != 0 || (input(world).pressed & key::kD) != 0)) {
         s.warned = false;
         return let_air_out(world);
     }
@@ -214,19 +215,19 @@ void Viking::at_controls(World& world, bool first) {
         }
         if (played(world)) {
             const std::uint16_t crane = s.crane;
-            if ((world.pressed & key::kD) != 0 || (world.pressed & key::kS) != 0) {
+            if ((input(world).pressed & key::kD) != 0 || (input(world).pressed & key::kS) != 0) {
                 push_x = facing_left() ? px(-8) : px(8);
                 world.factory.cranes.at(crane == 1 || crane == 2 ? crane : 0) &= static_cast<std::uint16_t>(~1U);
                 s.doing = Doing::kOther;
                 return carry_on(world);  // he falls if the controls weren't on the ground
             }
             std::uint16_t& asked = world.factory.cranes.at(crane < 2 ? crane : 2);
-            if ((world.pressed & key::kF) != 0) {
+            if ((input(world).pressed & key::kF) != 0) {
                 asked ^= 1U;
             }
-            if ((world.held & key::kLeft) != 0) {
+            if ((input(world).held & key::kLeft) != 0) {
                 asked |= 2U;
-            } else if ((world.held & key::kRight) != 0) {
+            } else if ((input(world).held & key::kRight) != 0) {
                 asked |= 4U;
             }
         }
@@ -364,8 +365,9 @@ void Viking::resume_in_world(World& world) {
             return wait(At::kTeleported);
         case At::kTeleported:
             // Beamed, he waits for the view whether he is played or not.
-            if ((s.beamed || played(world)) && (static_cast<std::uint16_t>(world.camera.moved_x) >= kCameraAtRest ||
-                                                static_cast<std::uint16_t>(world.camera.moved_y) >= kCameraAtRest)) {
+            if (const Camera& camera = world.camera_on(slot);
+                (s.beamed || played(world)) && (static_cast<std::uint16_t>(camera.moved_x) >= kCameraAtRest ||
+                                                static_cast<std::uint16_t>(camera.moved_y) >= kCameraAtRest)) {
                 return wait(At::kTeleported);
             }
             s.beamed = false;

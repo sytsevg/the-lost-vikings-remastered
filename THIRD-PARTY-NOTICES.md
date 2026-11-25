@@ -8,6 +8,7 @@ full licence texts are in each library's source, under `build/<preset>/_deps/` a
 | Library | Used for | Licence | Linked into the game |
 |---|---|---|---|
 | [SDL3](https://github.com/libsdl-org/SDL) (Sam Lantinga and contributors) | window, input, audio device, PNG | zlib | yes |
+| [SDL3_net](https://github.com/libsdl-org/SDL_net) (Sam Lantinga and contributors) | the sockets of co-op online, TCP and UDP; built with a small patch of ours (`cmake/sdl_net.patch`: TCP_NODELAY, TCP_QUICKACK) | zlib | yes |
 | [ymfm](https://github.com/aaronsgiles/ymfm) (Aaron Giles) | OPL3 emulation, the Classic sound | BSD 3-Clause | yes |
 | [TinySoundFont](https://github.com/schellingb/TinySoundFont) (Bernhard Schelling; based on SFZero by Steve Folta) | SoundFont synthesizer, the Modern sound | MIT | yes |
 | [glaze](https://github.com/stephenberry/glaze) (Stephen Berry) | JSON, in the `lv-export` development tool | MIT | no |

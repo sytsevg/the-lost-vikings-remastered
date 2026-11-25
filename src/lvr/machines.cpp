@@ -366,12 +366,13 @@ class GlowingFurnace : public Entity {
     // Brightest with the Viking being played at it, a step less for every 8 pixels he is away; nothing outside
     // its box.
     int wanted_glow(const World& world) const {
-        const Entity* viking = world.current_viking == kNobody ? nullptr : world.at(world.current_viking);
+        const int played = world.host().viking;  // (the first player's view is the one tinted)
+        const Entity* viking = played == kNobody ? nullptr : world.at(played);
         if (viking == nullptr || viking->x >= box.right || box.left >= viking->x || viking->y >= box.bottom ||
             box.top >= viking->y) {
             return 0;
         }
-        const int ahead = world.offset_to(*this, world.current_viking).ahead;
+        const int ahead = world.offset_to(*this, played).ahead;
         if (ahead >= 0) {
             return std::max(1, kBrightest - (ahead / 8));
         }

@@ -78,6 +78,81 @@ struct Creation {
 // The part of the view placements are looked for in: all of it, or the strip that came into view.
 enum class ViewPart : std::uint8_t { kWhole, kLeft, kRight, kBottom, kTop };
 
+// Co-op online (ADR-0012): up to three players, each with his keys, the Viking he plays and a view of his own. One
+// player is the original's game: his keys are its keyboard word, his view its camera.
+inline constexpr int kMostPlayers = 3;
+
+// Each player's view (Remaster rules' zoom), and the original's for all.
+using Views = std::array<std::array<int, 2>, kMostPlayers>;
+inline constexpr Views kOriginalViews{
+    {{kViewWidth, kViewHeight}, {kViewWidth, kViewHeight}, {kViewWidth, kViewHeight}}};
+
+// What one player gives a step: the keys he holds, and (Remaster rules) how far his stick is pushed and his zoom:
+// the view he has chosen (a scene starts with it), and the view his camera has from this step on (World::set_view;
+// the zoom's change is timed by the machine that shows it). {0, 0}: none given, the view stays as it is.
+struct PlayerInput {
+    std::uint16_t keys = 0;
+    Pace pace;
+    std::array<std::int16_t, 2> zoom{};
+    std::array<std::int16_t, 2> view{};
+};
+
+// The keys the menus read as held, apart from the keyboard word: the first player's.
+struct MenuKeys {
+    bool yes = false;   // Y
+    bool no = false;    // N
+    bool quit = false;  // Alt+X, Alt+Q or F10
+    // Alt+S, Alt+M: the key was pressed (or repeated) with Alt held, and hasn't been acted on yet. A tick acts on it
+    // after its pictures, and clears it.
+    bool effects = false;
+    bool music = false;
+    // F5, F6: the level keys, which only do something once the title was given the cheat's password.
+    bool previous_level = false;
+    bool next_level = false;
+};
+
+// What a step is given: each player's input, the first player's first; and the first player's character typed
+// since the last step (the title's password, Y and N) and the menus' keys. All that changes the game is here, so a
+// step given the same input from the same state comes out the same, shown or not (ADR-0003, ADR-0012).
+struct StepInput {
+    std::array<PlayerInput, kMostPlayers> players{};
+    std::uint16_t typed = 0;  // none: 0
+    MenuKeys menu;
+
+    // One player's: the original's keyboard word, and his stick's pace.
+    static StepInput one(std::uint16_t keys, Pace pace = {}) {
+        StepInput input;
+        input.players[0] = {.keys = keys, .pace = pace};
+        return input;
+    }
+};
+
+// A player, as the world has him: his keys this tick, the Viking he plays, and his view of the level.
+struct Player {
+    std::uint16_t held = 0;         // this tick's input: the keys held, and of them the ones newly pressed
+    std::uint16_t pressed = 0;      // (docs/original/input.md)
+    std::uint16_t keys_before = 0;  // the keys held at the last tick's start
+    Pace pace;                      // Remaster rules: how fast his Viking walks and climbs (a stick pushed part way)
+    int viking = 0;                 // the slot of the Viking he plays or watches; kNobody when all are dead
+    bool controls = true;           // he plays that Viking; else he is one of its viewers, in line to play him
+    std::uint16_t in_line = 0;      // a viewer: when he joined the line (the lowest is next to play him)
+    int shown_viking = kNobody;     // the one that last blinked as it was chosen
+    int blink = 0;                  // ticks of that blinking left
+    Camera camera;                  // his view
+    int strip_x = 0;                // the camera, in cells, when placements last came into view
+    int strip_y = 0;
+    // Remaster rules' zoom changed the view: the placements it shows are created at the next tick's start (set_view)
+    bool view_to_fill = false;
+    Inventory inventory;  // his, on his Viking's items (the HUD shows everyone's)
+    // Online: what was said to him alone (a hint, a remark, someone to talk to: World::Aside). The lines, the next
+    // to show, those shown since the last clear (each view draws them where they are), and whether one waits for
+    // his action key. It holds nobody: his Viking stands meanwhile.
+    std::vector<Line> lines;
+    std::size_t next_line = 0;
+    std::vector<Line> said;
+    bool waiting_for_key = false;
+};
+
 // What a world holds as plain data: everything of it that can be written out as it is (lvr/archive.hpp). The world
 // itself adds its entities, and what it has of the level it was made for (the programs, the texts, how a kind is
 // made), which a world read back gets from that level again.
@@ -90,7 +165,6 @@ struct WorldState {
     std::uint16_t broken_picture = 0;  // the picture of a cell where a target was shot away: the world's
     std::uint16_t shot_picture = 0;    // and where another kind of target was (the wacky world's)
     Pieces pieces;                     // as many, laid out, as the rules give (set_rules)
-    Camera camera;
     // The height of a slope's surface at each of a cell's 16 columns, by slope (tile type - 0x30): from VIKINGS.EXE.
     std::array<std::uint8_t, 256> slope_heights{};
     std::array<KindRecord, kKinds> kinds{};
@@ -99,17 +173,12 @@ struct WorldState {
     std::vector<Placement> placements;
     std::bitset<kMostPlacements> gone;     // placements that don't come back: collected, destroyed
     int first_placed_slot = kVikingSlots;  // the slots before it aren't for placements (a cutscene: 1)
-    int strip_x = 0;                       // the camera, in cells, when placements last came into view
-    int strip_y = 0;
-    // Remaster rules' zoom changed the view: the placements it shows are created at the next tick's start (set_view)
-    bool view_to_fill = false;
-    int gravity = 0;                 // the level's, added to a falling entity's speed every tick
-    int level_push = 0;              // the same across
-    std::uint16_t keys_before = 0;   // the keys held at the last tick's start
-    int updating = kNobody;          // the slot of the entity whose turn it is
-    std::vector<int> created_below;  // entities created this turn in a lower slot: their turn comes right after
-    bool ending = false;             // the scene ends: what is removed now isn't created again
-    std::vector<int> created_late;   // placements created again in a slot the tick's turns have passed
+    int gravity = 0;                       // the level's, added to a falling entity's speed every tick
+    int level_push = 0;                    // the same across
+    int updating = kNobody;                // the slot of the entity whose turn it is
+    std::vector<int> created_below;        // entities created this turn in a lower slot: their turn comes right after
+    bool ending = false;                   // the scene ends: what is removed now isn't created again
+    std::vector<int> created_late;         // placements created again in a slot the tick's turns have passed
     // What the animations asked for that this world doesn't have, by kind (for the spawn sweep test): a broken
     // program (one not in this world's database, or not paired with it), a packed set the level doesn't load.
     struct Missing {
@@ -183,8 +252,7 @@ struct WorldState {
     std::array<std::uint16_t, kVikingSlots> armour{};  // the shield item's extra point of health, x 2, per Viking
     std::array<int, kVikingSlots> chosen_square{};     // the square each Viking uses from
     std::array<std::uint16_t, std::size_t{kSquares} * kVikingSlots> shown_items{};  // as the HUD last drew them
-    bool has_hud = false;  // the level shows the HUD: the inventory can be opened
-    Inventory inventory;
+    bool has_hud = false;     // the level shows the HUD: the inventory can be opened
     std::vector<Line> lines;  // what the entities said this tick: shown after it, line by line
     std::size_t next_line = 0;
     TextLayer text;
@@ -201,16 +269,19 @@ struct WorldState {
     assets::Palette palette{};        // as the cycles have turned it
     std::vector<ColourCycle> cycles;  // at most 8
     bool has_vikings = true;          // a level, not a cutscene
-    std::uint16_t held = 0;           // this tick's input: the keys held, and of them the ones newly pressed
-    std::uint16_t pressed = 0;        // (docs/original/input.md)
-    // Remaster rules: how fast the Vikings walk and climb this tick (a gamepad's stick pushed part way).
-    Pace pace;
-    int current_viking = 0;      // the slot of the Viking being played; kNobody when all are dead
-    int shown_viking = kNobody;  // the one that last blinked as it was chosen
-    int blink = 0;               // ticks of that blinking left
-    bool game_over = false;      // the last Viking died: the scene ends
-    bool level_done = false;     // the Vikings have all reached the exit: the scene ends
-    std::uint16_t typed = 0;     // the last character typed (Y and N answer the scene's question)
+    // The players (ADR-0012), as many as `player_count`; the first drives the game (the scenes, the menus, the
+    // texts that hold everyone), the host online.
+    std::array<Player, kMostPlayers> players{};
+    int player_count = 1;
+    // By Viking: the player whose keys he goes by: the one who plays him, or the last who did. (The original's
+    // Vikings that aren't played read its one keyboard too, in some of their states.)
+    std::array<int, kVikingSlots> keys_from{};
+    std::uint16_t line_joins = 0;  // how many times a viewer joined a Viking's line: what the next one's place is
+    // A game played online (ADR-0012): what a player does doesn't hold the others (his tooltips, his inventory).
+    bool online = false;
+    bool game_over = false;   // the last Viking died: the scene ends
+    bool level_done = false;  // the Vikings have all reached the exit: the scene ends
+    std::uint16_t typed = 0;  // the last character typed (Y and N answer the scene's question)
     // The screen's shake, per axis: the view is off by `offset`, which flips between 0 and `amount` every tick
     // while `ticks` last.
     struct Shake {
@@ -276,7 +347,8 @@ class World : public WorldState {
 
     // A tick is three pictures. Part 0 is the tick itself (the keys read, every entity's turn, the moves, what
     // stops them) up to its first picture; parts 1 and 2 are what happens before the second and third.
-    void step(int part, std::uint16_t keys = 0);
+    void step(int part, const StepInput& input = {});
+    void step(int part, std::uint16_t keys) { step(part, StepInput::one(keys)); }
     // The same with the keys read already (read_keys): the inventory screen opens between the two.
     void tick_part(int part);
     // The same without what comes before the entities' turns (the keys, the Viking switch, placements scrolled
@@ -356,7 +428,9 @@ class World : public WorldState {
     // A framed box with text `number` at a point of the level (its anchor cell there), or at a cell of the screen.
     void say_at_point(int number, int anchor, int x, int y);
     void say_at_cell(int number, int anchor, int column, int row);
-    void say(const Line& line) { lines.push_back(line); }
+    void say(const Line& line) {
+        (talking_to != kNobody ? players.at(static_cast<std::size_t>(talking_to)).lines : lines).push_back(line);
+    }
     void colour_boxes(std::uint16_t colour) { say({.kind = Line::Kind::kColour, .value = colour}); }  // per speaker
     void wait_for_key() { say({.kind = Line::Kind::kWaitForKey}); }  // the game holds until an action key
     void clear_text() { say({.kind = Line::Kind::kClear}); }
@@ -364,13 +438,62 @@ class World : public WorldState {
     void speak_at_point(std::uint16_t colour, int number, int anchor, int x, int y);
     void speak_at_cell(std::uint16_t colour, int number, int anchor, int column, int row);
     // The lines not shown yet, up to the next wait for a key. True when the conversation holds the game.
-    bool show_lines(std::uint16_t keys);
-    // Whether an entity may be spoken to now: it is the Viking being played, well inside the view, and the camera
-    // has come to rest.
+    bool show_lines(const StepInput& input);
+    // Online, at a tick's start: each player's own lines (Aside) shown up to the next wait for his key, which his
+    // action key answers; while one waits his Viking stands.
+    void show_players_lines();
+    // Online (ADR-0012): while one lasts, what is said is for the player who plays the Viking in `slot` alone: his
+    // lines, laid out in his view, answered by his key, holding nobody. Offline, or for a Viking nobody plays, it
+    // is everyone's and holds the game, as the original's.
+    class Aside {
+      public:
+        Aside(World& world, int slot) : world_(&world), before_(world.talking_to) {
+            world.talking_to = world.online ? world.player_of(slot) : kNobody;
+        }
+        ~Aside() { world_->talking_to = before_; }
+        Aside(const Aside&) = delete;
+        Aside& operator=(const Aside&) = delete;
+        Aside(Aside&&) = delete;
+        Aside& operator=(Aside&&) = delete;
+
+      private:
+        World* world_;
+        int before_;
+    };
+    int talking_to = kNobody;  // the player an Aside is for; not part of the state (only within a kind's turn)
+    // Whether an entity may be spoken to now: it is a Viking being played, well inside his player's view, and that
+    // view's camera has come to rest.
     bool can_be_spoken_to(const Entity& entity) const noexcept;
-    bool well_in_view(const Entity& entity) const noexcept;
-    // The keys as they are now: held, and newly pressed since they were last read.
-    void read_keys(std::uint16_t keys) noexcept;
+    bool well_in_view(const Entity& entity, const Camera& camera) const noexcept;
+    // Each player's keys as they are now: held, and newly pressed since they were last read; and his stick's pace.
+    void read_keys(const StepInput& input);
+
+    // --- The players (ADR-0012) ---
+
+    // The first player: the only one, or the host online. He drives the game: the scenes, the menus, the texts.
+    Player& host() noexcept { return players[0]; }
+    const Player& host() const noexcept { return players[0]; }
+    std::span<Player> playing() noexcept { return std::span{players}.first(static_cast<std::size_t>(player_count)); }
+    std::span<const Player> playing() const noexcept {
+        return std::span{players}.first(static_cast<std::size_t>(player_count));
+    }
+    // The player whose keys the Viking in `slot` goes by: his own, or the last one's who played him.
+    const Player& keys_of(int slot) const {
+        const bool viking = slot >= 0 && slot < kVikingSlots;
+        return players.at(static_cast<std::size_t>(viking ? keys_from.at(static_cast<std::size_t>(slot)) : 0));
+    }
+    // Whether a player plays the Viking in `slot` (one being played, in the original's words).
+    bool is_played(int slot) const noexcept;
+    // The player who plays the Viking in `slot`; kNobody for none.
+    int player_of(int slot) const noexcept;
+    // A player goes to the Viking in `slot` (ADR-0012): he plays him if nobody does, else he joins the end of his
+    // line of viewers. The Viking he leaves goes to the first in its own line, if he played him.
+    void move_player(int player, int slot);
+    // The view the entity in `slot` is seen in: his player's, if a player plays him; else the first player's.
+    const Camera& camera_on(int slot) const noexcept;
+    // Each player's Viking as a scene starts: the first plays Erik, the second Baleog, the third Olaf; in a scene
+    // without Vikings each one's view follows what is in its first slot.
+    void choose_vikings();
 
     // --- The palette ---
 
@@ -391,12 +514,14 @@ class World : public WorldState {
     };
     Offset offset_to(const Entity& entity, int slot) const;
 
-    // The keys that choose the previous or the next Viking: the next one in that direction that has health left.
+    // A player's keys that choose the previous or the next Viking: the next one in that direction that has health
+    // left, whom he plays or watches (move_player).
     void switch_viking();
-    // The Viking being played, if it is out of view, takes no input this tick. One chosen since the last tick
-    // blinks for 21 ticks.
+    // A player whose Viking is out of his view gives no input this tick. A Viking chosen since the last tick blinks
+    // for 21 ticks.
     void check_viking_in_view();
-    // When the Viking being played has died: on to the next living one; with none left the game is over.
+    // When a player's Viking has died: he goes on to the next living one, his player first, then his viewers in
+    // their line's order (move_player); with none left the game is over.
     void fall_back_viking();
     void count_down_shake() noexcept;
 
@@ -427,17 +552,18 @@ class World : public WorldState {
     Entity* create_placed(int index);
     // At the start: every placement that is always active.
     void create_always_active();
-    // The placements in that part of the view that have no entity yet.
-    void create_in_view(ViewPart part);
+    // The placements in that part of a player's view that have no entity yet; and in the whole of every view.
+    void create_in_view(const Player& player, ViewPart part);
+    void create_in_views();
     // Remaster rules' zoom: the view shows `width` x `height` pixels of the level from now on. A larger view
     // grows around the middle of the one before; a smaller one has the Viking being played in its middle. Both
     // within the level, which must be at least that large. The placements the view now shows are created at the
     // next tick's start, as the original creates what comes into view: right before their first turn. (Made at
     // once while the world holds, for a text that waits for a key, they would be drawn before any of their
     // animations put their pieces anywhere: where the pieces' last owners left them.)
-    void set_view(int width, int height);
-    // Where the camera is put by that, without doing it.
-    Camera camera_for_view(int width, int height) const noexcept;
+    void set_view(int player, int width, int height);
+    // Where the player's camera is put by that, without doing it.
+    Camera camera_for_view(int player, int width, int height) const;
     // A development tool's (vikings-remaster --showcase): the view becomes `width` x `height` with its corner at
     // (x, y) in the level, as near as the level allows, and stays there whatever the Vikings do. What it shows is
     // created at the next tick's start. Not part of the world's state that is written out.
@@ -446,11 +572,18 @@ class World : public WorldState {
     // The view a zoom that asks for `asked` gives here (Remaster rules, ADR-0011): in a level (not a scene with
     // a map of its own: the village) as large as the original's view at least, never more than the level;
     // elsewhere the view as it is.
-    std::array<int, 2> view_for(std::array<int, 2> asked) const noexcept;
-    // When the camera has crossed a cell's edge since the last time: the placements in the strip that came in.
+    std::array<int, 2> view_for(int player, std::array<int, 2> asked) const;
+    // When a player's camera has crossed a cell's edge since the last time: the placements in the strip that came
+    // in.
     void create_scrolled_in();
-    // Entities from the fourth slot on that are outside the active area, and not always active, are told so.
+    // Entities from the fourth slot on that are outside the active area, and not always active, are told so. With
+    // several players the area is every view's together: an entity is outside it when it is outside them all.
     void mark_outside_active_area();
+    // Whether an entity on its way across (or down) has come to the edge of the view it turns at: going right (or
+    // down), `far` pixels past the view; going left (or up), `near` pixels before it. With several players it is the
+    // edge of every view whose active area the entity is in, so it turns where it would leave them all; in none of
+    // them, every view's edge counts (with one view: the original's rule).
+    bool at_edge_of_view(const Entity& entity, bool across, bool forwards, int far, int near) const noexcept;
 
   private:
     std::vector<OwnedEntity> removed_;  // removed in the turn that is running
@@ -462,6 +595,9 @@ class World : public WorldState {
         int bottom = 0;
     };
     Entity* create_if_in(int index, const View& view);
+    // A camera's active area, as mark_outside_active_area measures it, and whether an entity is outside it.
+    static View active_area(const Camera& camera) noexcept;
+    static bool outside(const Entity& entity, const View& area) noexcept;
 };
 
 }  // namespace lvr

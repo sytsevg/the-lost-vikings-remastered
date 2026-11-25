@@ -35,7 +35,7 @@ struct Room {
 
     Room() {
         world.programs = programs;
-        world.camera.max_x = world.camera.max_y = 2000;
+        world.host().camera.max_x = world.host().camera.max_y = 2000;
         world.gravity = 0xf8;
         world.map =
             Map{.width = 40, .height = 20, .cells = std::vector<Cell>(800, Cell{.metatile = 0, .tile_type = 0})};
@@ -71,7 +71,7 @@ struct Room {
     Cell& cell(int column, int row) { return world.map.cells.at(static_cast<std::size_t>((row * 40) + column)); }
     // The three Vikings on the floor, Erik at `x`; the others out of the way.
     Entity* vikings(int x = 100) {
-        world.camera.y = 140;  // the floor in view
+        world.host().camera.y = 140;  // the floor in view
         Entity* erik = world.create({.kind = kind::kErik, .x = x, .y = kFloor - 16});
         world.create({.kind = kind::kBaleog, .x = 400, .y = kFloor - 16});
         world.create({.kind = kind::kOlaf, .x = 500, .y = kFloor - 16});
@@ -82,9 +82,10 @@ struct Room {
         creation.flags |= entity_flag::kAlwaysActive;
         return world.create(creation);
     }
+    Pace pace;  // the stick's, given with the keys (Remaster rules)
     void tick(std::uint16_t keys = 0) {
         for (int part = 0; part < 3; ++part) {
-            world.step(part, keys);
+            world.step(part, StepInput::one(keys, pace));
         }
     }
     void ticks(int count, std::uint16_t keys = 0) {
@@ -168,19 +169,19 @@ TEST_CASE("vikings: under Remaster rules a stick pushed part way walks him slowe
         room.world.rules = rules;
         Entity* erik = room.vikings();
         room.ticks(2);
-        room.world.pace.across = kFullPace / 2;  // (Vanilla rules don't have it)
+        room.pace.across = kFullPace / 2;  // (Vanilla rules don't have it)
         room.ticks(20, kRight);
         const bool paced = rules == Rules::kRemaster;
         CHECK(erik->speed_x == (paced ? px(4) : px(8)));
         CHECK(erik->sprite.pace == (paced ? 12 : kFullPace));  // his legs at the root of it: 16 x 0.71, rounded up
         // Pushed all the way while walking at that pace: at full speed at once.
-        room.world.pace.across = kFullPace;
+        room.pace.across = kFullPace;
         room.tick(kRight);
         CHECK(erik->speed_x == px(8));
         CHECK(erik->sprite.pace == kFullPace);
         // Pushed a little, from standing: never faster than that.
         room.ticks(6);
-        room.world.pace.across = 1;
+        room.pace.across = 1;
         room.tick(kRight);
         CHECK(erik->speed_x == (paced ? px(0.5) : px(0.75)));
         CHECK(erik->sprite.pace == (paced ? 4 : kFullPace));  // a sixteenth of his speed, a quarter of his steps
@@ -194,12 +195,12 @@ TEST_CASE("vikings: under Remaster rules a stick pushed part way steers him slow
             // Falling from high up, steered right with the stick a quarter of the way: no faster than he'd walk so.
             Room room;
             room.world.rules = rules;
-            room.world.camera.y = 0;
+            room.world.host().camera.y = 0;
             Entity* erik = room.world.create({.kind = kind::kErik, .x = 100, .y = 40});
             room.world.create({.kind = kind::kBaleog, .x = 400, .y = Room::kFloor - 16});
             room.world.create({.kind = kind::kOlaf, .x = 500, .y = Room::kFloor - 16});
             room.ticks(2);
-            room.world.pace.across = kFullPace / 4;
+            room.pace.across = kFullPace / 4;
             room.ticks(6, kRight);
             REQUIRE(erik->y < Room::kFloor - 40);  // still in the air
             CHECK(erik->speed_x == (paced ? px(2) : px(5.25)));
@@ -214,10 +215,10 @@ TEST_CASE("vikings: under Remaster rules a stick pushed part way steers him slow
             room.cell(10, 11).tile_type = room.cell(11, 11).tile_type = 0x04;
             Entity* erik = room.vikings(11 * 16 - 3);
             room.ticks(2);
-            room.world.pace.up_down = kFullPace / 2;
+            room.pace.up_down = kFullPace / 2;
             room.ticks(6, kUp);
             CHECK(erik->sprite.pace == (paced ? kFullPace / 2 : kFullPace));
-            room.world.pace.up_down = kFullPace / 4;  // the stick moved: at once, not when the step is over
+            room.pace.up_down = kFullPace / 4;  // the stick moved: at once, not when the step is over
             room.tick(kUp);
             CHECK(erik->sprite.pace == (paced ? kFullPace / 4 : kFullPace));
             room.tick();  // let go: the step he is in ends at full pace
@@ -296,12 +297,12 @@ TEST_CASE("vikings: what they are told: hurt, electrocuted, dropped, thrown, tak
     CHECK(erik->health == 0);
     CHECK(erik->dead);
     // The next one is played from then on.
-    CHECK(world.current_viking == 1);
+    CHECK(world.host().viking == 1);
 
     baleog->message = message::kElectrocuted;
     room.ticks(3);
     CHECK(baleog->dead);
-    CHECK(world.current_viking == 2);
+    CHECK(world.host().viking == 2);
 
     olaf->message = message::kThrown;  // thrown up
     olaf->message_value = static_cast<std::uint16_t>(-0x600);
@@ -364,8 +365,8 @@ TEST_CASE("baleog: the sword swings in front of him; the bow looses an arrow whe
     Room room;
     World& world = room.world;
     room.vikings();
-    world.current_viking = 1;
-    world.camera.x = 240;
+    world.host().viking = 1;
+    world.host().camera.x = 240;
     Entity* baleog = world.entities[1].get();
     Entity* enemy = room.put({.kind = 0xea, .x = 400 + 20, .y = Room::kFloor - 16});
     enemy->hit_mask = 0x0101;  // hurt by sword and arrow
@@ -507,8 +508,8 @@ TEST_CASE("olaf: the shield before him or over his head; under it he glides down
     Room room;
     World& world = room.world;
     room.vikings();
-    world.current_viking = 2;
-    world.camera.x = 340;
+    world.host().viking = 2;
+    world.host().camera.x = 340;
     Entity* olaf = world.entities[2].get();
     room.ticks(3);
     const Entity* shield = world.entities[3].get();
@@ -635,15 +636,15 @@ TEST_CASE("inventory: choosing a square, handing an item to a Viking within reac
     world.items[0] = {1, 6, 0, 0};
     room.ticks(2);
     const auto pass = [&world](std::uint16_t keys) {
-        world.read_keys(keys);
-        const bool closed = inventory_pass(world);
-        world.read_keys(0);
+        world.read_keys(StepInput::one(keys));
+        const bool closed = inventory_pass(world, 0);
+        world.read_keys(StepInput::one(0));
         return closed;
     };
-    world.read_keys(0x2000);
-    REQUIRE(inventory_wanted(world));
-    open_inventory(world);
-    Inventory& inventory = world.inventory;
+    world.read_keys(StepInput::one(0x2000));
+    REQUIRE(inventory_wanted(world, 0));
+    open_inventory(world, 0);
+    Inventory& inventory = world.host().inventory;
     CHECK(inventory.open);
     CHECK(inventory.cursor == 0);
     CHECK(inventory.item == 1);
@@ -692,13 +693,13 @@ TEST_CASE("inventory: choosing a square, handing an item to a Viking within reac
     CHECK_FALSE(inventory.open);
     CHECK(world.items[0][0] == 6);
     // The next Viking is played from inside it; his food goes into the can.
-    world.read_keys(0x2000);
-    open_inventory(world);
+    world.read_keys(StepInput::one(0x2000));
+    open_inventory(world, 0);
     CHECK_FALSE(pass(0x0010));
-    CHECK(world.current_viking == 1);
+    CHECK(world.host().viking == 1);
     CHECK(inventory.cursor == 4);
     CHECK_FALSE(pass(0x0020));
-    CHECK(world.current_viking == 0);
+    CHECK(world.host().viking == 0);
     CHECK_FALSE(pass(0x0010));
     CHECK_FALSE(pass(kF));
     CHECK_FALSE(pass(kRight));
@@ -707,7 +708,7 @@ TEST_CASE("inventory: choosing a square, handing an item to a Viking within reac
     CHECK(world.cues.back().value == 4);
     CHECK(world.items[1] == std::array<std::uint16_t, 4>{0, 0, 0, 0});
     CHECK(pass(0x1000));
-    CHECK_FALSE(inventory_wanted(world));
+    CHECK_FALSE(inventory_wanted(world, 0));
 }
 
 TEST_CASE("switches: levers go over, buttons flip for a moment, for good or for a while, locks open once") {
@@ -798,7 +799,7 @@ TEST_CASE("lifts: the Viking being played rides one down and up between its stop
     for (int row = 0; row < 20; ++row) {
         room.cell(9, row).tile_type = room.cell(10, row).tile_type = 0;
     }
-    world.camera.y = 0;
+    world.host().camera.y = 0;
     Entity* erik = world.create({.kind = kind::kErik, .x = 160, .y = 80});
     world.create({.kind = kind::kBaleog, .x = 400, .y = Room::kFloor - 16});
     world.create({.kind = kind::kOlaf, .x = 500, .y = Room::kFloor - 16});
@@ -1042,7 +1043,7 @@ TEST_CASE("springs: a Viking coming down on one is thrown back up") {
     Entity* erik = world.create({.kind = kind::kErik, .x = 208, .y = 150});
     world.create({.kind = kind::kBaleog, .x = 400, .y = Room::kFloor - 16});
     world.create({.kind = kind::kOlaf, .x = 500, .y = Room::kFloor - 16});
-    world.camera.y = 100;
+    world.host().camera.y = 100;
     world.placements = {Placement{.x = 208, .y = Room::kFloor - 8, .width = 32, .height = 16, .kind = kind::kSpring}};
     world.kinds.at(kind::kSpring).width = 32;
     Entity* spring = world.create_placed(0);
@@ -1144,8 +1145,8 @@ TEST_CASE("items: food heals, the shield adds a point, keys open their locks, th
     use(0x0e);
     CHECK(world.items[0][0] == 0);
     CHECK(taker->message == message::kAsked);
-    world.current_viking = 1;
-    world.camera.x = 240;
+    world.host().viking = 1;
+    world.host().camera.x = 240;
     world.items[1] = {0x0b, 0, 0, 0};
     room.tick(kE);
     CHECK(world.items[1][0] == 0);
@@ -1171,12 +1172,12 @@ TEST_CASE("vikings: each world's deadly cells: water, lava, spikes, quicksand, r
         Entity* erik = world.create({.kind = kind::kErik, .x = 160, .y = 200});
         world.create({.kind = kind::kBaleog, .x = 400, .y = Room::kFloor - 16});
         world.create({.kind = kind::kOlaf, .x = 500, .y = Room::kFloor - 16});
-        world.camera.y = 140;
+        world.host().camera.y = 140;
         room.ticks(60);
         INFO("hazard " << hazard);
         CHECK(erik->health == 0);
         CHECK(erik->dead);
-        CHECK(world.current_viking == 1);
+        CHECK(world.host().viking == 1);
     }
     // Spikes overhead kill a Viking thrown up into them.
     Room room;

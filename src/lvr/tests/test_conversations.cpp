@@ -42,7 +42,7 @@ struct Stage {
         world.texts = texts;
         world.level = level;
         world.password = {'T', 'L', 'P', 'T'};
-        world.camera.max_x = world.camera.max_y = 1000;
+        world.host().camera.max_x = world.host().camera.max_y = 1000;
         world.make = [](std::uint16_t kind) -> std::unique_ptr<Entity> {
             if (auto made = make_kind(kind)) {
                 return made;
@@ -86,12 +86,12 @@ TEST_CASE("conversation: lines are shown up to a wait; an action key goes on; th
     world.say_at_cell(999, tail::kBelowMiddle, 0, 0);  // no such text: nothing said
     CHECK(world.lines.size() == 4);
 
-    CHECK(world.show_lines(0));
+    CHECK(world.show_lines({}));
     CHECK(world.waiting_for_key);
     CHECK(world.text.cells[(6 * kTextLayerColumns) + 11] == 'T');
     CHECK(world.text.colour3.has_value());
     CHECK(world.next_line == 3);
-    CHECK_FALSE(world.show_lines(0));  // the rest: the clear
+    CHECK_FALSE(world.show_lines({}));  // the rest: the clear
     CHECK(world.text.cells[(6 * kTextLayerColumns) + 11] == 0);
     CHECK(world.lines.empty());
     CHECK(world.next_line == 0);
@@ -108,7 +108,7 @@ TEST_CASE("play: a tick is three pictures; a conversation holds the game until a
     CHECK(world.lines[5] == Line{.kind = Kind::kCharacter, .column = 0x15, .row = 0x0c, .value = 'T'});
     CHECK(world.lines[1].column == 0x0f);
     CHECK(world.lines[1].row == 0x0a);
-    CHECK(world.show_lines(0));
+    CHECK(world.show_lines({}));
     CHECK(world.text.cells[(0x0c * kTextLayerColumns) + 0x13] == 'L');
     // The Vikings start the level with three points of health each.
     CHECK(world.entities[0]->health == 6);
@@ -133,8 +133,8 @@ TEST_CASE("level start: level 1 has no password box; Erik's two opening lines, t
                                              Kind::kWaitForKey, Kind::kClear});
     CHECK(world.lines[0].value == 0x0012);  // Erik's colour
     CHECK(world.lines[1].anchor == 1);
-    CHECK(world.lines[1].column == (100 / 8) - 1);                         // the tail at Erik
-    CHECK(world.lines[1].row == ((120 - 0x1c - world.camera.y) / 8) - 2);  // above his head, as the view has it
+    CHECK(world.lines[1].column == (100 / 8) - 1);                                // the tail at Erik
+    CHECK(world.lines[1].row == ((120 - 0x1c - world.host().camera.y) / 8) - 2);  // above his head, as the view has it
     CHECK_FALSE(world.entities[3]);
     CHECK(world.gone.test(0));
 }
@@ -186,7 +186,7 @@ TEST_CASE("level start: level 34 waits for the Vikings to come in; level 36 talk
     REQUIRE(world.lines.size() == 12);
     CHECK(world.lines[0].value == 0x01e3);
     CHECK(world.lines[1].anchor == 4);
-    CHECK(world.lines[1].row == (120 + 0x14 - world.camera.y) / 8);
+    CHECK(world.lines[1].row == (120 + 0x14 - world.host().camera.y) / 8);
     CHECK(world.lines[4].value == 0x0012);
     CHECK(world.lines[8].value == 0x110d);
     CHECK_FALSE(world.entities[3]);

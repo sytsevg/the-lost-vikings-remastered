@@ -300,6 +300,7 @@ class Hint : public Entity {
 
     void show(World& world) {
         world.sound(*this, effect::kTalk);
+        const World::Aside aside{world, target};  // online: for his player alone (ADR-0012)
         world.speak_at_point(text_colour::kErik, kFirstHintText + argument, tail::kNone, x, y - kAboveIt);
         world.hints_seen |= s.seen_bit;
         message = 0;
@@ -463,11 +464,12 @@ class LevelEnd : public Entity {
     LVR_SAVES(Entity)
 };
 
-// Whether a Viking can be spoken to by an entity: on his feet, the one being played with the view at rest, and
-// the entity itself well in view.
+// Whether a Viking can be spoken to by an entity: on his feet, one being played with his view at rest, and the
+// entity itself well in that view.
 bool can_talk(const World& world, const Entity& speaker, int viking_slot) {
     const Entity* viking = viking_slot >= 0 && viking_slot < world.slots() ? world.at(viking_slot) : nullptr;
-    return viking != nullptr && !viking->is_falling() && world.can_be_spoken_to(*viking) && world.well_in_view(speaker);
+    return viking != nullptr && !viking->is_falling() && world.can_be_spoken_to(*viking) &&
+           world.well_in_view(speaker, world.camera_on(viking_slot));
 }
 
 // Someone to talk to (the spaceship's second level): once his switches are on, the Viking being played who comes
@@ -506,6 +508,7 @@ class Janitor : public Entity {
             return;
         }
         world.sound(*this, effect::kTalk);
+        const World::Aside aside{world, target};  // online: for his player alone (ADR-0012)
         if (again) {
             speak(world, talk::kJanitorAgain, this, target);
         } else {
@@ -538,6 +541,7 @@ class Mechanic : public Entity {
         } else if (!s.warned && viking_comes_near(world, *this, 60, -5)) {
             if (can_talk(world, *this, target)) {
                 world.sound(*this, effect::kTalk);
+                const World::Aside aside{world, target};  // online: for his player alone (ADR-0012)
                 world.speak_at_point(text_colour::kOthers, 0x2f, tail::kAboveLeft, x, y + 24);
                 s.warned = true;
                 message = 0;
@@ -552,6 +556,7 @@ class Mechanic : public Entity {
             return;
         }
         world.sound(*this, effect::kTalk);
+        const World::Aside aside{world, target};  // online: for his player alone (ADR-0012)
         world.speak_at_point(text_colour::kOthers, text, anchor, x, y + above);
         if (first) {
             world.hints_seen |= argument;
@@ -599,6 +604,7 @@ class Elder : public Entity {
             return;
         }
         world.sound(*this, effect::kTalk);
+        const World::Aside aside{world, target};  // online: for his player alone (ADR-0012)
         if (whole) {
             speak(world, talk::kElder, this, target);
             world.hints_seen |= argument;
@@ -640,6 +646,7 @@ class Remark : public Entity {
             }
             case State::kSaying: {
                 world.sound(*this, effect::kTalk);
+                const World::Aside aside{world, target};  // online: for his player alone (ADR-0012)
                 if (const Entity* viking = world.at(target)) {
                     const int text = 0x4f + argument;
                     world.speak_at_point(text_colour::of(target), text, tail::kAboveMiddle, viking->x, viking->y + 20);
@@ -693,6 +700,7 @@ class Prisoner : public Entity {
             return;
         }
         world.sound(*this, effect::kTalk);
+        const World::Aside aside{world, target};  // online: for his player alone (ADR-0012)
         speak(world, talk::kPrisoner, this, target);
         world.hints_seen |= argument;
         message = 0;
@@ -729,6 +737,7 @@ class Caveman : public Entity {
             return;
         }
         world.sound(*this, effect::kTalk);
+        const World::Aside aside{world, target};  // online: for his player alone (ADR-0012)
         if (long_story) {
             speak(world, talk::kCaveman, this, target);
             world.hints_seen |= argument;
@@ -833,10 +842,11 @@ class Talker : public Entity {
     void talk(World& world) {
         const Entity* viking = target >= 0 && target < world.slots() ? world.at(target) : nullptr;
         if (viking == nullptr || viking->is_falling() || !world.can_be_spoken_to(*viking) ||
-            !world.well_in_view(*this)) {
+            !world.well_in_view(*this, world.camera_on(target))) {
             return;
         }
         world.sound(*this, effect::kTalk);
+        const World::Aside aside{world, target};  // online: for his player alone (ADR-0012)
         speak(world, talk::kEgyptian, this, target);
         world.hints_seen |= argument;
         message = 0;

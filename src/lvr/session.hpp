@@ -72,7 +72,7 @@ class Session {
     // `frames` more sample frames (left and right each) onto `out`: the players run on by that much.
     void render_live(std::size_t frames, std::vector<std::int16_t>& out);
     // A key was pressed: its character, for what reads typed keys (passwords, yes and no).
-    void key_pressed(std::uint16_t character) noexcept { play_.world.typed = character; }
+    void key_pressed(std::uint16_t character) noexcept { typed_ = character; }  // for the next step
 
     // The game is over: it was quit, or a scene couldn't be loaded (then `error` says why).
     bool quit() const noexcept { return play_.ended; }
@@ -92,11 +92,11 @@ class Session {
     bool takes_play_keys() const noexcept { return play_.world.rules == Rules::kRemaster && level_played(); }
     // Remaster rules' zoom (ADR-0011): a step out (`by` > 0) or back in, between the original's view and twice
     // it. The next step's world has the view; the pictures go from the one to the other over a moment.
-    bool zoom(int by) noexcept;
+    bool zoom(int by);
     // The zoom's step (0 the original's view, up to kZoomSteps - 1: twice it), and it set to one from anywhere (the
     // profile's, at the start): a level played from then on is shown so.
     int zoom_level() const noexcept { return zoom_; }
-    void set_zoom_level(int level) noexcept;
+    void set_zoom_level(int level);
     static constexpr int kZoomSteps = 3;
     // A development tool's (vikings-remaster --dump --whole): the view becomes the whole level at once, with the
     // HUD's rows under it, and stays so; what is in it is created at the next tick's start. Remaster rules, in a
@@ -255,7 +255,14 @@ class Session {
     // The zoom: which view is wanted; while the view changes, how many pictures into that it is, and (growing)
     // the view it grows from, in the level. A view that is to shrink does so when its pictures have closed in.
     std::array<int, 2> wanted_view() const;
-    void change_view();
+    void change_view(bool at_once);
+    void set_view(int width, int height, bool at_once);
+    // The step's input from this machine's player: his keys, stick and zoom, the character typed, the menu keys.
+    StepInput input_of(std::uint16_t keyboard, const Play::MenuKeys& keys, Pace pace);
+    // After a rewind's or a quicksave's snapshot is brought back: the view the zoom has now.
+    void zoom_back();
+    std::optional<std::array<int, 2>> view_now_;  // the view change_view gives the next step
+    std::uint16_t typed_ = 0;                     // the character typed since the last step
     Screen::Part part_shown(const View& view);
     int zoom_ = 0;
     std::uint32_t refreshes_ = 0;  // the refreshes the pictures handed out so far are for (Screen::refresh)
@@ -293,6 +300,8 @@ class Session {
     bool rewind_over_ = false;  // held, but there was nothing left to go back to: not again until it is let go
     bool save_wanted_ = false;
     bool load_wanted_ = false;
+    // Which of the world's players this machine shows and plays (co-op online, ADR-0012): the first, so far.
+    std::uint8_t player_ = 0;
     std::vector<std::int16_t>
         heard_;        // live: the sound of the last ten seconds as it was heard, for hearing it backwards
     SeenLevels seen_;  // by level: what a view has shown of it (the minimap's pixels)

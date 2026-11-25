@@ -108,9 +108,10 @@ were dropped by the user, 2026-11-25). The screen's look is built ("Screen look"
 The state at the end of 2026-11-25: M8 is done (the user). What is next, what the user still has to judge on the
 host, and what is open:
 
-- **Next: M9, co-op online** (ROADMAP.md; online only, the user): its first decision is the active area with the
-  players' several views, every view's together or everything running (ADR-0011, ADR-0012). The extra sound effects (footsteps by surface, the bow,
-  Olaf's shield, an electric buzz) are M10, after it.
+- **Next: M9, co-op online** (planned with the user 2026-11-25: ADR-0012, and the parts in ROADMAP.md, a commit
+  each on the user's word): rollback after GGPO's design, the active area every player's view together. The first
+  in code: players in the world, with one player exactly as before (all 119 goldens). The extra sound effects
+  (footsteps by surface, the bow, Olaf's shield, an electric buzz) are M10, after it.
 - **The Modern sound's effects placed by position (built and checked 2026-11-25; being heard on the host):**
   ADR-0015. To judge by ear: how far to the sides the view's edges are (`kEdge`, 48 of 63, in `Session::placed`)
   and how fast an effect fades outside the view (silent half a view away). The fire jets' roar, one sound for every
@@ -298,12 +299,50 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   compositor holding frames), not in the game's step, its drawing, or its uploads; it was there before smooth
   movement too, and mailbox presenting or a third frame in flight didn't change it. Likely the system (the
   GPU's power management); not confirmed (vkcube, a fixed clock).
-- **Co-op and the active area:** with the players' views of one world (each on their own machine), either the
-  active area is all the views together or everything runs (ADR-0011). Not decided.
-- **Co-op's snapshots.** What is written of a world (ADR-0020) is all of it, 25 to 90 KB. Sent over a network
-  many times a second it wants trimming: the sprite layer's free pieces (most of a Remaster world's size), the
-  level's own data that both sides have, and only what changed since the last one.
-- **Input per player** was planned from the start (ADR-0012) but the engine takes one keyboard word.
+- **Co-op's snapshots.** Rollback keeps a copy of the world before every step, as the rewind does (70 to 110 KB
+  and an allocation per entity under Remaster rules): to be measured before anything is made flatter (ADR-0012).
+  The one sent to a player joining under way is to be written smaller (ADR-0020).
+- **Players in the world** (M9's first part in code, 2026-11-25): a world has up to three players
+  (`WorldState::players`, `Player`), each with his keys, his stick's pace, his Viking and his camera; a step is given
+  each one's input (`StepInput`). A Viking goes by the keys of the player who plays him, or of the last who did
+  (`World::keys_of`; with one player all three read his, as the original's read its one keyboard). The active area
+  is every view's together, and an enemy turns where he would leave every view he is in
+  (`World::at_edge_of_view`). Scenes, menus and the texts that hold the game read the first player's keys
+  (`World::host`). With one player everything is as before: all 119 goldens, `saves.sh` and `--copies`.
+- **The rules of play online** (M9's second part, built 2026-11-25; `WorldState::online`): a Viking's player and
+  his viewers in line (`World::move_player`; switching and a death move a player on); what is said to one player
+  alone (`World::Aside` in the eight kinds that talk to a Viking: his `Player::lines`, answered by his key at a tick's
+  start, `World::show_players_lines`); each player's inventory in the tick, not holding it (`inventories_in_tick`),
+  handing over within reach as the Vikings move, its clicks his alone (`SoundCue::heard_by`); text boxes at their
+  place in the level in every view (`Line::in_level`, composed per view in `view_of`). Left as it was: the
+  furnace's glow follows the host's Viking (it decides whether the furnace stays active, so per player it would
+  change the game), and a player's zoom is still set on the first player's view by `Session` (input in part 4).
+  Tested in `test_players.cpp`.
+- **Rollback-ready play** (M9's third part, built 2026-11-25): `Play::PlayState` (the pause box, the
+  sound switches, the demo, each player's chosen view) is in a snapshot, and `Play::restore` is exact (a rewind or
+  a quicksave brought back puts the zoom back after it: `Play::zoom_back`). All a step's input is `StepInput`:
+  each player's zoom (the view chosen, and the view from this step on, timed by `Session::change_view`), the
+  character typed, the menu keys. `Play::state_hash`; `px()` and `speed()` are `consteval`. The cue ledger
+  (`CueLedger`, `sound.cpp`) plays a step's sounds once however often it runs. The sync test: `lv-replay
+  --rollback 8` (every step the last 8 run again from their snapshot, without pictures; the hash and the goldens
+  must hold): all 119 replays pass it (under a minute, all cores).
+- **Rollback** (M9's fourth part, built 2026-11-25): `src/net/rollback.*` (target `lvr_net`, plain
+  C++): GGPO's design, the game behind a small interface (`net::Game`: save and load a slot, advance a step shown
+  or not, hash, predict). The input queues and what each step was last run with, the first step a prediction got
+  wrong and the steps run again from it, the window (8 steps), the input delay, time sync by frame advantage
+  (`ahead()`: wait a refresh), a player leaving, and the hashes of every 8th confirmed step compared
+  (`out_of_step()`). Tested on a toy game over a simulated network (`src/net/tests/test_rollback.cpp`: latency,
+  jitter, lost and reordered packets; two and three machines; one going its own way found out).
+- **The transport** (M9's fifth part, built 2026-11-25): `src/net/transport.*` (target
+  `lvr_transport`, on SDL3_net release-3.2.0 with `cmake/sdl_net.patch` for TCP_NODELAY and TCP_QUICKACK): host
+  and join, a TCP connection and UDP to each client (introduced by a token over TCP), reliable and fast messages,
+  the fast ones over TCP while no UDP gets through, pings for the round trip. Tests over 127.0.0.1
+  (`src/net/tests/test_transport.cpp`).
+- **M9's state on 2026-11-25:** parts 1 to 6 of nine built and checked (373 tests, all 119 goldens, `saves.sh
+  --all`, `--copies`, `--rollback 8`, `check.sh` at 84.5%), uncommitted on the branch `m9-coop-online` (the user:
+  one changeset for a review, committed when he says). Next: part 7, the front end (the protocol's messages,
+  `Session` as `net::Game`, the main loop, the lobby, the names under the Vikings, the waiting mark, the players'
+  latency in the menu; stills first).
 - **Not checked by anything but the eye:** whatever the GPU renderer shows beyond the original's view, and
   whether a level still plays well zoomed out (enemies run for longer and further; nothing resets as often).
 - **The GPU renderer has run on one graphics card** (the user's) and the container's software driver. Vulkan
