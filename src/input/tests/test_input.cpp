@@ -119,7 +119,7 @@ TEST_CASE("input: Remaster rules' default controls") {
     CHECK(key_actions(controls, "Backspace") == bit(Action::kRewind));
     CHECK(key_actions(controls, "-") == bit(Action::kZoomOut));
     CHECK(key_actions(controls, "M") == bit(Action::kMinimap));
-    CHECK(key_actions(controls, "F11") == bit(Action::kScreen));
+    CHECK(key_actions(controls, "F11") == 0);  // (the screen's look is the menu's)
     CHECK(key_actions(controls, "F8") == bit(Action::kQuickload));
     // The joystick, but Start opens the menu and nothing pauses (a stick's press is too easily pressed while
     // walking); Remaster's own on what was free.

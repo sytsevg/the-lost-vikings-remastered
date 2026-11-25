@@ -36,15 +36,13 @@ enum class Action : std::uint8_t {
     kZoomOut,
     kZoomIn,
     kMinimap,
-    kSound,   // the Classic or the Modern sound
-    kScreen,  // the screen's look
-    kQuicksave,
+    kQuicksave,  // (the sound and the screen's look are the menu's alone: the user)
     kQuickload,
 };
-inline constexpr std::size_t kActionCount = 20;
+inline constexpr std::size_t kActionCount = 18;
 // As a keys file and the profile write it: "left", "right", "up", "down", "ability-f", "ability-d", "use-item",
 // "act", "previous-viking", "next-viking", "inventory", "pause", "rewind", "zoom-out", "zoom-in", "minimap",
-// "sound", "screen", "quicksave", "quickload".
+// "quicksave", "quickload".
 std::string_view name_of(Action action);
 std::optional<Action> action_named(std::string_view name);
 // As the menu shows it, in the font's capitals.
@@ -86,7 +84,7 @@ Controls original_controls();
 // and Right Ctrl the Viking before and after, Tab the inventory, P pauses; the gamepad as the original's joystick, but
 // Start opens the menu (as Escape does) and nothing pauses. And Remaster's own: Backspace and the left
 // trigger rewind, - and = and the right stick up and down zoom out and in, M and the right stick's press the
-// minimap, F12 the sound, F11 the screen, F7 and F8 the quicksave.
+// minimap, F7 and F8 the quicksave.
 Controls remaster_controls();
 
 // `base` with the lines of a keys file applied: "KEY NAME = action[, action...]" binds a key (replacing what it

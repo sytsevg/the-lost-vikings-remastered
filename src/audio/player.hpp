@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,13 @@ struct SoundData {
 // fifth entries.
 std::expected<SoundData, std::string> load_sound_data(const assets::Archive& archive, Version version);
 
+// Where an effect is heard (ours: the Modern sound places its effects by where they happen): `pan` from the
+// middle, -63 hard left to 63 hard right, and how loud, in percent of what it would be. None: as the driver plays it.
+struct Placement {
+    int pan = 0;
+    int loudness = 100;
+};
+
 class Player {
   public:
     // `out`: the driver's output, initialised; `timbres`: the OPL3 voice layer's cache (Classic), or none.
@@ -51,8 +59,8 @@ class Player {
     // Two per display refresh (the driver's service rate in the game).
     void service() { sequencer_.service(); }
 
-    void play_effect(int effect);  // 77B2
-    void stop_effect(int effect);  // 782A, 787F
+    void play_effect(int effect, const std::optional<Placement>& placed = std::nullopt);  // 77B2
+    void stop_effect(int effect);                                                         // 782A, 787F
     // A level header's music action (7749 / 774F): 0 load `tune` and play it from the start, 2 fade out, 3 load
     // only; 1 and 4 nothing.
     void music_action(int action, int tune);
@@ -64,9 +72,12 @@ class Player {
     // Ours (Remaster rules' volume): how loud the music and the effects are heard, in percent of what the game asks
     // for (Sequencer::set_loudness), from now on.
     void set_loudness(int music, int effects);
+    // Ours too: how loud the effect `effect` is heard from now on, in percent of what it would be.
+    void set_effect_loudness(int effect, int percent);
 
   private:
-    void play(int slot, const assets::XmidiSequence& sequence);  // 76BD
+    void play(int slot, const assets::XmidiSequence& sequence, const std::optional<Placement>& placed = std::nullopt,
+              int percent = 100);  // 76BD
     void install_timbres(const assets::XmidiSequence& sequence);
     void free_slot(int slot);
 
@@ -79,6 +90,7 @@ class Player {
     int effect_slots_ = kOriginalEffects;
     int music_loudness_ = 100;
     int effects_loudness_ = 100;
+    std::vector<int> effect_loudness_;                    // by effect: set_effect_loudness()'s, 100 as it is
     std::array<int, kMostEffects + 1> handles_ = none();  // ds:990C, by slot / 2: the music's, then the effects'
     std::array<int, kMostEffects + 1> playing_ = none();  // ds:9916: the effect in each slot
     static constexpr std::array<int, kMostEffects + 1> none() {

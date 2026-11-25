@@ -374,8 +374,8 @@ TEST_CASE("real data: a world written out reads back the same; its size is this 
     }
     // What is written changes when a kind's Saved, EntityState or WorldState does. When these sizes change, an
     // older quicksave no longer fits: raise kStateVersion (archive.hpp), and put the new sizes and version here.
-    CHECK(kStateVersion == 5);
-    CHECK(sizes == std::vector<std::size_t>{24730, 71302, 41702, 88274});
+    CHECK(kStateVersion == 6);
+    CHECK(sizes == std::vector<std::size_t>{24738, 71310, 41710, 88282});
 }
 
 TEST_CASE("real data: with the SNES image a scene that has a backdrop there is loaded with it", "[real-data]") {

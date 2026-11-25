@@ -15,9 +15,12 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
 - **M7, the Remaster rules, is built** (`--rules remaster`): the GPU renderer, zoom-out, no limit on entities,
   a minimap, rewind, a quicksave, a profile on disk, and the game's state written out and read back. What each
   is and where it lives is in the next section.
-- **M8, the visuals**, is under way, before co-op (M9): smooth movement, parallax and the first effects (light,
-  glow, particles) are built (below, "M8"); the rewind has ten seconds a level, shown in a bar in the minimap
-  (2026-11-25, next section).
+- **M8, Modern visuals and sound**, is nearly done, before co-op (M9): smooth movement, parallax, the effects
+  (light, glow, particles), the screen's looks (Hyllian's CRT and xBR) and the Modern sound's effects placed by
+  position are built (below, "M8"); only the extra sound effects are left on its list.
+- **Remaster rules have a menu** (Escape or a gamepad's Start in a level): the sound and its volumes, the screen's
+  look, zoom, minimap, visual effects, and the keyboard's and gamepad's controls, kept in the profile; a gamepad's
+  stick walks and climbs as fast as it is pushed (next section, "The menu, the settings and the controls").
 
 ## What the Remaster rules have
 
@@ -69,8 +72,8 @@ only under Remaster rules; Vanilla rules must stay exactly what they are, and th
   being played (`Session::takes_play_keys`: not a scene, a demo, or the pause menu or quit box), and so does
   the rewind (since 2026-11-25: no longer from the game-over scene back into the level just lost); F8 brings the
   quicksave back from anywhere but a menu. A key that doesn't act is passed to the game like any other (any key ends a demo), so nothing
-  pressed in a scene is kept for the next level. The Classic/Modern sound switch (F12) works everywhere, and so
-  does the screen's look (F11). These are the defaults: the keys are the player's since 2026-11-25 ("The menu,
+  pressed in a scene is kept for the next level. The Classic/Modern sound switch (F12) and the screen's look
+  (F11) worked everywhere; under Remaster rules both are the menu's alone now, and Vanilla rules play the Classic sound only (the user). These are the defaults: the keys are the player's since 2026-11-25 ("The menu,
   the settings and the controls" below).
 - **The profile** (`profile.*`): the folder `profiles` beside the game's program, or `--profile DIR`. In it
   `minimap.txt`, `quicksave.bin` and `settings.txt` (the player's settings and controls, which took the place of
@@ -102,26 +105,34 @@ The rest of the list is in [`ROADMAP.md`](ROADMAP.md): sound placed by position 
 were dropped by the user, 2026-11-25). The screen's look is built ("Screen look" below).
 
 ### Next
-- **The Vikings' deaths by electricity and fire (built, 2026-11-25; approved by the user on the host):** showcase
-  spots 17-21 ("Effects" below).
-- **The screen's look (built and approved by the user on the host, 2026-11-25):** F11 goes none, crt, xbr
-  ("Screen look" below). Our own television was dropped for Hyllian's CRT ("looks great", the user).
-- **The xbr look (built and approved by the user on the host, 2026-11-25):** after crt on F11 ("Screen look"
-  below). The unblended one, each tile and piece rounded by itself, was dropped by the user.
-- **The menu, the settings and the controls (built 2026-11-25; first round of the user's changes made: black box,
-  no resume line, the zoom shown at once, a key an action with new defaults, the gamepad's page live):** what to
-  try: the menu's look and its keys (keyboard and a pad), the volume sliders by ear (the steps are percent of the
-  game's volume; the Classic chip's are steeper than the General MIDI ones), rebinding, and walking with a
-  stick pushed part way (at the slowest a Viking moves a whole pixel every few ticks: if that looks jerky,
-  smooth movement could use the position's leftover fraction). The stick's pace goes on to climbing and steering
-  in the air (the user, 2026-11-25).
-- **Zooming while a text box waits for a key (fixed, 2026-11-25):** such a step is one picture for its three
-  refreshes, and the rest showed it again, so the zoom's change of view went a stage a step, each shown three
-  times (slow, and not smooth: the user). While the view changes `Session::step` now makes the rest as pictures
-  too.
-- **After that the user picks the next M8 item.** Left on the roadmap's list: sound placed by position. More
-  effects can be added to the table any time (water and lava cross-fading between their colour steps was talked
-  about, not tried).
+The state at the end of 2026-11-25: M8 has everything on its list but the extra sound effects. What the user still
+has to judge on the host, and what is open:
+
+- **Next to pick (the user):** the extra sound effects (footsteps by surface, the bow, Olaf's shield, an electric
+  buzz; ROADMAP.md, "Extra sound effects"), which want a decision on where the sounds come from and a surface for
+  every tile; or M9, co-op, whose first decision is the active area with several views (ADR-0011, ADR-0012).
+- **The Modern sound's effects placed by position (built and checked 2026-11-25; being heard on the host):**
+  ADR-0015. To judge by ear: how far to the sides the view's edges are (`kEdge`, 48 of 63, in `Session::placed`)
+  and how fast an effect fades outside the view (silent half a view away). The fire jets' roar, one sound for every
+  jet that is on, isn't placed. The Modern sound had no roar at all: the General MIDI arrangement's is empty. It
+  is now remade from the Classic one's notes on the melodic tom (`kRemade` in `src/audio/player.cpp`), turned down
+  twice by the user, to 45% of that (TinySoundFont's loudness goes with the cube of the volume: 76). Chosen by measuring, not by ear: General MIDI's effect
+  sounds (surf, a helicopter) swell in too slowly for its short notes. Under Remaster rules the Classic roar is
+  at 60% of its loudness (the user), which the chip gives at 87% of the volume (`Player::set_effect_loudness`,
+  set in `Session`'s start); Vanilla rules' is the original's.
+- **The Modern sound's voices (fixed 2026-11-25):** the synthesizer had 64 voices and the tunes want up to 106 at
+  once (a note of GeneralUser GS takes one or two, and keeps one while it dies away), so it cut notes short to make
+  room (the user heard a bass or a guitar stop early). Now 256 (`kMaxVoices`, `src/audio/gm.cpp`).
+- **The sound by rules (the user, 2026-11-25):** Vanilla rules play the Classic sound only (no F12, no SoundFont
+  loaded, `--sound modern` refused); under Remaster rules the menu chooses it. F11 is gone too: the screen's look
+  is the menu's alone.
+- **The menu, the settings and the controls (built and approved 2026-11-25):** to keep an eye on: the volume
+  sliders by ear (percent of the game's volume; the Classic chip's steps are steeper than the General MIDI
+  ones), and walking at the slowest (a Viking moves a whole pixel every few ticks: if that looks jerky, smooth
+  movement could use the position's leftover fraction).
+- **The screen's look, the effects, the deaths' effects:** approved by the user on the host (2026-11-25); the menu
+  chooses the look (none, crt, xbr: "Screen look" below). More effects can be added to the table any time (water
+  and lava cross-fading between their colour steps was talked about, not tried).
 - **The rewind's bar:** approved by the user on the host (2026-11-25). It belongs with the minimap: put away
   with it (M), the bar goes too (the user, 2026-11-25). The minimap's frame stays grey (the bar's is white).
 - **F8 outside a played level:** the quicksave's load still acts from anywhere but a menu; the user decided to
@@ -221,8 +232,8 @@ pixel and in steps of brightness), subtle.
 ### Screen look (built, 2026-11-25)
 
 How the window shows the finished picture, under Remaster rules (ADR-0005, ADR-0006), decided with the user: as
-it is, as Hyllian's CRT shader shows it, or with its stair-steps rounded off by Hyllian's xBR. F11 goes none,
-crt, xbr, and the menu chooses it (`--shader NAME` only in a dump); the profile keeps the one the window ended
+it is, as Hyllian's CRT shader shows it, or with its stair-steps rounded off by Hyllian's xBR. The menu chooses
+it (F11 went through them until the user left it to the menu) (`--shader NAME` only in a dump); the profile keeps the one the window ended
 with (`settings.txt`). Everything on the screen goes through it, the minimap, the rewind's bar and the menu too
 (the user). Tried and dropped after the user saw them on the host: a VGA monitor's look (480 fine lines, a fine
 mask; "just blurry"), a television of our own (240 lines with dark gaps, a slot mask, flat glass: "not great"
@@ -327,8 +338,9 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   minute) and `./scripts/check.sh` (format, constants defined once, every kind's state in its `Saved`,
   ASan/UBSan build with lint, unit tests, coverage of at least 80%). After a change that is only formatting,
   comments or docs neither needs running again. On the host, `./run-dev-env.sh test` does both in the container.
-- **After adding state to `World` or to a kind:** `./scripts/saves.sh` (every replay with the world written out
-  and read back before every step, about a minute), and raise `kStateVersion` (a test in `test_play.cpp` fails
+- **After adding state to `World` or to a kind:** `./scripts/saves.sh` (a way through each level, the demo, the
+  ending and a new game, with the world written out and read back before every step: cut down from every replay
+  by the user, 2026-11-25; `--all` for every replay, about a minute), and raise `kStateVersion` (a test in `test_play.cpp` fails
   until its sizes and version are brought up to date).
 - **After a change to how the GPU renderer draws:** `lv-replay --check --gpu` on a replay or two.
 - **What only the eye can judge is tried before it is committed.** Since M7 the user tries a change on the host
@@ -336,9 +348,9 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   new request comes while finished work is still uncommitted, say "let's commit this first" before starting it;
   what is in the tree goes in as one commit, never rebuilt into several (the user, 2026-11-25).
 - **The game itself runs on the host**, not in the container (no display or sound there):
-  `./build/release/bin/vikings-remaster --slot 0 --sound modern`, or `--rules remaster` for the Remaster rules
-  (whose sound, screen's look and lights are the menu's and the profile's, not start-up options: the user,
-  2026-11-25).
+  `./build/release/bin/vikings-remaster --slot 0` (Vanilla rules: the Classic sound only), or `--rules remaster`
+  for the Remaster rules (whose sound, screen's look and visual effects are the menu's and the profile's, not
+  start-up options: the user, 2026-11-25).
   What a Remaster window would show can be written as a picture in the container (`--dump`, with `--zoom`).
   Rebuild the release preset before asking the user to try something: `goldens.sh` only builds the replay tool.
 - **A golden is never recorded again to make a difference go away.** There is no oracle left to record from: a

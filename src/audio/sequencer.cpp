@@ -13,6 +13,7 @@ constexpr std::uint8_t u8(T value) noexcept {
 }
 
 constexpr std::uint8_t kFree = 0xFF;
+constexpr std::uint8_t kPanController = 10;
 
 std::uint8_t byte_at(std::span<const std::byte> data, std::size_t at) noexcept {
     return at < data.size() ? std::to_integer<std::uint8_t>(data[at]) : u8(0);
@@ -139,6 +140,27 @@ void Sequencer::set_loudness(int handle, int percent) {
     if (s.started) {  // (before, it has no channels' volumes yet: its own come as it plays)
         apply_volume(s);
     }
+}
+
+void Sequencer::set_pan(int handle, int offset) {
+    if (status(handle) < 0) {
+        return;
+    }
+    Sequence& s = sequences_.at(static_cast<std::size_t>(handle));
+    s.placed = true;
+    s.pan_offset = std::clamp(offset, -63, 63);
+}
+
+std::uint8_t Sequencer::placed_pan(const Sequence& s, std::uint8_t channel) const {
+    constexpr int kMiddle = 64;
+    int own = kMiddle;
+    for (std::size_t i = 0; i < tables_->controllers.size(); ++i) {
+        if (tables_->controllers.at(i) == kPanController) {
+            const std::uint8_t remembered = s.remembered.at((i * 16) + channel);
+            own = remembered == kFree ? kMiddle : remembered;
+        }
+    }
+    return u8(std::clamp(own + s.pan_offset, 0, 127));
 }
 
 void Sequencer::reset(Sequence& s) {  // 2B67
@@ -364,6 +386,9 @@ std::size_t Sequencer::note_on_event(Sequence& s, std::uint8_t status) {  // 30C
     s.notes.at(slot) = NoteSlot{.channel = channel, .key = key, .ticks_left = static_cast<std::int32_t>(duration) - 1};
     const std::uint8_t mapped = s.map.at(channel);
     ++channel_notes_.at(mapped);
+    if (s.placed) {  // (ours: where the note is heard)
+        send(u8(0xB0U | mapped), kPanController, placed_pan(s, channel));
+    }
     send(u8(0x90U | mapped), key, velocity);
     return length;
 }
@@ -401,6 +426,11 @@ void Sequencer::controller_event(Sequence& s, std::uint8_t channel, std::uint8_t
         }
     }
     switch (controller) {
+        case kPanController:
+            if (s.placed) {
+                value = placed_pan(s, channel);
+            }
+            break;
         case 7:
             if (const int volume = heard_volume(s); volume != 100) {
                 value = u8(std::min((unsigned{value} * static_cast<unsigned>(volume)) / 100U, 127U));

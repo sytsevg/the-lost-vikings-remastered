@@ -10,7 +10,10 @@ namespace {
 
 constexpr int kChannels = 16;
 constexpr int kPercussion = 9;  // MIDI channel 10
-constexpr int kMaxVoices = 64;
+// Voices at once (set up once, so none is made while the sound card waits). A note of GeneralUser GS takes one
+// or two, and a note let go keeps one while it dies away: the tunes want up to 106 (level 6), and at the 64 there
+// were the synthesizer cut notes short to make room (the user heard a bass or a guitar stop early).
+constexpr int kMaxVoices = 256;
 // The output's gain: -7 dB brings GeneralUser GS to the Classic sound's loudness (RMS over the first 3,000 steps:
 // 3,687 against 1,658 at 0 dB), so switching keeps the level, and its loudest moments don't clip.
 constexpr float kGainDb = -7.0F;

@@ -3,21 +3,21 @@
 // A tick every three refreshes of an artificial 59.71 Hz display; the keyboard as the original's handler reads it
 // (docs/original/input.md).
 //
-//   vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] [--soundfont FILE]
-//                    [--rules vanilla|remaster] [--cheat] [--slow-frames]
+//   vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--soundfont FILE] [--rules vanilla|remaster] [--cheat]
+//                    [--slow-frames]
 //       --profile DIR: where Remaster rules keep the player's profile (what the minimap has seen, the settings); by
 //       default the folder `profiles` beside this program.
 //       --slow-frames: a step or a picture's showing that takes long is reported on the error output
 //       --showcase N: under Remaster rules, the places where the Modern visuals' effects are seen (showcase.hpp),
 //       from the Nth on: each with the view held on it; PgDn or ] and PgUp or [ go to the next and the one before (with
 //       --dump: the Nth, as --whole writes it); the last ones put a Viking where he dies, starting the level again
-//       --sound: the Classic or the Modern sound to start with (Vanilla rules, and a dump); F12 switches.
 //       --cheat: the game's cheat on from the start, as if its password had been typed at the title: F5 and F6
 //       change the level, and under Remaster rules F7 and F8 are a quicksave and its load.
 //       play, from scene N (default 39, the first logo; 0-36 are the levels); FILE: other keys, lines
-//       "KEY NAME = action" (input/input.hpp). F12 switches between the Classic and the Modern sound.
-//       Under Remaster rules the sound, the screen's look (F11) and the visual effects are the menu's (Escape in a
-//       level), kept in the profile (settings.txt, profile.hpp), not start-up options.
+//       "KEY NAME = action" (input/input.hpp).
+//       Vanilla rules play the Classic sound, the original's, only (the user). Under Remaster rules the sound, the
+//       screen's look and the visual effects are the menu's (Escape in a level), kept in the profile (settings.txt,
+//       profile.hpp), not start-up options.
 //   vikings-remaster [--data DIR] [--slot N] --dump STEPS FILE.png [--wav FILE.wav] [--zoom BY AT_STEP]
 //                    [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] [--whole AT_STEP] [--moments N]
 //                    [--sound classic|modern] [--shader none|crt|xbr] [--no-effects] [--menu KEYS]
@@ -28,7 +28,7 @@
 //       it (twice the size, without the HUD); --moments: the last step's pictures each at N moments of its refresh
 //       as well, FILE-P-M.png, for what moves between ticks; --menu: the menu over the last picture, with its keys
 //       KEYS pressed (u, d, l, r: up, down, left, right; c choose, b back, x clear), as a still of it. A dump has no
-//       menu or profile: --sound the version of the sound written; under Remaster rules --shader the screen's look
+//       menu or profile: under Remaster rules --sound the version of the sound written, --shader the screen's look
 //       (as it is, Hyllian's CRT, or xBR's rounding, gpu.hpp), --no-effects the pictures without the Modern
 //       visuals' effects (effects.hpp).
 //
@@ -414,14 +414,8 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
         }
         return actions;
     };
-    const auto show_sound = [&session] {
-        std::println(stderr, "{}",
-                     !session.has_modern() ? "no Modern sound (no SoundFont)"
-                     : session.modern()    ? "sound: Modern (General MIDI)"
-                                           : "sound: Classic (OPL3)");
-    };
     // Remaster rules' own actions of a key or button pressed, taken where they act (Session::takes_play_keys): the
-    // zoom, the minimap, the quicksave. The sound and the screen are switched anywhere. Elsewhere a key is the
+    // zoom, the minimap, the quicksave. Elsewhere a key is the
     // game's like any other: nothing pressed in a scene or a menu is kept for later. True if one took it.
     const auto act = [&](input::Actions actions) {
         bool taken = false;
@@ -431,16 +425,6 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
         taken = (has(Action::kMinimap) && session.toggle_minimap()) || taken;
         taken = (has(Action::kQuicksave) && session.quicksave()) || taken;
         taken = (has(Action::kQuickload) && session.quickload()) || taken;
-        if (has(Action::kSound)) {
-            session.set_modern(!session.modern());  // the Classic / Modern switch (ADR-0015)
-            show_sound();
-            taken = true;
-        }
-        if (has(Action::kScreen) && gpu != nullptr) {
-            gpu->set_look(GpuRenderer::after(gpu->look()));
-            std::println(stderr, "screen: {}", GpuRenderer::name_of(gpu->look()));
-            taken = true;
-        }
         return taken;
     };
     // What the menu changed is used at once, and its picture drawn again.
@@ -619,10 +603,6 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
                 open_menu();
             } else if (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y != 0) {
                 (void)session.zoom(event.wheel.y < 0 ? 1 : -1);
-            } else if (!remaster && event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F12 &&
-                       !event.key.repeat) {
-                session.set_modern(!session.modern());  // the Classic / Modern switch (ADR-0015)
-                show_sound();
             } else if (event.type == SDL_EVENT_KEY_DOWN) {
                 // A press, or the keyboard's own repeat of a held key, which reaches the original's handler as
                 // a press too: it types the character again, and sets the key's bit again if a scene's load
@@ -858,7 +838,7 @@ int main(int argc, char* argv[]) try {
     DumpOptions dumping;
     std::string held;          // a dump: the key held
     std::string tapped;        // and the one pressed once
-    bool sound_asked = false;  // --sound (Vanilla rules, or a dump: under Remaster rules the menu's)
+    bool sound_asked = false;  // --sound (a dump under Remaster rules: in a window the menu's)
     const std::vector<std::string_view> args(argv + 1, argv + argc);
     for (std::size_t i = 0; i < args.size(); ++i) {
         const auto value = [&](std::size_t ahead) { return i + ahead < args.size() ? args[i + ahead] : ""; };
@@ -930,14 +910,10 @@ int main(int argc, char* argv[]) try {
         } else {
             std::println(
                 stderr,
-                "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] "
-                "[--soundfont FILE] [--rules vanilla|remaster] [--no-effects] [--shader none|crt|xbr] "
-                "[--showcase N] "
-                "[--cheat] "
-                "[--slow-frames] "
-                "[--profile DIR] "
-                "[--dump STEPS "
-                "FILE.png [--wav FILE.wav] [--zoom BY AT_STEP] [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] "
+                "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--soundfont FILE] "
+                "[--rules vanilla|remaster] [--cheat] [--slow-frames] [--profile DIR] [--showcase N] "
+                "[--dump STEPS FILE.png [--wav FILE.wav] [--sound classic|modern] [--no-effects] "
+                "[--shader none|crt|xbr] [--zoom BY AT_STEP] [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] "
                 "[--whole AT_STEP] [--moments N] [--menu KEYS]]");
             return EXIT_FAILURE;
         }
@@ -951,8 +927,15 @@ int main(int argc, char* argv[]) try {
             "for --dump");
         return EXIT_FAILURE;
     }
-    if (!std::filesystem::exists(sound.soundfont) || (!dump_to.empty() && !sound.modern)) {
-        sound.soundfont.clear();  // no Modern sound; a dump renders only the version it is asked for
+    if (rules == Rules::kVanilla && sound_asked && sound.modern) {
+        std::println(stderr,
+                     "vikings-remaster: Vanilla rules play the Classic sound only (--rules remaster for the Modern)");
+        return EXIT_FAILURE;
+    }
+    // No Modern sound under Vanilla rules (the original's sound, the user); a dump renders only the version it is
+    // asked for.
+    if (rules == Rules::kVanilla || !std::filesystem::exists(sound.soundfont) || (!dump_to.empty() && !sound.modern)) {
+        sound.soundfont.clear();
     }
     sound.live = dump_to.empty();  // in a window the sound card asks for the sound; a dump makes it step by step
     // Under Remaster rules a window's pictures are drawn by the GPU renderer (ADR-0006), which needs the window

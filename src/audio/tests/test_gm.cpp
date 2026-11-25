@@ -91,6 +91,11 @@ TEST_CASE("audio: the Modern sound: the General MIDI tunes and effects through t
     // same places, only its instrument, its volume and its notes' height ours. The others are the General MIDI
     // arrangement's own.
     REQUIRE(data->effects.size() > 4);
+    // The fire jets' roar (0x4c) is remade too: the General MIDI arrangement's is empty, the Classic one's notes are
+    // taken.
+    REQUIRE(data->effects.size() > 0x4c);
+    CHECK(data->effects.at(0x4c).stream.size() == classic->effects.at(0x4c).stream.size());
+    CHECK(data->effects.at(0x4c).stream.size() > 4);
     const auto& remade = data->effects.at(3).stream;
     const auto& theirs = classic->effects.at(3).stream;
     REQUIRE(remade.size() == theirs.size());
@@ -132,4 +137,40 @@ TEST_CASE("audio: the Modern sound: the General MIDI tunes and effects through t
     }
     CHECK(loudest(out) > 1000);
     CHECK(loudest(out) < 32767);  // no clipping
+}
+
+TEST_CASE("audio: an effect can be heard quieter than the others (the Classic roar under Remaster rules)",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR);
+    }
+    auto files = assets::GameFiles::open(LVR_ORIGINAL_DIR);
+    REQUIRE(files);
+    auto classic = load_sound_data(files->archive(), Version::kClassic);
+    REQUIRE(classic);
+    // The loudest volume the roar sends to its channel over a second.
+    class Volumes : public MidiOut {
+      public:
+        void send(std::uint8_t status, std::uint8_t data1, std::uint8_t data2) override {
+            if ((status & 0xF0U) == 0xB0 && data1 == 7 && started) {
+                loudest = std::max(loudest, int{data2});
+            }
+        }
+        bool started = false;
+        int loudest = 0;
+    };
+    const auto loudest = [&](int percent) {
+        Volumes out;
+        Player player{*classic, out, nullptr, false, true};
+        player.set_effect_loudness(0x4c, percent);
+        out.started = true;
+        player.play_effect(0x4c);
+        for (int i = 0; i < 120; ++i) {
+            player.service();
+        }
+        return out.loudest;
+    };
+    const int full = loudest(100);
+    CHECK(full == 100);  // its own volume, the driver's start volume 100%
+    CHECK(loudest(50) == full / 2);
 }

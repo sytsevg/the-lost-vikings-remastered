@@ -24,7 +24,7 @@ namespace lvr {
 class Menu {
   public:
     // What there is to choose from besides the settings: a Modern sound (only with a SoundFont), and the screen's
-    // looks by name, in F11's order.
+    // looks by name, in the order the menu goes through them.
     struct Choices {
         bool has_modern = false;
         std::vector<std::string> screens{"none"};

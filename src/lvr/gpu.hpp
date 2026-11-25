@@ -25,7 +25,8 @@ namespace lvr {
 
 class GpuRenderer {
   public:
-    // How the window shows what it shows (Remaster rules' screen look, the user's to choose: F11), one at a time:
+    // How the window shows what it shows (Remaster rules' screen look, the user's to choose in the menu), one at a
+    // time:
     // - as it is;
     // - crt: the picture in the game's whole pixels (nothing moved between ticks), as Hyllian's CRT shader shows
     //   it: a scanline a row, its beam wider where it is brighter, and an aperture grille's mask (the user's choice
@@ -55,18 +56,6 @@ class GpuRenderer {
             }
         }
         return std::nullopt;
-    }
-    // The next one, as F11 goes: none, crt, xbr, none.
-    static constexpr Look after(Look look) noexcept {
-        switch (look) {
-            case Look::kNone:
-                return Look::kCrt;
-            case Look::kCrt:
-                return Look::kXbr;
-            case Look::kXbr:
-                break;
-        }
-        return Look::kNone;
     }
 
     // Without a window: for a tool or a test, on whatever Vulkan driver there is (a software one will do).

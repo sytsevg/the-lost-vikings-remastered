@@ -24,7 +24,7 @@ comments and other docs points here). A decision that was later replaced is not 
 - **The screen's look** (2026-11-25): how the window shows the finished picture: as it is, as a CRT would
   (Hyllian's CRT shader), or with its stair-steps rounded off (Hyllian's xBR). Shaders taken from
   others only under a licence that fits the project's MIT (crt-royale, GPL, was turned down for that). A display setting of the Modern visuals, not part
-  of the rules: F11 changes it at any moment, anywhere in the game, or the menu (ADR-0011), and the profile keeps
+  of the rules: the menu changes it (ADR-0011; F11 went through them until the user left it to the menu), and the profile keeps
   it (ADR-0011); `--shader` only for a dump. Remaster rules only (the user): Vanilla's window stays the CPU renderer's.
 - **The Modern visuals' effects** (2026-11-25): light, glow and particles drawn in the game's own pixels (every
   light worked out per pixel of the picture, in steps of brightness; particles a pixel each in the game's fixed
@@ -37,8 +37,9 @@ comments and other docs points here). A decision that was later replaced is not 
   switching while playing, so nothing has to be squeezed back into the original's limits. Anything that changes
   what the player can see or do belongs to Rules. Under Vanilla rules the visible playing area is the original's,
   even in Modern visuals.
-- **Sound: Classic / Modern** (ADR-0015), swappable at any moment.
-- Every combination of rules and sound is allowed. The simulation never knows which renderer or sound is active.
+- **Sound: Classic / Modern** (ADR-0015). Vanilla rules play the Classic sound only, the original's (the user,
+  2026-11-25); under Remaster rules the menu chooses either, at any moment. The simulation never knows which
+  renderer or sound is active.
 
 ### ADR-0017: The game's behaviour is written by hand, and checked by pixel match
 - The original keeps its behaviour in bytecode scripts. The engine does not interpret them: every kind of entity
@@ -109,7 +110,9 @@ comments and other docs points here). A decision that was later replaced is not 
   raised by hand when a `Saved`, `EntityState` or `WorldState` changes, and a test that pins the written size
   of four worlds says when that was forgotten.
 - **That nothing is missing** is checked on the replays: `scripts/saves.sh` (`lv-replay --saves`) writes the
-  world out and reads it back before every step, and all 119 must still match their goldens.
+  world out and reads it back before every step, and the replays must still match their goldens (a way through
+  each level and the scenes by default, every replay with `--all`); that every kind keeps its state in its `Saved`
+  is checked without playing (`scripts/kind_state.py`).
 - A world is 25 to 40 KB written out under Vanilla rules and 70 to 90 KB under Remaster rules (most of it the
   larger layer of sprite pieces). Fine for a file; a snapshot sent many times a second will want only what
   changed.
@@ -138,12 +141,21 @@ comments and other docs points here). A decision that was later replaced is not 
   with GeneralUser GS (loaded from a file, not in the repository).
 - The simulation asks for the same sounds either way. The two versions are different arrangements, so a switch
   starts the tune again.
-- **Classic is the original, limits included:** at most four effects at a time, and an effect takes channels
+- **Classic is the original, limits included** (under Remaster rules, one exception, the user's: the fire jets'
+  roar at 60% of its loudness): at most four effects at a time, and an effect takes channels
   (and so notes) from the music while it sounds. **Modern is ours to shape:** its effects have a synthesizer of
   their own, so the music plays on untouched, up to seven sound at a time, the last notes of an effect ring
   until its sequence ends, and one effect ending doesn't cut another short. Where the General MIDI arrangement
-  of an effect grates through a SoundFont, the effect is remade from the Classic one's notes on an instrument
-  of our choosing (`kRemade` in `src/audio/player.cpp`).
+  of an effect grates through a SoundFont, or is missing from it (the fire jets' roar: its General MIDI stream is
+  empty), the effect is remade from the Classic one's notes on an instrument of our choosing (`kRemade` in
+  `src/audio/player.cpp`).
+- **Modern's effects are placed by where they happen** (built 2026-11-25): an effect an entity asks for is heard
+  across the view from left to right by where the entity is (the view's edges 48 of 63 to a side: nothing on
+  screen is all the way to one ear), and quieter the further outside the view it is, silent half a view away;
+  one of the scene's, in the middle. The request says where it happened (`SoundCue::x`, `y`); the session works
+  out the rest from the view as it plays it (`Session::placed`), and the sequencer pans the effect's channels as
+  its notes start (`Sequencer::set_pan`; the effects lock channels of their own, so two at once are placed
+  apart). The music isn't placed, and the Classic sound never is (Remaster rules only, as the Modern sound is).
 - Not supported: PC speaker, OPL2, and the MT-32 (its emulator is LGPL and needs copyrighted ROMs).
 
 ## Building
@@ -331,8 +343,7 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   note is played (the chip's quietest level can still be heard). The Classic sound is one chip for the music and
   the effects together, so a gain on what it makes couldn't tell them apart.
 - **Controls** (built, 2026-11-25): what does each action, on the keyboard and on a gamepad, is the player's,
-  set in the menu and kept in `settings.txt`; Remaster rules' own actions (rewind, zoom, minimap, the sound, the
-  screen, the quicksave) are among them. On the keyboard a key an action (the user: not the original's several,
+  set in the menu and kept in `settings.txt`; Remaster rules' own actions (rewind, zoom, minimap, the quicksave) are among them. On the keyboard a key an action (the user: not the original's several,
   the keypad's too): choosing a key puts it in place of the one the action had. On a gamepad any number (the
   d-pad and the stick both walk): choosing a button adds it. Either is taken from the action that had it. The
   gamepad's page binds only with a gamepad there, and says whether one is (found, or flashing that none is) as
@@ -342,7 +353,8 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   Right Ctrl the Viking before and after, Tab the inventory, P the pause; the gamepad the original's joystick.
   Remaster's own on what was free: Backspace or the left
   trigger rewinds, - and = or the right stick up and down zoom out and in, M or the right stick's press the
-  minimap, F12 the sound, F11 the screen, F7 and F8 the quicksave. Nothing pauses on the pad (the left stick's
+  minimap, F7 and F8 the quicksave (the sound and the screen's look are the menu's alone: the user; Vanilla
+  rules, which have no menu, keep F12 for the sound). Nothing pauses on the pad (the left stick's
   press did, but it is pressed by accident while walking: the user; the menu's "give up level" opens the
   original's pause box). Gamepads through
   SDL's gamepad API, which maps every pad it knows (XInput, PlayStation, Switch, ...) onto one layout; several

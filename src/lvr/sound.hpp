@@ -23,6 +23,9 @@ struct SoundCue {
     std::uint16_t value = 0;
     std::uint8_t tune = 0;
     int entity = -1;  // the slot of the entity it came from; -1: the scene
+    // Where it happened, an entity's: its middle, in the level's pixels (the Modern sound places its effects by it).
+    std::int16_t x = 0;
+    std::int16_t y = 0;
 
     bool operator==(const SoundCue&) const = default;
 };

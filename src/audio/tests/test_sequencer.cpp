@@ -1,6 +1,7 @@
 // Tests for src/audio/sequencer.*: what the shared XMIDI sequencer sends to a driver's output, as MIDI messages
 // (docs/original/sound-driver.md). Its timing, loops and channel locking are checked through the OPL3 voice layer in
 // test_opl3.cpp.
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
 #include <cstdint>
@@ -130,6 +131,36 @@ TEST_CASE("audio: the loudness scales what the game's volume gives, and at 0 no 
     quiet.service();
     REQUIRE_FALSE(silent.messages.empty());
     CHECK(silent.messages[0] == Message{0xB2, 7, 100});
+}
+
+TEST_CASE("audio: a placed sequence pans its channels from where it pans itself, before each note") {
+    const auto t = tables();
+    // A note on channel 3 with no pan of its own; a pan to the right, a note; the end.
+    const auto stream = bytes({0x92, 60, 90, 0x01, 0x01, 0xB2, 10, 100, 0x92, 62, 90, 0x01, 0x01, 0xFF, 0x2F, 0});
+    Recorder r;
+    Sequencer sequencer{t, r, 100};
+    r.messages.clear();
+    const int h = sequencer.register_sequence(stream);
+    sequencer.set_pan(h, -40);  // to the left
+    sequencer.start(h);
+    sequencer.service();
+    REQUIRE(r.messages.size() >= 2);
+    CHECK(r.messages[0] == Message{0xB2, 10, 24});  // the middle, 40 to the left
+    CHECK(r.messages[1] == Message{0x92, 60, 90});
+    r.messages.clear();
+    sequencer.service();
+    sequencer.service();
+    // Its own pan moved by as much, and again before the note.
+    CHECK(std::ranges::count(r.messages, Message{0xB2, 10, 60}) == 2);
+    // One not placed sends no pan of ours.
+    Recorder plain;
+    Sequencer unplaced{t, plain, 100};
+    plain.messages.clear();
+    const int u = unplaced.register_sequence(stream);
+    unplaced.start(u);
+    unplaced.service();
+    REQUIRE_FALSE(plain.messages.empty());
+    CHECK(plain.messages[0] == Message{0x92, 60, 90});
 }
 
 TEST_CASE("audio: with ring-out, a dying-away instrument's last note is let go only when the sequence ends") {

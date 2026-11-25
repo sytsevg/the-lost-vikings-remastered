@@ -31,8 +31,6 @@ constexpr std::array<ActionInfo, kActionCount> kActionInfo{{
     {"zoom-out", "ZOOM OUT", 0},
     {"zoom-in", "ZOOM IN", 0},
     {"minimap", "MINIMAP", 0},
-    {"sound", "SOUND", 0},
-    {"screen", "SCREEN", 0},
     {"quicksave", "QUICKSAVE", 0},
     {"quickload", "QUICKLOAD", 0},
 }};
@@ -225,8 +223,6 @@ Controls remaster_controls() {
     add(c.keys, Action::kZoomOut, {"-"});
     add(c.keys, Action::kZoomIn, {"="});
     add(c.keys, Action::kMinimap, {"M"});
-    add(c.keys, Action::kSound, {"F12"});
-    add(c.keys, Action::kScreen, {"F11"});
     add(c.keys, Action::kQuicksave, {"F7"});
     add(c.keys, Action::kQuickload, {"F8"});
     add(c.pad, Action::kRewind, {"lefttrigger"});

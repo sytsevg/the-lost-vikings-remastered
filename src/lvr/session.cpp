@@ -5,6 +5,8 @@
 #include <print>
 #include <utility>
 
+#include "lvr/names.hpp"
+
 namespace lvr {
 
 namespace {
@@ -87,6 +89,13 @@ Session::Session(assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, S
       gm_{std::move(gm)} {
     opl_synth_ = std::make_unique<audio::OplSynth>(sound_.opl, chip_);
     classic_ = std::make_unique<audio::Player>(sound_, *opl_synth_, opl_synth_.get(), true, true);
+    if (rules == Rules::kRemaster) {
+        // The Classic sound's fire jets' roar is very loud (the user): under Remaster rules at 60% of its loudness,
+        // which the chip gives at 87% of the volume (measured: its levels are steps of a decibel and less, not
+        // shares). Vanilla rules' is the original's.
+        constexpr int kRoarVolume = 87;
+        classic_->set_effect_loudness(effect::kRoar, kRoarVolume);
+    }
     if (gm_ != nullptr && modern_sound_) {
         gm_effects_ = gm_->copy();
         if (gm_effects_ != nullptr) {
@@ -404,7 +413,10 @@ void Session::hear(const std::vector<SoundCue>& asked) {
     for (const SoundCue& cue : asked) {
         switch (cue.kind) {
             case SoundCue::Kind::kEffect:
-                effect_players([&cue](audio::Player& p) { p.play_effect(cue.value); });
+                classic_->play_effect(cue.value);  // (the original's: as it is)
+                if (modern_effects_ != nullptr) {
+                    modern_effects_->play_effect(cue.value, placed(cue));
+                }
                 break;
             case SoundCue::Kind::kStopEffect:
                 effect_players([&cue](audio::Player& p) { p.stop_effect(cue.value); });
@@ -429,6 +441,25 @@ void Session::hear(const std::vector<SoundCue>& asked) {
                 break;
         }
     }
+}
+
+audio::Placement Session::placed(const SoundCue& cue) const {
+    // How far to either side the view's edges are heard (of 63): not all the way, as nothing on screen is that far
+    // off to one ear.
+    constexpr int kEdge = 48;
+    const Camera& camera = play_.world.camera;
+    // One sound for many things across the level (the fire jets' roar, for all that are on): not where the one that
+    // started it is.
+    if (cue.entity < 0 || cue.value == effect::kRoar || camera.view_width <= 0 || camera.view_height <= 0) {
+        return {};
+    }
+    const int across = std::clamp(cue.x - camera.x, 0, camera.view_width);
+    const int pan = (((across * 2) - camera.view_width) * kEdge) / camera.view_width;
+    // How far outside the view, the nearer edge's way.
+    const int outside = std::max({camera.x - cue.x, cue.x - (camera.x + camera.view_width), camera.y - cue.y,
+                                  cue.y - (camera.y + camera.view_height), 0});
+    const int fades_over = std::max(camera.view_width / 2, 1);
+    return {.pan = pan, .loudness = std::max(0, 100 - (outside * 100 / fades_over))};
 }
 
 void Session::refresh_sound() {

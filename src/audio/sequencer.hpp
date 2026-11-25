@@ -54,6 +54,10 @@ class Sequencer {
     // volume the game gives it. At 100 the driver's own; at 0 its notes aren't played at all (a chip's quietest
     // level can still be heard). Kept until the handle is registered again; the volume is sent again at once.
     void set_loudness(int handle, int percent);
+    // Ours too (the Modern sound's effects placed by where they happen): the sequence heard `offset` from where it
+    // pans itself (-63 hard left to 63 hard right): each channel of it panned so as its notes start. Kept until the
+    // handle is registered again.
+    void set_pan(int handle, int offset);
 
   private:
     struct NoteSlot {
@@ -83,7 +87,9 @@ class Sequencer {
         int volume_target = 100;
         std::int32_t volume_time = 0;
         std::int32_t volume_period = 1;
-        int loudness = 100;  // set_loudness()'s
+        int loudness = 100;   // set_loudness()'s
+        bool placed = false;  // set_pan()'s
+        int pan_offset = 0;
         std::array<Loop, 4> loops{};
         std::array<std::uint8_t, 16> map{};
         std::array<std::uint8_t, 16> program{};
@@ -107,6 +113,9 @@ class Sequencer {
     void release_channel_notes(std::uint8_t channel, const Sequence* only = nullptr);
     void end_sequence(Sequence& s);
     void apply_volume(Sequence& s);
+    // A placed sequence's pan for its channel `channel` (its own, unmapped): where it pans itself, moved by its
+    // offset.
+    std::uint8_t placed_pan(const Sequence& s, std::uint8_t channel) const;
     // The volume the channels are given: the game's, as loud as set_loudness() has it.
     static int heard_volume(const Sequence& s) noexcept { return (s.volume * s.loudness) / 100; }
     int lock_channel();

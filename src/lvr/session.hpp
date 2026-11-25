@@ -190,6 +190,9 @@ class Session {
     // `dimmed`: as the original's menus show the picture (kMenuTint), unless it is darkened already.
     Screen picture(bool dimmed = false);
     void hear(const std::vector<SoundCue>& asked);
+    // Where the Modern sound plays an effect: across the view from left to right by where it happened, and quieter
+    // the further outside the view (silent half a view away). One of the scene's: in the middle.
+    audio::Placement placed(const SoundCue& cue) const;
     void refresh_sound();
     void half_refresh_sound(std::vector<std::int16_t>& out);
     // A refresh's sound: made at once into `samples`, or (live) its requests kept in `cues` for when it is shown.

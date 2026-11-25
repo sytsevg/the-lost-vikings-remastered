@@ -30,6 +30,13 @@ constexpr std::array kRemade{
     // a harsh, held tone (a modulator at half the pitch, driven hard, with feedback): the nearest General MIDI
     // one is the sawtooth lead.
     Remade{.effect = 3, .program = 81, .volume = 110, .transpose = 0},
+    // The fire jets' roar: the General MIDI arrangement has none (its stream is empty: in the Modern sound the jets
+    // were silent). The Classic one is a fast run of very low notes, looped while any jet burns, and very loud (the
+    // user). On General MIDI's sound effects (surf, a helicopter, breath) such short notes are hardly heard, as they
+    // swell in slowly; the melodic tom, struck, rumbles as low (about 490 crossings of zero a second against the
+    // Classic's 280). Too loud at 100 (the user, twice): at 45% of that, which TinySoundFont gives at 76 (its
+    // loudness goes with the cube of the volume).
+    Remade{.effect = 0x4c, .program = 117, .volume = 76, .transpose = 0},
 };
 
 // An effect's stream with every program change set to the row's instrument, every channel volume to its volume,
@@ -160,10 +167,16 @@ Player::Player(const SoundData& data, MidiOut& out, OplSynth* timbres, bool musi
       effects_on_{effects},
       effect_slots_{std::clamp(effects_at_a_time, 1, kMostEffects)} {}
 
-void Player::play(int slot, const assets::XmidiSequence& sequence) {  // 76BD
+void Player::play(int slot, const assets::XmidiSequence& sequence, const std::optional<Placement>& placed,
+                  int percent) {  // 76BD
     const auto index = static_cast<std::size_t>(slot);
     handles_.at(index) = sequencer_.register_sequence(sequence.stream);
-    sequencer_.set_loudness(handles_.at(index), slot == 0 ? music_loudness_ : effects_loudness_);
+    const int loudness = (slot == 0 ? music_loudness_ : effects_loudness_) * std::clamp(percent, 0, 100) / 100;
+    sequencer_.set_loudness(handles_.at(index),
+                            placed ? loudness * std::clamp(placed->loudness, 0, 100) / 100 : loudness);
+    if (placed) {
+        sequencer_.set_pan(handles_.at(index), placed->pan);
+    }
     // 7512: each instrument the driver still lacks, from the bank (0CAB, 0CB1). A General MIDI module has its own.
     if (timbres_ != nullptr) {
         install_timbres(sequence);
@@ -194,7 +207,7 @@ void Player::free_slot(int slot) {
     playing_.at(index) = -1;
 }
 
-void Player::play_effect(int effect) {  // 77B2
+void Player::play_effect(int effect, const std::optional<Placement>& placed) {  // 77B2
     if (!effects_on_ || effect < 0 || static_cast<std::size_t>(effect) >= data_->effects.size()) {
         return;
     }
@@ -207,7 +220,8 @@ void Player::play_effect(int effect) {  // 77B2
             sequencer_.release(handles_.at(index));
         }
         playing_.at(index) = effect;
-        play(slot, data_->effects.at(static_cast<std::size_t>(effect)));
+        const auto at = static_cast<std::size_t>(effect);
+        play(slot, data_->effects.at(at), placed, at < effect_loudness_.size() ? effect_loudness_.at(at) : 100);
         return;
     }
 }
@@ -293,6 +307,14 @@ void Player::set_loudness(int music, int effects) {
     for (std::size_t slot = 0; slot < handles_.size(); ++slot) {
         sequencer_.set_loudness(handles_.at(slot), slot == 0 ? music : effects);  // (none there: nothing)
     }
+}
+
+void Player::set_effect_loudness(int effect, int percent) {
+    if (effect < 0 || static_cast<std::size_t>(effect) >= data_->effects.size()) {
+        return;
+    }
+    effect_loudness_.resize(data_->effects.size(), 100);
+    effect_loudness_.at(static_cast<std::size_t>(effect)) = std::clamp(percent, 0, 100);
 }
 
 }  // namespace lvr::audio

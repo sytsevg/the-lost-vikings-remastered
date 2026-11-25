@@ -312,17 +312,29 @@ class World : public WorldState {
     std::uint16_t program_of(Animation animation) const;
     // An entity makes a sound: one of the original's effects, by its number. And stops one.
     void sound(const Entity& from, std::uint16_t effect) {
-        cues.push_back({.kind = SoundCue::Kind::kEffect, .value = effect, .tune = 0, .entity = from.slot});
+        cues.push_back({.kind = SoundCue::Kind::kEffect,
+                        .value = effect,
+                        .tune = 0,
+                        .entity = from.slot,
+                        .x = from.x,
+                        .y = from.y});
     }
     void stop_sound(const Entity& from, std::uint16_t effect) {
-        cues.push_back({.kind = SoundCue::Kind::kStopEffect, .value = effect, .tune = 0, .entity = from.slot});
+        cues.push_back({.kind = SoundCue::Kind::kStopEffect,
+                        .value = effect,
+                        .tune = 0,
+                        .entity = from.slot,
+                        .x = from.x,
+                        .y = from.y});
     }
     // The same for a sound that is nobody's: a menu's, or one that several entities share.
     void sound(std::uint16_t effect) {
-        cues.push_back({.kind = SoundCue::Kind::kEffect, .value = effect, .tune = 0, .entity = kNobody});
+        cues.push_back(
+            {.kind = SoundCue::Kind::kEffect, .value = effect, .tune = 0, .entity = kNobody, .x = 0, .y = 0});
     }
     void stop_sound(std::uint16_t effect) {
-        cues.push_back({.kind = SoundCue::Kind::kStopEffect, .value = effect, .tune = 0, .entity = kNobody});
+        cues.push_back(
+            {.kind = SoundCue::Kind::kStopEffect, .value = effect, .tune = 0, .entity = kNobody, .x = 0, .y = 0});
     }
 
     std::uint16_t random() noexcept;

@@ -379,7 +379,12 @@ void World::animate(Entity& entity) {
         note_missing({.kind = entity.kind, .what = entry, .program = false});
     }
     for (const std::uint8_t effect : effects) {
-        cues.push_back(SoundCue{.kind = SoundCue::Kind::kEffect, .value = effect, .tune = 0, .entity = entity.slot});
+        cues.push_back(SoundCue{.kind = SoundCue::Kind::kEffect,
+                                .value = effect,
+                                .tune = 0,
+                                .entity = entity.slot,
+                                .x = entity.x,
+                                .y = entity.y});
     }
     entity.push_x = body.push_x;
     entity.push_y = body.push_y;

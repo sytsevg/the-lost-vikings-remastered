@@ -34,8 +34,9 @@ rewind, a quicksave, and the player's profile on disk that keeps the last two ar
 - Parallax: the SNES backdrops behind the levels and the village's scenes, from the user's own ROM image (built,
   2026-11-24; HANDOVER.md, "Parallax")
 - **Screen look** (built, 2026-11-25; HANDOVER.md, "Screen look"): Hyllian's CRT, and the pixels rounded off by
-  xBR; F11 or the menu
-- Modern sound: the effects placed by position, and extra effects (notes below)
+  xBR; chosen in the menu
+- Modern sound: the original effects placed by position (built, 2026-11-25; ADR-0015); extra effects (notes
+  below)
 - Dropped (the user, 2026-11-25): art packs (sprites replaced one for one) and the SNES version's sound
 
 ## M9: Co-op

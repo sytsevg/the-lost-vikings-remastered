@@ -643,15 +643,12 @@ TEST_CASE("gpu: the screen's look shows the picture as Hyllian's CRT shader woul
     }
     GpuRenderer& gpu = **opened;
     using Look = GpuRenderer::Look;
-    // Their names, and the order F11 goes through them.
+    // Their names, each once.
     for (const Look look : GpuRenderer::kLooks) {
         CHECK(GpuRenderer::look_named(GpuRenderer::name_of(look)) == look);
     }
-    CHECK_FALSE(GpuRenderer::look_named("vga"));  // tried and dropped
-    CHECK_FALSE(GpuRenderer::look_named("tv"));   // so was our own television
-    CHECK(GpuRenderer::after(Look::kNone) == Look::kCrt);
-    CHECK(GpuRenderer::after(Look::kCrt) == Look::kXbr);
-    CHECK(GpuRenderer::after(Look::kXbr) == Look::kNone);
+    CHECK_FALSE(GpuRenderer::look_named("vga"));          // tried and dropped
+    CHECK_FALSE(GpuRenderer::look_named("tv"));           // so was our own television
     CHECK_FALSE(GpuRenderer::look_named("xbr-noblend"));  // tried and dropped
     // A screen all of one grey.
     const SharedGraphics shared = sample_shared();

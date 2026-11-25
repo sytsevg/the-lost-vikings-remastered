@@ -345,7 +345,10 @@ TEST_CASE("tick: an animation step plays the sprite's program and adds the entit
     CHECK(thing.speed_y == px(0.96875));
     CHECK(thing.push_y == 0xf8);
     REQUIRE(t.world.cues.size() == 1);
-    CHECK(t.world.cues[0] == SoundCue{.kind = SoundCue::Kind::kEffect, .value = 9, .tune = 0, .entity = thing.slot});
+    CHECK(
+        t.world.cues[0] ==
+        SoundCue{
+            .kind = SoundCue::Kind::kEffect, .value = 9, .tune = 0, .entity = thing.slot, .x = thing.x, .y = thing.y});
     CHECK(thing.sprite.delay == 2);
 }
 

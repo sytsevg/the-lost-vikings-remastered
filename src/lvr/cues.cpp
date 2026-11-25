@@ -23,8 +23,12 @@ bool run_cues(World& world, Entity& director, std::span<const Cue> cues, std::si
                 world.stop_sound(director, cue.value);
                 break;
             case Cue::Kind::kRestartMusic:
-                world.cues.push_back(
-                    {.kind = SoundCue::Kind::kRestartMusic, .value = 0, .tune = 0, .entity = director.slot});
+                world.cues.push_back({.kind = SoundCue::Kind::kRestartMusic,
+                                      .value = 0,
+                                      .tune = 0,
+                                      .entity = director.slot,
+                                      .x = 0,
+                                      .y = 0});
                 break;
             case Cue::Kind::kColour:
                 world.colour_boxes(cue.value);

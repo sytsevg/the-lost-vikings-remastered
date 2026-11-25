@@ -89,8 +89,8 @@ Then run it on your own desktop, since the container has no screen or sound:
 ```sh
 ./build/release/bin/vikings-remaster                  # from the first logo
 ./build/release/bin/vikings-remaster --slot 0         # straight into level 1
-./build/release/bin/vikings-remaster --sound modern   # start with General MIDI (F12 switches; under Remaster
-                                                      # rules the menu chooses it, Escape in a level)
+./build/release/bin/vikings-remaster --rules remaster # the Remaster rules: General MIDI and the rest in the
+                                                      # menu (Escape in a level)
 ```
 
 The keys are the original's. Arrows to move, Ctrl to switch Viking, E, S, D and F for what each of them can do,

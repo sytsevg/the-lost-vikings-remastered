@@ -42,7 +42,8 @@ commit that touches the engine.
 
 After adding state to `World` or to a kind, `./scripts/saves.sh` plays the replays with the world written out and
 read back before every step (`lv-replay --saves`; `--copies` does the same with a copy): what the rewind, the
-quicksave and later a network snapshot hold must be all a replay needs. About a minute.
+quicksave and later a network snapshot hold must be all a replay needs. By default a way through each level, the
+demo, the ending and a new game (40 replays, under a minute); `--all` for every replay.
 
 After a change to the GPU renderer's drawing, `lv-replay --check --gpu REPLAY...` plays replays with it in the
 Classic renderer's place, against the same goldens (all of them take about five minutes on the software driver;
