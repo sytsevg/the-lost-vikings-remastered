@@ -15,6 +15,8 @@ Target `lvr::engine`, plain C++ on `lvr::assets`.
   of pieces, the animation player (the original's animation programs, imported and played as they are), and the
   pieces made into pictures for the renderer (`PiecePainter`).
 - `profile.*`: the player's profile on disk (Remaster rules): what the minimap has seen, and the quicksave.
+- `backdrop.*`: Remaster rules' parallax: which pixels of the map show the SNES backdrop, and where the backdrop is
+  for a camera.
 - `minimap.*`: Remaster rules' minimap: the level small, by what its cells are, as far as it was seen.
 - `camera.*`: the camera: its limits, where it starts, how it follows the Viking being played; the size of the
   view (the original's, or a zoomed one).

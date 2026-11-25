@@ -316,3 +316,16 @@ TEST_CASE("real data: every level has a backdrop on the SNES", "[real-data]") {
         }
     }
 }
+
+TEST_CASE("real data: the village, the ship and the game-over scene have backdrops on the SNES", "[real-data]") {
+    const SnesRom& rom = rom_or_skip();
+    for (const SnesScene& scene : kSnesSceneHeaders) {
+        INFO("scene " << scene.name);
+        const auto backdrop = load_scene_backdrop(rom, scene.name);
+        REQUIRE(backdrop.has_value());
+        CHECK(backdrop->image.width == backdrop->header.width * 16U);
+        CHECK(backdrop->image.height == backdrop->header.height * 16U);
+        CHECK(backdrop->image.width > 0);
+    }
+    CHECK_FALSE(load_scene_backdrop(rom, "title").has_value());  // drawn on the console as in DOS: no backdrop
+}

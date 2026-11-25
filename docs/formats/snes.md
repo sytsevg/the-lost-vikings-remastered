@@ -5,8 +5,9 @@ pictures it renders were looked at. **Implemented** for the chunk table and the 
 (`SnesRom`, `load_level_backdrop`; `[real-data]` tests: every chunk decodes and uses up its bytes, all 37
 backdrops load, level 1's the same picture as the prototype's; fuzzed, `fuzz_snes`). The game reads the image
 directly, as it reads `DATA.DAT` (ADR-0014); `lv-export assets` writes the backdrops to `snes/NN-backdrop.png`
-when the image is in the folder. Nothing draws them in the game yet (the Modern visuals, [`../ROADMAP.md`](../ROADMAP.md)). Everything
-below was found in this image.
+when the image is in the folder, and each level and scene with its backdrop behind it (`snes/NN-level.png`,
+`snes/<scene>-scene.png`). Under Remaster rules the game shows them ([below](#in-the-game)). Everything below
+was found in this image.
 
 **The image:** *The Lost Vikings* (USA), the 1993 cartridge: 1,048,576 bytes, no copier header, LoROM (internal
 header at `0x7FC0`, title `THE LOST VIKINGS`, checksum `0x6CE9`, which matches the bytes' sum). SHA-256
@@ -82,7 +83,9 @@ header's first two words; the "next slot" numbers are the DOS slots'):
 
 So the 1993 cartridge is the DOS game's content: **no level or scene the DOS game lacks**. The console-only
 levels, the interludes and the languages of later editions and of the Genesis version are not in this image. Three scenes have backdrops of their own (the village's sky, the ship, game
-over); they are not imported: the DOS game draws those scenes in its own way (full-screen pictures).
+over), in the same fields as a level's (`load_scene_backdrop`). The DOS game draws those three scenes as tiled maps
+too: the village leaves its sky in colour 0 as the levels do, and with the backdrop behind it is the console's
+picture; the ship and game over cover every such pixel (game over has none), so their backdrops never show.
 
 ## Maps, quads, tiles, colours
 - **Map** (the level's and the backdrop's): `u16` per cell, row by row. The low 10 bits are the quad; the level
@@ -138,6 +141,20 @@ most: so the backdrop's size is `$19FB`/`$19FD`, the byte 0x38 `$19FF`, its map 
 
 So, for a level that starts with the camera at 0: the backdrop's top-left is at (camera × speed) / 256 on an
 ordinary axis, (refreshes × speed) / 256 on a flagged one, both modulo its size.
+
+## In the game
+Under Remaster rules, with the image there (`src/lvr/backdrop.*`, HANDOVER.md "Parallax"):
+- **Where:** a pixel of the map in colour 0 of one of the palette rows 0-7 shows the backdrop. In all 37 levels
+  the DOS level palette's rows 0-7 are these colours (but for 5 bits against 6) except each row's colour 0, which
+  the console never shows (it shows what is behind) and the DOS game blacks out. So the backdrop's pixels go in
+  as they are, as the DOS palette's indices.
+- **Checked:** the DOS map with the backdrop laid in that way, each 320 x 176 screen with the camera there, against
+  the SNES level's own map with its backdrop drawn the same way: 32 of the 37 levels and the village's scenes are
+  the same pixel for pixel. Levels 21, 24, 25 and 33 differ in less than 1% of their pixels, and level 28's DOS
+  map is a column wider. The black that is left (10-45% of the map in the spaceship, prehistoric, Egypt and
+  factory levels) is black on the console too.
+- **Scrolling:** as [above](#how-the-game-moves-the-backdrop), with the DOS camera; the DOS refresh (59.7 a second)
+  stands in for the console's (60.1), and between pictures it moves on evenly.
 
 ## Open
 - Bit 3 of the byte at 0x38 (a third way past the size, `C9AE`; no level sets it); the priority bit's use in the

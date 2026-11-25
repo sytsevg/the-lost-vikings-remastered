@@ -80,4 +80,17 @@ CollisionMap collision_map(const Map& map, std::span<const TerrainEntity> terrai
 assets::IndexedImage world_picture(const Level& level, const assets::IndexedImage& map_image,
                                    std::span<const assets::IndexedImage> font);
 
+// --- The SNES backdrop behind the map (Remaster rules' parallax, lvr/backdrop.hpp) ---
+
+struct BackdropPreview {
+    assets::IndexedImage image;  // pixel values are the level's palette indices
+    std::size_t shown = 0;       // how many of the map's pixels show the backdrop
+};
+
+// The whole level with the backdrop where its map shows it, in screens: every 320 x 176 part of the level as the
+// original's view shows it with the camera there (within the camera's limits), so the backdrop jumps where two
+// parts meet. A backdrop that moves by itself is where it is at the level's start.
+BackdropPreview backdrop_preview(const Map& map, const assets::IndexedImage& map_image,
+                                 const assets::IndexedImage& backdrop, std::uint16_t scroll_x, std::uint16_t scroll_y);
+
 }  // namespace lvr::exporter

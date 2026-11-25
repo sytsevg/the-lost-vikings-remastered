@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -12,6 +13,8 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include "lvr/backdrop.hpp"
 
 namespace lvr {
 
@@ -68,6 +71,8 @@ constexpr int kTilesAcross = kAtlasSize / kTileSize;  // the tileset's tiles in 
 struct Spot {
     int x = 0;
     int y = 0;
+
+    bool operator==(const Spot&) const = default;
 };
 
 // One picture on the target, as the vertex shader takes it (gpu_quad.vert).
@@ -207,6 +212,7 @@ struct GpuRenderer::State {
         Spot panel, picker_mask;
         std::uint32_t scene_id = 0;  // 0: none placed
         Spot tiles, masks, picture, hud_picture;
+        std::optional<Spot> backdrop;  // the scene's, if it has one
         Atlas::Mark after_scene;
         std::unordered_map<std::uint64_t, Spot> pieces;
     };
@@ -224,6 +230,20 @@ struct GpuRenderer::State {
         std::size_t in_playfield = 0;          // the first quads: those cut at the HUD
         int width = 0;
         int height = 0;
+        // The scene's backdrop (backdrop.hpp), laid in where the map shows it when the picture is shown: where it
+        // is in the atlas, how it moves, and where the map is on the picture (left, top, right, bottom; as kept,
+        // before what moves between ticks).
+        struct Behind {
+            Spot at;
+            int width = 0;
+            int height = 0;
+            std::uint16_t scroll_x = 0;
+            std::uint16_t scroll_y = 0;
+            std::array<int, 4> map{};
+
+            bool operator==(const Behind&) const = default;
+        };
+        std::optional<Behind> backdrop;
     };
     // The kept pictures by number (the last kKept of them); one the same as the one before (a fade's: only the
     // colours change) is kept once.
@@ -374,7 +394,7 @@ std::expected<void, std::string> GpuRenderer::State::set_up() {
     // Showing: the same two shaders onto the window's format and onto our own.
     SDL_GPUShader* show_vertex = shader(kShowVertexShader, sizeof(kShowVertexShader), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
     SDL_GPUShader* show_fragment =
-        shader(kShowFragmentShader, sizeof(kShowFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 2, 1);
+        shader(kShowFragmentShader, sizeof(kShowFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 3, 1);
     if (show_vertex == nullptr || show_fragment == nullptr) {
         return sdl_error("the shaders");
     }
@@ -534,6 +554,13 @@ bool GpuRenderer::State::place_scene(Page& on, const SceneGraphics& graphics) {
                 return false;
             }
             *spot = *placed;
+        }
+    }
+    on.backdrop.reset();
+    if (graphics.backdrop) {
+        on.backdrop = on.atlas.put(graphics.backdrop->image);
+        if (!on.backdrop) {
+            return false;
         }
     }
     on.scene_id = graphics.id;
@@ -768,6 +795,18 @@ bool GpuRenderer::State::list(Page& on, const View& view, const SceneGraphics& g
         }
     }
     picture.in_playfield = picture.quads.size();
+    picture.backdrop.reset();
+    if (graphics.backdrop && on.backdrop && view.map != nullptr && view.map->width > 0) {
+        const Backdrop& backdrop = *graphics.backdrop;
+        picture.backdrop =
+            Picture::Behind{.at = *on.backdrop,
+                            .width = static_cast<int>(backdrop.image.width),
+                            .height = static_cast<int>(backdrop.image.height),
+                            .scroll_x = backdrop.scroll_x,
+                            .scroll_y = backdrop.scroll_y,
+                            .map = {-view.camera_x, -view.camera_y, view.map->pixel_width() - view.camera_x,
+                                    view.map->pixel_height() - view.camera_y}};
+    }
     if (graphics.hud_picture) {  // its first 64 rows, in the HUD's place
         picture.quads.push_back(quad(on.hud_picture, 0, view.height,
                                      std::min(kScreenWidth, static_cast<int>(graphics.hud_picture->width)),
@@ -1143,14 +1182,41 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         };
         struct Sampled {  // gpu_show.frag
             std::array<float, 4> within;
+            std::array<float, 4> backdrop;  // in the atlas: left, top, width, height; a width of 0: none
+            std::array<float, 4> field;     // where the map is, in the picture's pixels: left, top, right, bottom
+            std::array<float, 2> offset;    // where the picture's top left corner is in the backdrop
             float samples;
-            std::array<float, 3> unused;
+            float scale;  // the drawn picture's pixels a pixel of it
         };
+        // The backdrop (Remaster rules' parallax, backdrop.hpp): placed by the camera without the shake, as it is
+        // at this moment (what moves between ticks moved too), and what moves by itself by the refreshes.
+        std::array<float, 4> behind{};
+        std::array<float, 4> field{};
+        std::array<float, 2> offset{};
+        if (picture->backdrop && picture->page < pages.size()) {
+            const Picture::Behind& backdrop = *picture->backdrop;
+            const std::array<float, 2> moved = camera_moved(screen.motion, between);
+            // (A picture is shown for one refresh, `between` into it: what moves by itself goes on evenly.)
+            const double refresh = static_cast<double>(screen.refresh) + static_cast<double>(between);
+            behind = {static_cast<float>(backdrop.at.x), static_cast<float>(backdrop.at.y),
+                      static_cast<float>(backdrop.width), static_cast<float>(backdrop.height)};
+            field = {static_cast<float>(backdrop.map[0]) - moved[0], static_cast<float>(backdrop.map[1]) - moved[1],
+                     static_cast<float>(backdrop.map[2]) - moved[0], static_cast<float>(backdrop.map[3]) - moved[1]};
+            for (std::size_t axis = 0; axis < 2; ++axis) {
+                offset.at(axis) = static_cast<float>(backdrop_offset(
+                    axis == 0 ? backdrop.scroll_x : backdrop.scroll_y,
+                    static_cast<double>(screen.motion.scroll.at(axis)) + static_cast<double>(moved.at(axis)), refresh,
+                    axis == 0 ? backdrop.width : backdrop.height));
+            }
+        }
         SDL_BindGPUGraphicsPipeline(pass, with);
-        const std::array<SDL_GPUTextureSamplerBinding, 2> pictures{
-            {{.texture = work, .sampler = sampler}, {.texture = palette_texture, .sampler = sampler}}};
-        SDL_BindGPUFragmentSamplers(pass, 0, pictures.data(), 2);
-        const auto part = [&](std::array<float, 4> dest, std::array<float, 4> source, std::array<float, 4> within) {
+        SDL_GPUTexture* atlas = picture->page < pages.size() ? pages[picture->page]->texture : work;
+        const std::array<SDL_GPUTextureSamplerBinding, 3> pictures{{{.texture = work, .sampler = sampler},
+                                                                    {.texture = palette_texture, .sampler = sampler},
+                                                                    {.texture = atlas, .sampler = sampler}}};
+        SDL_BindGPUFragmentSamplers(pass, 0, pictures.data(), pictures.size());
+        const auto part = [&](std::array<float, 4> dest, std::array<float, 4> source, std::array<float, 4> within,
+                              bool playfield) {
             // (In the picture's pixels; it is drawn `drawn` times as large.)
             for (std::size_t i = 0; i < 4; ++i) {
                 source.at(i) *= static_cast<float>(drawn);
@@ -1162,8 +1228,12 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
                                 .source = source,
                                 .size = {static_cast<float>(width), static_cast<float>(height)},
                                 .unused = {}};
-            const Sampled sampled{
-                .within = within, .samples = std::clamp(std::ceil(covers - 0.01F), 1.0F, kMostSamples), .unused = {}};
+            const Sampled sampled{.within = within,
+                                  .backdrop = playfield ? behind : std::array<float, 4>{},
+                                  .field = field,
+                                  .offset = offset,
+                                  .samples = std::clamp(std::ceil(covers - 0.01F), 1.0F, kMostSamples),
+                                  .scale = static_cast<float>(drawn)};
             times.samples = std::max(times.samples, static_cast<int>(sampled.samples));
             SDL_PushGPUVertexUniformData(commands, 0, &placed, sizeof(placed));
             SDL_PushGPUFragmentUniformData(commands, 0, &sampled, sizeof(sampled));
@@ -1178,7 +1248,7 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
                  : static_cast<float>(top) + ((screen_height - (field_height + (kHudHeight * fit))) / 2);
         const auto middle = [&](float wide) { return static_cast<float>(left) + ((screen_width - wide) / 2); };
         part({middle(shown.width * fit), all_top, shown.width * fit, field_height},
-             {shown.x, shown.y, shown.width, shown.height}, {0, 0, picture_width, picture_height});
+             {shown.x, shown.y, shown.width, shown.height}, {0, 0, picture_width, picture_height}, true);
         const auto hud_top = picture_height;
         const float hud_at =
             over ? static_cast<float>(top) + screen_height - (kHudHeight * fit) : all_top + field_height;
@@ -1192,7 +1262,7 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         }
         const float hud_seen = std::min(kScreenWidth * fit, static_cast<float>(left) + screen_width - hud_left) / fit;
         part({hud_left, hud_at, hud_seen * fit, kHudHeight * fit}, {0, hud_top, hud_seen, kHudHeight},
-             {0, hud_top, kScreenWidth, hud_top + kHudHeight});
+             {0, hud_top, kScreenWidth, hud_top + kHudHeight}, false);
     }
     if (with_minimap) {
         // A square of the minimap around the middle of what the view shows, in the screen's bottom left corner. It
@@ -1360,7 +1430,7 @@ std::expected<void, std::string> GpuRenderer::keep(Screen& screen, const View& v
     std::shared_ptr<const State::Picture> keeping;
     if (last != nullptr && last->page == picture->page && last->quads.size() == picture->quads.size() &&
         last->moves_with == picture->moves_with && last->width == picture->width && last->height == picture->height &&
-        last->in_playfield == picture->in_playfield &&
+        last->in_playfield == picture->in_playfield && last->backdrop == picture->backdrop &&
         std::memcmp(last->quads.data(), picture->quads.data(), picture->quads.size() * sizeof(Quad)) == 0) {
         keeping = before.picture;
     } else {

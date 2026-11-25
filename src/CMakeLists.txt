@@ -63,6 +63,7 @@ lvr_target_defaults(lvr_audio)
 
 # --- The engine (docs/architecture.md) ---
 add_library(lvr_engine STATIC
+    lvr/backdrop.cpp
     lvr/blocks.cpp
     lvr/bombers.cpp
     lvr/camera.cpp
@@ -206,6 +207,7 @@ if(LVR_BUILD_TESTS)
         replay/tests/test_golden.cpp
         replay/tests/test_replay.cpp
         lvr/tests/test_archive.cpp
+        lvr/tests/test_backdrop.cpp
         lvr/tests/test_camera.cpp
         lvr/tests/test_conversations.cpp
         lvr/tests/test_dialogue.cpp

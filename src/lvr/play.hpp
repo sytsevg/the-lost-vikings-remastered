@@ -14,6 +14,7 @@
 
 #include "assets/assets.hpp"
 #include "assets/objects.hpp"
+#include "assets/snes.hpp"
 #include "lvr/level.hpp"
 #include "lvr/render.hpp"
 #include "lvr/sprites.hpp"
@@ -51,9 +52,11 @@ std::expected<LoadedLevel, std::string> load_game_over(const assets::GameFiles& 
 
 // The scenes by the original's slot number: 0-36 the levels, 37 the game-over scene (it keeps `database_entry`,
 // the world's it follows), 38-47 the title, the logos, the galaxy, the village's three scenes, the starfield and
-// the ship.
+// the ship. With the user's SNES image (`snes`; Remaster rules only), a scene that has a backdrop there has it in
+// its graphics (backdrop.hpp).
 inline constexpr int kSceneSlots = 48;
-std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files, int slot, int database_entry);
+std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files, int slot, int database_entry,
+                                                  const assets::SnesRom* snes = nullptr);
 
 // The level's world before its first tick.
 // Under Remaster rules a level's world is made with the view the zoom asks for (`view`, World::view_for).
@@ -212,6 +215,8 @@ class Play {
     bool playing_demo() const noexcept { return playback_; }
 
     World world;
+    // The user's SNES image, for the scenes' backdrops (Remaster rules; load_slot). Must outlive the play.
+    const assets::SnesRom* snes = nullptr;
     // The keys the menus read as held, apart from the keyboard word: set before a step.
     struct MenuKeys {
         bool yes = false;   // Y

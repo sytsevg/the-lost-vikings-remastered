@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "assets/assets.hpp"
+#include "assets/snes.hpp"
 #include "audio/gm.hpp"
 #include "audio/opl3.hpp"
 #include "audio/player.hpp"
@@ -160,11 +161,14 @@ class Session {
     }
 
     assets::GameFiles files_;
+    std::optional<assets::SnesRom> snes_;  // the user's SNES image, for the backdrops (Remaster rules)
     SharedGraphics shared_;
     Play play_;
     Draw draw_ = draw;
     PiecePainter painter_;
     std::vector<PiecePicture> pictures_;
+    // A step's pictures, each numbered with the refresh it is shown for (refreshes_).
+    std::vector<Screen> numbered(std::vector<Screen> shown);
     std::optional<Screen> last_;     // the last picture shown: a step that shows fewer than its refreshes
                                      // starts with it
     std::vector<SoundCue> carried_;  // what a step without a refresh asked of the sound: heard with the next
@@ -191,6 +195,7 @@ class Session {
     void change_view();
     Screen::Part part_shown(const View& view);
     int zoom_ = 0;
+    std::uint32_t refreshes_ = 0;  // the refreshes the pictures handed out so far are for (Screen::refresh)
     // Smooth movement: where the camera was at the end of the last tick, and the view's size then. None after
     // what wasn't a plain tick.
     struct Scrolled {

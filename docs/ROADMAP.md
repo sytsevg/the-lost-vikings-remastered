@@ -30,10 +30,9 @@ rewind, a quicksave, and the player's profile on disk that keeps the last two ar
   particles, in the Modern visuals only
 - On the GPU renderer (built for Remaster rules, ADR-0006): smooth movement between ticks (built; Remaster rules show
   the Modern visuals, ADR-0005)
-- Parallax layers, light sources that affect sprites, shaders (a CRT look, for one). The SNES backdrops are decoded
-  (`src/assets/snes.*`, [`formats/snes.md`](formats/snes.md)) and wait for this renderer to draw them
-- If wanted: the three scenes' own SNES backdrops (the village's sky, the ship, game over), where the DOS game
-  draws full-screen pictures instead
+- Parallax: the SNES backdrops behind the levels and the village's scenes, from the user's own ROM image (built,
+  2026-11-24; HANDOVER.md, "Parallax")
+- Light sources that affect sprites, shaders (a CRT look, for one)
 - Art packs: replace sprites one for one
 - Modern sound: the effects placed by position, and extra effects (notes below)
 - **Sound: the SNES version, as an exercise first.** Its music and effects (sampled instruments with echo, and
@@ -59,6 +58,9 @@ rewind, a quicksave, and the player's profile on disk that keeps the last two ar
 ## Notes for what is ahead
 
 ### Parallax from the collision map
+- The SNES backdrops were laid in without it (2026-11-24): where the DOS game shows nothing it draws a palette
+  row's colour 0, the very pixels the console shows its backdrop through. What follows is for parallax layers of
+  our own, and other Modern visuals.
 - The level dump writes a **collision map** next to the picture: each cell coloured by what its tile type does to
   entities (free, ground, slope, ladder, …), and the entities that act as terrain (elevators, bridges) outlined.
 - For Modern visuals: whatever entities can touch (the edges of ground, slopes, platforms) is the playing

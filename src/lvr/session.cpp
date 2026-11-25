@@ -25,7 +25,16 @@ std::expected<std::unique_ptr<Session>, std::string> Session::open(const std::fi
     if (slot < 0 || slot >= kSceneSlots) {
         return std::unexpected{std::format("no scene {}", slot)};
     }
-    auto loaded = load_slot(*files, slot, database::kSpaceship);
+    // Remaster rules' backdrops come from the user's SNES image beside the game's files, when it is there.
+    std::optional<assets::SnesRom> snes;
+    if (rules == Rules::kRemaster) {
+        if (auto rom = assets::SnesRom::open(dir)) {
+            snes = std::move(*rom);
+        } else {
+            std::println(stderr, "no SNES backdrops: {}", rom.error());
+        }
+    }
+    auto loaded = load_slot(*files, slot, database::kSpaceship, snes ? &*snes : nullptr);
     auto shared = load_shared_graphics(files->archive());
     auto classic = audio::load_sound_data(files->archive(), audio::Version::kClassic);
     if (!loaded || !shared || !classic) {
@@ -46,6 +55,8 @@ std::expected<std::unique_ptr<Session>, std::string> Session::open(const std::fi
     std::unique_ptr<Session> session{new Session{std::move(*files), std::make_unique<LoadedLevel>(std::move(*loaded)),
                                                  std::move(*shared), slot, rules, std::move(*classic),
                                                  std::move(modern), std::move(gm)}};
+    session->snes_ = std::move(snes);
+    session->play_.snes = session->snes_ ? &*session->snes_ : nullptr;
     session->draw_ = std::move(draw_with);
     session->live_ = sound.live;
     session->set_modern(sound.modern);
@@ -59,6 +70,7 @@ std::expected<std::unique_ptr<Session>, std::string> Session::open(const std::fi
         }
         session->sound_of_refresh(std::move(asked));
         session->start_frames.push_back(start);
+        session->start_frames.back().refresh = session->refreshes_++;
     }
     session->last_ = start;
     return session;
@@ -234,7 +246,7 @@ std::expected<void, std::string> Session::read_quicksave() {
     if (rules != play_.world.rules || play.scene < 0 || play.scene >= kSceneSlots) {
         return std::unexpected{std::string{"the quicksave is of another game than this"}};
     }
-    auto loaded = load_slot(files_, play.scene, play.database_entry);
+    auto loaded = load_slot(files_, play.scene, play.database_entry, play_.snes);
     if (!loaded) {
         return std::unexpected{loaded.error()};
     }
@@ -271,6 +283,13 @@ void Session::update_minimap() {
     seen.height = world.map.height * kMinimapCell;
     reveal(seen.seen, world);  // (what was kept for a map of another size is dropped there)
     minimap_ = draw_minimap(world, seen.seen);
+}
+
+std::vector<Screen> Session::numbered(std::vector<Screen> shown) {
+    for (Screen& screen : shown) {
+        screen.refresh = refreshes_++;
+    }
+    return shown;
 }
 
 Screen Session::picture() {
@@ -528,7 +547,7 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
         scrolled_.reset();    // (the pictures going back aren't moved between)
         grows_from_.reset();  // (nor is the view changed: each step is brought back at the zoom's view)
         shrinking_ = false;
-        return step_back();
+        return numbered(step_back());
     }
     if (remaster && level_played()) {
         rewind_.push_back({.before = play_.snapshot(), .keyboard = keyboard, .keys = keys});
@@ -595,7 +614,7 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
     if (play_.scene_loaded) {  // a good moment to write the profile: nothing moves
         (void)save_profile();
     }
-    return shown;
+    return numbered(std::move(shown));
 }
 
 }  // namespace lvr

@@ -177,21 +177,32 @@ std::expected<LoadedLevel, std::string> load_game_over(const assets::GameFiles& 
     return loaded;
 }
 
-std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files, int slot, int database_entry) {
+namespace {
+
+// The scenes from the title on, by their name in catalog.hpp's kScenes; "" for a level.
+std::string_view scene_name(int slot) {
     constexpr std::array<std::string_view, 10> kNames{"title",       "interplay",  "silicon-synapse", "galaxy",
                                                       "title",       "home-intro", "home-demo",       "starfield",
                                                       "home-ending", "ship"};
+    if (slot == scene::kGameOver) {
+        return "game-over";
+    }
+    return slot >= scene::kTitle && slot < kSceneSlots ? kNames.at(static_cast<std::size_t>(slot - scene::kTitle))
+                                                       : std::string_view{};
+}
+
+// load_slot without the backdrop.
+std::expected<LoadedLevel, std::string> load_slot_of(const assets::GameFiles& files, int slot, int database_entry) {
     if (slot >= 0 && slot < scene::kGameOver) {
         return load_level(files, slot + 1);
     }
     if (slot == scene::kGameOver) {
         return load_game_over(files, database_entry);
     }
-    if (slot >= kSceneSlots) {
+    const auto* info = std::ranges::find(assets::kScenes, scene_name(slot), &assets::SceneInfo::name);
+    if (info == assets::kScenes.end()) {
         return std::unexpected{std::format("no scene {}", slot)};
     }
-    const std::string_view name = kNames.at(static_cast<std::size_t>(slot - scene::kTitle));
-    const auto* info = std::ranges::find(assets::kScenes, name, &assets::SceneInfo::name);
     auto data = assets::load_scene(files.archive(), *info);
     auto starts = assets::load_viking_starts(files.exe(), files.release());
     if (!data || !starts) {
@@ -200,6 +211,32 @@ std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files
     auto loaded = load_with(files, data->header, make_cutscene(*data, *starts), database::kScenes, 0);
     if (loaded) {
         loaded->slot = slot;
+    }
+    return loaded;
+}
+
+}  // namespace
+
+std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files, int slot, int database_entry,
+                                                  const assets::SnesRom* snes) {
+    auto loaded = load_slot_of(files, slot, database_entry);
+    if (!loaded || snes == nullptr) {
+        return loaded;
+    }
+    const std::string_view name = scene_name(slot);
+    std::optional<std::expected<assets::Backdrop, std::string>> backdrop;
+    if (slot >= 0 && slot < scene::kGameOver) {
+        backdrop = assets::load_level_backdrop(*snes, static_cast<std::uint8_t>(slot + 1));
+    } else if (std::ranges::contains(assets::kSnesSceneHeaders, name, &assets::SnesScene::name)) {
+        backdrop = assets::load_scene_backdrop(*snes, name);
+    }
+    if (backdrop && !*backdrop) {
+        return std::unexpected{(*backdrop).error()};
+    }
+    if (backdrop) {
+        loaded->graphics.backdrop = Backdrop{.image = std::move((*backdrop)->image),
+                                             .scroll_x = (*backdrop)->header.scroll_x,
+                                             .scroll_y = (*backdrop)->header.scroll_y};
     }
     return loaded;
 }
@@ -471,7 +508,7 @@ int Play::change_scene(const std::function<void()>& picture) {
         std::unexpected{std::string{"the scene after this one can't be loaded without the game's files"}};
     if (files_ != nullptr) {
         start_demo(slot);
-        next = load_slot(*files_, slot, loaded_->database_entry);
+        next = load_slot(*files_, slot, loaded_->database_entry, snes);
     }
     if (!next) {
         ended = true;

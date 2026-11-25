@@ -15,6 +15,7 @@
 
 #include "assets/assets.hpp"
 #include "assets/graphics.hpp"
+#include "lvr/backdrop.hpp"
 #include "lvr/level.hpp"
 
 namespace lvr {
@@ -110,6 +111,10 @@ struct Screen {
         bool played = false;
     };
     std::array<Viking, 3> vikings{};
+    // Which refresh of the display this picture is shown for, counted from the session's start (a picture shown
+    // again has the refresh it is shown again for): for a backdrop that moves by itself (the spaceship's stars),
+    // which goes on whatever the play does.
+    std::uint32_t refresh = 0;
     bool rewinding = false;  // the picture is one of time running backwards (Remaster rules): it is marked so
     bool fading = false;     // a scene's going dark or coming in: nothing is laid over it (the minimap)
 };
@@ -141,6 +146,9 @@ struct SceneGraphics {
     std::vector<assets::Metatile> metatiles;          // a cell's picture: 2 x 2 tiles
     std::optional<assets::IndexedImage> picture;      // a scene without a map: its screen
     std::optional<assets::IndexedImage> hud_picture;  // in the HUD's place (the title, the starfield, the ship)
+    // Remaster rules' parallax: the SNES version's backdrop behind the map (backdrop.hpp). Only the GPU renderer
+    // draws it, when a picture is shown; the Classic picture never has it.
+    std::optional<Backdrop> backdrop;
 };
 
 std::uint32_t next_graphics_id() noexcept;

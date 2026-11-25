@@ -7,9 +7,11 @@
 #include <format>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "assets/assets.hpp"
+#include "assets/snes.hpp"
 #include "lvr/kinds.hpp"
 #include "lvr/play.hpp"
 #include "lvr/render.hpp"
@@ -374,4 +376,37 @@ TEST_CASE("real data: a world written out reads back the same; its size is this 
     // older quicksave no longer fits: raise kStateVersion (archive.hpp), and put the new sizes and version here.
     CHECK(kStateVersion == 1);
     CHECK(sizes == std::vector<std::size_t>{24689, 71261, 41673, 88245});
+}
+
+TEST_CASE("real data: with the SNES image a scene that has a backdrop there is loaded with it", "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    const auto files = assets::GameFiles::open(LVR_ORIGINAL_DIR);
+    const auto snes = assets::SnesRom::open(LVR_ORIGINAL_DIR);
+    REQUIRE(files);
+    if (!snes) {
+        SKIP("no SNES ROM image: " << snes.error());
+    }
+    const auto with = [&](int slot) {
+        auto loaded = load_slot(*files, slot, database::kSpaceship, &*snes);
+        REQUIRE(loaded);
+        return std::move(loaded->graphics.backdrop);
+    };
+    const auto level_1 = with(0);  // the stars, moving across by themselves
+    REQUIRE(level_1);
+    CHECK(level_1->image.width == 256);
+    CHECK(level_1->scroll_x == 0x8500);
+    const auto level_5 = with(4);  // the mountains, a quarter of the camera's speed
+    REQUIRE(level_5);
+    CHECK(level_5->scroll_x == 0x40);
+    CHECK(with(scene::kIntro));         // the village
+    CHECK(with(scene::kGameOver));      // (nothing of it shows: the DOS picture covers it all)
+    CHECK_FALSE(with(scene::kTitle));   // the title has none
+    CHECK_FALSE(with(scene::kGalaxy));  // nor has the galaxy
+    const auto without = load_slot(*files, 0, database::kSpaceship);  // Vanilla rules: never
+    REQUIRE(without);
+    CHECK_FALSE(without->graphics.backdrop);
+    CHECK_FALSE(load_slot(*files, -1, database::kSpaceship, &*snes));
+    CHECK_FALSE(load_slot(*files, kSceneSlots, database::kSpaceship, &*snes));
 }

@@ -459,3 +459,114 @@ TEST_CASE("gpu: pictures kept on pages: a scene's pictures stay for the pictures
         shows(screen, static_cast<std::uint8_t>(10 * i));
     }
 }
+
+TEST_CASE("gpu: a kept picture is shown with the scene's backdrop where the map leaves a palette row's colour 0") {
+    auto opened = GpuRenderer::open_headless();
+    if (!opened) {
+        SKIP("no graphics device: " << opened.error());
+    }
+    GpuRenderer& gpu = **opened;
+    const SharedGraphics shared = sample_shared();
+    // A map of 30 x 20 cells drawn all in colour 0x20 (row 2's colour 0) but one cell, and a backdrop of 4 x 2
+    // pixels: 0x31-0x34 over 0x35-0x38.
+    SceneGraphics scene;
+    scene.id = next_graphics_id();
+    assets::IndexedImage open = assets::make_image(8, 8);
+    std::ranges::fill(open.pixels, std::uint8_t{0x20});
+    scene.tileset = {open, patterned(8, 8, 0x41)};
+    scene.tile_masks.assign(16, 0);
+    const auto all = [](std::uint16_t tile) {
+        const assets::TileRef ref{.tile = tile, .flags = 0};
+        return assets::Metatile{.parts = {ref, ref, ref, ref}};
+    };
+    scene.metatiles = {all(0), all(1)};
+    Map map{.width = 30, .height = 20, .cells = std::vector<Cell>(600)};
+    map.cells[3].metatile = 1;  // pixels 48-63 across, 0-15 down
+    assets::IndexedImage backdrop = assets::make_image(4, 2);
+    for (std::size_t i = 0; i < backdrop.pixels.size(); ++i) {
+        backdrop.pixels[i] = static_cast<std::uint8_t>(0x31 + i);
+    }
+    scene.backdrop = Backdrop{.image = backdrop, .scroll_x = 0x40, .scroll_y = 0x100};
+    View view;
+    view.map = &map;
+    view.hud = HudView{};
+    for (std::size_t i = 0; i < view.palette.size(); ++i) {
+        view.palette.at(i) = {.r = static_cast<std::uint8_t>(i),
+                              .g = static_cast<std::uint8_t>(255 - i),
+                              .b = static_cast<std::uint8_t>(i * 7)};
+    }
+    const auto index_at = [](const std::vector<std::uint8_t>& shown, std::size_t x, std::size_t y, int scale = 1) {
+        return shown.at(((y * kScreenWidth * static_cast<std::size_t>(scale)) + x) * 4);  // red is the index
+    };
+    // The camera at 40 across: a quarter of that is 10, 2 into the backdrop; down it is with the camera, at 0.
+    view.camera_x = 40;
+    Screen screen;
+    REQUIRE(gpu.keep(screen, view, scene, shared));
+    screen.motion.scroll = {40, 0};
+    const auto shown = gpu.shown(screen);
+    REQUIRE(shown);
+    CHECK(index_at(*shown, 0, 0) == 0x33);
+    CHECK(index_at(*shown, 1, 0) == 0x34);
+    CHECK(index_at(*shown, 2, 0) == 0x31);  // repeated across ...
+    CHECK(index_at(*shown, 0, 1) == 0x37);
+    CHECK(index_at(*shown, 0, 2) == 0x33);            // ... and down
+    CHECK(index_at(*shown, 10, 5) == 0x41 + 2 + 15);  // the map's own pixels stay (its cell at 48-63 is at 8-23)
+    // Not in the HUD's place, where the panel has colour 0x10 (at its 11th pixel of its first row).
+    CHECK(index_at(*shown, 11, 176) == 0x10);
+
+    // The screen shake moves the map, not the backdrop: it goes by the camera without it.
+    Screen shaken;
+    view.camera_x = 42;
+    REQUIRE(gpu.keep(shaken, view, scene, shared));
+    shaken.motion.scroll = {40, 0};
+    const auto shook = gpu.shown(shaken);
+    REQUIRE(shook);
+    CHECK(index_at(*shook, 0, 0) == 0x33);
+    view.camera_x = 40;
+
+    // Past the map's edge there is nothing, not the backdrop: the camera at 400 shows the map up to 79.
+    Screen past;
+    view.camera_x = 400;
+    REQUIRE(gpu.keep(past, view, scene, shared));
+    past.motion.scroll = {400, 0};
+    const auto beyond = gpu.shown(past);
+    REQUIRE(beyond);
+    CHECK(index_at(*beyond, 79, 10) == 0x31 + ((100 + 79) % 4));
+    CHECK(index_at(*beyond, 80, 10) == 0);
+    view.camera_x = 40;
+
+    // Between ticks the camera moves on smoothly, and the backdrop at its speed: shown at 4 times, the camera half
+    // a refresh into the tick's first picture is a pixel further (a sixth of 6), the backdrop a quarter pixel.
+    screen.motion.phase = 0;
+    screen.motion.scroll_from = {{40, 0}};
+    screen.motion.scroll_to = {46, 0};
+    const auto still = gpu.shown(screen, 4, nullptr, 0.0F);
+    const auto moving = gpu.shown(screen, 4, nullptr, 0.5F);
+    REQUIRE(still);
+    REQUIRE(moving);
+    CHECK(index_at(*still, 3, 0, 4) == 0x33);   // 10 + 3/4 of a pixel: still the backdrop's pixel 2
+    CHECK(index_at(*moving, 3, 0, 4) == 0x34);  // 10.25 + 3/4: its pixel 3
+
+    // One that moves by itself (the spaceship's stars): 5 pixels a refresh across, whatever the camera does.
+    scene.backdrop->scroll_x = 0x8500;
+    scene.id = next_graphics_id();
+    Screen stars;
+    REQUIRE(gpu.keep(stars, view, scene, shared));
+    stars.motion.scroll = {40, 0};
+    stars.refresh = 3;  // 15 pixels: 3 into the backdrop
+    const auto flown = gpu.shown(stars);
+    REQUIRE(flown);
+    CHECK(index_at(*flown, 0, 0) == 0x34);
+    const auto on = gpu.shown(stars, 1, nullptr, 0.5F);  // half a refresh on: 2.5 pixels more, 17.5 (+ half a pixel)
+    REQUIRE(on);
+    CHECK(index_at(*on, 0, 0) == 0x33);
+
+    // Without a backdrop: the map's colour.
+    scene.backdrop.reset();
+    scene.id = next_graphics_id();
+    Screen plain;
+    REQUIRE(gpu.keep(plain, view, scene, shared));
+    const auto none = gpu.shown(plain);
+    REQUIRE(none);
+    CHECK(index_at(*none, 0, 0) == 0x20);
+}

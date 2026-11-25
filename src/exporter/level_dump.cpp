@@ -8,6 +8,9 @@
 #include <optional>
 #include <utility>
 
+#include "lvr/backdrop.hpp"
+#include "lvr/camera.hpp"
+
 namespace lvr::exporter {
 
 namespace {
@@ -239,6 +242,40 @@ assets::IndexedImage world_picture(const Level& level, const assets::IndexedImag
         draw_text(world, font, box.left + 2, box.top + 2, std::format("{:02X}", placement.kind), kFontInk, kFontShadow);
     }
     return world;
+}
+
+// --- The SNES backdrop behind the map ---
+
+BackdropPreview backdrop_preview(const Map& map, const assets::IndexedImage& map_image,
+                                 const assets::IndexedImage& backdrop, std::uint16_t scroll_x, std::uint16_t scroll_y) {
+    BackdropPreview result{.image = map_image, .shown = 0};
+    if (backdrop.width == 0 || backdrop.height == 0) {
+        return result;
+    }
+    Camera camera;
+    set_camera_limits(camera, map.width, map.height);
+    const auto width = static_cast<int>(backdrop.width);
+    const auto height = static_cast<int>(backdrop.height);
+    // The camera for the screen a pixel is in, and where the backdrop starts in that screen.
+    const auto screen = [](int at, int view, int limit) {
+        return std::clamp((at / view) * view, 0, std::max(limit, 0));
+    };
+    for (std::size_t y = 0; y < result.image.height; ++y) {
+        const int camera_y = screen(static_cast<int>(y), camera.view_height, camera.max_y);
+        const auto top = static_cast<int>(backdrop_offset(scroll_y, camera_y, 0, height));  // whole pixels, as the SNES
+        for (std::size_t x = 0; x < result.image.width; ++x) {
+            std::uint8_t& pixel = result.image.pixels[(y * result.image.width) + x];
+            if (!shows_backdrop(pixel)) {
+                continue;
+            }
+            const int camera_x = screen(static_cast<int>(x), camera.view_width, camera.max_x);
+            const auto left = static_cast<int>(backdrop_offset(scroll_x, camera_x, 0, width));
+            pixel = backdrop.at(static_cast<std::size_t>((left + static_cast<int>(x) - camera_x) % width),
+                                static_cast<std::size_t>((top + static_cast<int>(y) - camera_y) % height));
+            ++result.shown;
+        }
+    }
+    return result;
 }
 
 }  // namespace lvr::exporter

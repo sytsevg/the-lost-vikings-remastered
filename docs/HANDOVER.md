@@ -15,7 +15,7 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
 - **M7, the Remaster rules, is built** (`--rules remaster`): the GPU renderer, zoom-out, no limit on entities,
   a minimap, rewind, a quicksave, a profile on disk, and the game's state written out and read back. What each
   is and where it lives is in the next section.
-- **M8, the visuals**, is under way, before co-op (M9): smooth movement is built (below, "M8").
+- **M8, the visuals**, is under way, before co-op (M9): smooth movement and parallax are built (below, "M8").
 
 ## What the Remaster rules have
 
@@ -59,10 +59,10 @@ only under Remaster rules; Vanilla rules must stay exactly what they are, and th
 Decided with the user (2026-11-24): the visuals go with the rules, chosen at launch (ADR-0005): Vanilla rules
 show the Classic picture, Remaster rules the Modern one. At the original's view under Vanilla rules the GPU
 renderer must still make the Classic picture; under Remaster rules a visual may differ. Smooth movement first.
-The rest of the list is in [`ROADMAP.md`](ROADMAP.md): parallax with the SNES backdrops, events in animations and
-effects on them, lights and shaders, art packs, sound placed by position.
+The rest of the list is in [`ROADMAP.md`](ROADMAP.md): events in animations and effects on them, lights and
+shaders, art packs, sound placed by position.
 
-- **Smooth movement (built; the user judges it on the host).** The GPU renderer keeps a picture as its list of
+- **Smooth movement (built, 2026-11-24).** The GPU renderer keeps a picture as its list of
   atlas rectangles and draws it when it is shown, as large as it is shown (`GpuRenderer::keep`, `show`), with
   every entity's pieces and the camera moved evenly over the tick instead of in the original's three
   whole-pixel shares, a third of a tick behind (`Motion` in `render.hpp`, ADR-0006). The window's loop passes
@@ -77,12 +77,6 @@ effects on them, lights and shaders, art packs, sound placed by position.
   masks, its full pictures) and the sprites' pieces, each put there the first time it is shown and found again
   by a hash of its pixels. A kept picture is drawn from one page; a page is used again only when no kept
   picture is drawn from it.
-- **What parallax has.** The SNES version's backdrops are decoded (`src/assets/snes.*`,
-  [`formats/snes.md`](formats/snes.md); `lv-export assets` writes all 37) and nothing draws them. In the DOS
-  game the background is part of the level's tiles, so drawing something behind it needs to know which tiles are
-  background: the roadmap's note on the collision map (free cells are background) is the plan. The backdrops
-  have colours of their own, outside the level's palette of 256. Since pictures are drawn when shown, a
-  backdrop can scroll at its own rate with the camera's smooth position.
 - **What effects have.** Animations are the original's programs, played as they are (`sprites.*`); a program
   reports only the sounds it asks for. The roadmap's "events" (a frame shown, a sound asked for, an end), named
   beside the animations in `animations.hpp`, don't exist yet.
@@ -97,8 +91,48 @@ effects on them, lights and shaders, art packs, sound placed by position.
   refresh each. The user judges motion on the host. Timings in the renderer are counted in pictures (a zoom
   change takes 20, a third of a second).
 
+### Parallax (built, 2026-11-24)
+
+The SNES version has a **backdrop** behind every level's map, scrolled slower than it, where the DOS game shows
+black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/original/` beside `DATA.DAT`
+(ADR-0014), the game shows it; without the image (a note on stderr) or under Vanilla rules nothing changes.
+- **Where:** a pixel of the map in colour 0 of one of the palette rows 0-7 (`shows_backdrop`, `backdrop.hpp`).
+  The DOS palette's rows 0-7 are the SNES level's colours (all 37 levels compared), and a row's colour 0 is where
+  a SNES tile shows what is behind it; the DOS game blacks those colours out. The backdrop's own pixels go in as
+  they are, with the level's palette, so they fade and turn with it. Sprites and text never use those colours (all
+  sprite sets checked), and the HUD's place is left alone. Other black colours stay black: they are black on the
+  console too.
+- **Checked against the console's own picture:** `lv-export assets` writes each level and scene with its backdrop
+  (`snes/NN-level.png`, `snes/<scene>-scene.png`, each 320 x 176 screen with the camera there). Drawn the same
+  way from the SNES level's own map, 32 of the 37 levels and the village are the same pixel for pixel; levels 21,
+  24, 25, 33 differ in less than 1% (their maps differ a little), 28 is a column wider on DOS. Stills of both and
+  camera pans for levels 5-7, 12, 26 and 27: `gamedata/previews/parallax/`.
+- **How it moves** (`backdrop_offset`, from the SNES code, [`formats/snes.md`](formats/snes.md)): the camera
+  without the shake times the level's speed in 256ths, repeated past its size; the spaceship's stars move by
+  themselves, 5 pixels a refresh across (the DOS and SNES refreshes are 59.7 and 60.1 a second). Shown, it is
+  where the smooth camera is at that moment, and the stars at the refresh plus `between`. `Screen::refresh`
+  counts the refreshes the session has handed out pictures for (a picture shown again counts again), so the stars
+  keep their pace in a text box's wait; they don't go back while the play rewinds.
+- **Where it lives:** `load_slot` takes the image (`Session` opens it under Remaster rules and gives it to
+  `Play`) and puts the backdrop into the scene's `SceneGraphics::backdrop`; the GPU renderer puts it on the atlas
+  page with the scene's tiles, a kept picture records where it is and where the map is, and the show pass
+  (`gpu_show.frag`) looks it up where the picture has such a colour inside the map. Past the map's edges (a view
+  larger than a small level) it stays black. The Classic renderer and `GpuRenderer::draw` (the checks) never
+  draw it.
+- **Scenes:** the village's three scenes get the SNES sky and mountains (the DOS village leaves its sky in colour
+  0). The ship and the game-over scene have backdrops too, but the DOS pictures cover every such pixel (sprites
+  over the ship's few, none at all in game over), so nothing shows there.
+
 ## Open
 
+- **A scene's fade-out shows no entities** (both rules; the user, 2026-11-24): when a level ends, the Vikings
+  and every other entity are gone before the picture darkens. `Play::change_scene` runs the original's
+  game-over pass first (every entity's turn as on leaving the active area: each is removed and its pieces let
+  go) and then draws each of the 70 fade pictures again from that emptied world. The original's fade (`0FA0`)
+  only darkens the palette and flips its two pages, which still hold the last pictures drawn, so it keeps
+  showing everyone. A fix: the fade drawn from the picture before the pass. It changes the goldens of every
+  replay that changes scene (the goldens hold our renderer's picture of the original's state); not checked in
+  DOSBox (the user dropped that).
 - **A jumble of tiles or pixels at the top left as a level loads** (seen by the user in the M8 window, 2026-11-24;
   not seen in dumps of a level change, either renderer, zoomed or not). Wants a screenshot; to come back to.
 - **Frames now and then a refresh or more late** in the window (the user's AMD Radeon 890M, RADV), mostly noticed

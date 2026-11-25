@@ -9,7 +9,9 @@
 //                                                 the object scripts as text (scripts/NNN.txt, scripts/usage.txt) and
 //                                                 the dialogue (dialogue/texts.txt)
 //                                                 and, with the user's SNES ROM image (*.sfc) in the same
-//                                                 folder, each level's SNES backdrop (snes/NN-backdrop.png)
+//                                                 folder, each level's SNES backdrop (snes/NN-backdrop.png) and the
+//                                                 whole level with it behind the map (snes/NN-level.png); the
+//                                                 same for the scenes that have one (snes/<name>-scene.png)
 //   lv-export dump   <original-dir> <output-dir>  every decoded entry to <output-dir>/raw/, plus raw/index.json
 #include <algorithm>
 #include <array>
@@ -800,16 +802,50 @@ int cmd_assets(const fs::path& original_dir, const fs::path& output_dir) {
         }
         for (const assets::LevelInfo& info : assets::kLevels) {
             const auto backdrop = assets::load_level_backdrop(*rom, info.number);
-            if (!backdrop) {
-                return fail(backdrop.error());
+            const auto level = assets::load_level(archive, info);
+            if (!backdrop || !level) {
+                return fail(!backdrop ? backdrop.error() : level.error());
             }
-            if (const auto written = write_png(*dir / std::format("{:02}-backdrop.png", info.number), backdrop->image,
-                                               backdrop->palette);
+            // The whole level with its backdrop behind it, as Remaster rules' parallax lays it in.
+            const BackdropPreview preview =
+                backdrop_preview(make_level(*level, context.starts).map, level->map.image, backdrop->image,
+                                 backdrop->header.scroll_x, backdrop->header.scroll_y);
+            if (const auto written = first_error(
+                    {write_png(*dir / std::format("{:02}-backdrop.png", info.number), backdrop->image,
+                               backdrop->palette),
+                     write_png(*dir / std::format("{:02}-level.png", info.number), preview.image, level->palette)});
                 !written) {
                 return fail(written.error());
             }
+            std::println("level {:2}: the backdrop shows in {:4.1f}% of the map", info.number,
+                         100.0 * static_cast<double>(preview.shown) /
+                             static_cast<double>(std::max<std::size_t>(preview.image.pixels.size(), 1)));
         }
-        std::println("exported {} SNES backdrops to {}", assets::kLevels.size(), dir->string());
+        for (const assets::SnesScene& snes_scene : assets::kSnesSceneHeaders) {
+            const auto* info = std::ranges::find(assets::kScenes, snes_scene.name, &assets::SceneInfo::name);
+            const auto backdrop = assets::load_scene_backdrop(*rom, snes_scene.name);
+            auto scene = info != assets::kScenes.end()
+                             ? assets::load_scene(archive, *info)
+                             : std::unexpected{std::format("no scene \"{}\"", snes_scene.name)};
+            if (!backdrop || !scene) {
+                return fail(!backdrop ? backdrop.error() : scene.error());
+            }
+            const BackdropPreview preview =
+                backdrop_preview(make_cutscene(*scene, context.starts).map, scene->image, backdrop->image,
+                                 backdrop->header.scroll_x, backdrop->header.scroll_y);
+            if (const auto written = first_error(
+                    {write_png(*dir / std::format("{}-backdrop.png", snes_scene.name), backdrop->image,
+                               backdrop->palette),
+                     write_png(*dir / std::format("{}-scene.png", snes_scene.name), preview.image, scene->palette)});
+                !written) {
+                return fail(written.error());
+            }
+            std::println("{}: the backdrop shows in {:4.1f}% of the scene", snes_scene.name,
+                         100.0 * static_cast<double>(preview.shown) /
+                             static_cast<double>(std::max<std::size_t>(preview.image.pixels.size(), 1)));
+        }
+        std::println("exported {} SNES backdrops, and each level and scene with its backdrop, to {}",
+                     assets::kLevels.size() + assets::kSnesSceneHeaders.size(), dir->string());
     } else {
         std::println("no SNES backdrops: {}", rom.error());
     }

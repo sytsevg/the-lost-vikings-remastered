@@ -281,4 +281,12 @@ std::expected<Backdrop, std::string> load_level_backdrop(const SnesRom& rom, std
     return load_backdrop(rom, kSnesLevelHeaders[number - 1U]);
 }
 
+std::expected<Backdrop, std::string> load_scene_backdrop(const SnesRom& rom, std::string_view name) {
+    const auto* scene = std::ranges::find(kSnesSceneHeaders, name, &SnesScene::name);
+    if (scene == kSnesSceneHeaders.end()) {
+        return std::unexpected{std::format("no SNES backdrop for the scene \"{}\"", name)};
+    }
+    return load_backdrop(rom, scene->header_chunk);
+}
+
 }  // namespace lvr::assets

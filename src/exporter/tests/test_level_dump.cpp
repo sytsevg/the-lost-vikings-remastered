@@ -139,3 +139,33 @@ TEST_CASE("collision map: a wide map has the legend in columns") {
     CHECK(collision.image.height == 16 + 8 + (3 * 10));  // 5 lines in 2 columns
     CHECK(collision.image.at(232 + 5, 16 + 5) == 0x03);  // the second column's first swatch
 }
+
+TEST_CASE("backdrop preview: the backdrop where the map shows it, each screen as the camera there shows it") {
+    // 40 x 22 cells, two screens each way: the camera at 0 or 320 across, 0 or 176 down.
+    const Map map{.width = 40, .height = 22, .cells = std::vector<Cell>(40 * 22)};
+    assets::IndexedImage map_image = assets::make_image(640, 352);
+    std::ranges::fill(map_image.pixels, std::uint8_t{0x20});  // row 2's colour 0: what is behind shows
+    map_image.set(1, 0, 0x25);                                // a pixel of the map itself
+    map_image.set(2, 0, 0x90);                                // a row past the SNES level's colours
+    assets::IndexedImage backdrop = assets::make_image(3, 3);
+    for (std::size_t i = 0; i < backdrop.pixels.size(); ++i) {
+        backdrop.pixels[i] = static_cast<std::uint8_t>(0x31 + i);
+    }
+
+    const BackdropPreview preview = backdrop_preview(map, map_image, backdrop, 0x40, 0x80);
+    CHECK(preview.shown == (640 * 352) - 2);
+    CHECK(preview.image.at(0, 0) == 0x31);  // the first screen: the backdrop from its corner ...
+    CHECK(preview.image.at(3, 0) == 0x31);  // ... repeated across ...
+    CHECK(preview.image.at(0, 4) == 0x34);  // ... and down
+    CHECK(preview.image.at(1, 0) == 0x25);  // the map's own pixels stay
+    CHECK(preview.image.at(2, 0) == 0x90);
+    // The camera at 320 across: a quarter of that, 80, is 2 into the backdrop; at 176 down half of it, 88, is 1.
+    CHECK(preview.image.at(320, 0) == 0x33);
+    CHECK(preview.image.at(321, 0) == 0x31);
+    CHECK(preview.image.at(0, 176) == 0x34);
+    CHECK(preview.image.at(639, 351) == 0x37);  // (80 + 319, 88 + 175): (0, 2) repeated
+
+    const BackdropPreview none = backdrop_preview(map, map_image, assets::IndexedImage{}, 0x40, 0x80);
+    CHECK(none.shown == 0);
+    CHECK(none.image.pixels == map_image.pixels);
+}
