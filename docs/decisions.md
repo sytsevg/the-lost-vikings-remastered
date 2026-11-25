@@ -21,6 +21,13 @@ comments and other docs points here). A decision that was later replaced is not 
   start of M8 (2026-11-24): the visuals go with the rules, chosen at launch, nothing switched while playing.
   Vanilla rules show the Classic picture (the CPU renderer); Remaster rules the Modern one (the GPU renderer, with
   smooth movement and what M8 adds after it). Presentation only all the same: the simulation doesn't know.
+- **The Modern visuals' effects** (2026-11-25): light, glow and particles drawn in the game's own pixels (every
+  light worked out per pixel of the picture, in steps of brightness; particles a pixel each in the game's fixed
+  colours), not smoothed over it. A light is cast: it brightens what it falls on and the map's ground stops it.
+  They answer to what the engine shows (the animation an entity was last started on, the map's tile types, the
+  colours a level turns); the one thing the simulation keeps for them is which animation that was
+  (`Sprite::started`), part of its state so a rewind or a quickload keeps it. Nothing for a blow or a hit
+  landing. What is there: HANDOVER.md, "Effects".
 - **Rules: Vanilla / Remaster**, chosen when the game is started (`--rules`) and fixed until it ends: there is no
   switching while playing, so nothing has to be squeezed back into the original's limits. Anything that changes
   what the player can see or do belongs to Rules. Under Vanilla rules the visible playing area is the original's,

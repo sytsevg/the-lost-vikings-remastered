@@ -15,9 +15,9 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
 - **M7, the Remaster rules, is built** (`--rules remaster`): the GPU renderer, zoom-out, no limit on entities,
   a minimap, rewind, a quicksave, a profile on disk, and the game's state written out and read back. What each
   is and where it lives is in the next section.
-- **M8, the visuals**, is under way, before co-op (M9): smooth movement and parallax are built (below, "M8").
-  Since then the rewind has ten seconds a level, shown in a bar in the minimap (2026-11-25, next section; tried
-  by the user on the host and committed).
+- **M8, the visuals**, is under way, before co-op (M9): smooth movement, parallax and the first effects (light,
+  glow, particles) are built (below, "M8"); the rewind has ten seconds a level, shown in a bar in the minimap
+  (2026-11-25, next section).
 
 ## What the Remaster rules have
 
@@ -82,15 +82,21 @@ The rest of the list is in [`ROADMAP.md`](ROADMAP.md): events in animations and 
 shaders, art packs, sound placed by position.
 
 ### Next
-- **The user picks the next M8 item.** In the roadmap's order that is the events for effects (a frame shown, a
-  sound asked for, an animation's end, reported by the engine) and then effects on them; "What effects have"
-  below says what the code has for it. Lights and shaders, art packs and the SNES sound are the others.
-- **The rewind's bar:** approved by the user on the host (2026-11-25). Put away with the minimap (M), the bar
-  goes too: whether it should stay then was not asked. The minimap's frame stays grey (the bar's is white).
-- **To ask the user first:** F8 (the quicksave's load) still acts outside a played level, from anywhere but a
-  menu (decided earlier; it acts at once rather than being kept for later). The user said no keys but the skip
-  keys in scenes; whether F8 stays as it is was asked and not yet answered. (The rewind's half of the question
-  was answered on 2026-11-25: only in a level being played.)
+- **Effects for two of the Vikings' deaths** (the user, 2026-11-25): electrocution and burning up; the other deaths
+  are left as they are. Each Viking's animations for them are in `viking_looks.hpp` (`electrocuted`,
+  `electrocuted_from_below`, `electrocuted_from_above`, `burns`, by Viking): add them to the table in
+  `effects.cpp` (it is keyed by `Animation`; the Vikings' are tables by Viking, so each Viking's three, or a rule
+  that looks them up), with a light and sparks for the one, a light and embers (and smoke?) for the other, in the
+  look the effects have (subtle, in the game's pixels). Not for a blow or a hit landing. Add a showcase spot for
+  each if one can be had (a Viking can be put where he dies: a barrier, a fire jet) or check them with a dump.
+- **After that the user picks the next M8 item.** The effects are built and approved (2026-11-25, "Effects"
+  below); left on the roadmap's list: shaders (a CRT look), art packs, sound placed by position, the SNES sound.
+  More effects can be added to the table any time (water and lava cross-fading between their colour steps was
+  talked about, not tried).
+- **The rewind's bar:** approved by the user on the host (2026-11-25). It belongs with the minimap: put away
+  with it (M), the bar goes too (the user, 2026-11-25). The minimap's frame stays grey (the bar's is white).
+- **F8 outside a played level:** the quicksave's load still acts from anywhere but a menu; the user decided to
+  leave it so for now (2026-11-25). (The rewind acts only in a level being played, decided the same day.)
 - **Parallax in play:** judged so far on dumps, stills and pans in the container
   (`gamedata/previews/parallax/`); how it looks moving is the user's to say on the host (the factory's brick
   backdrop looks much like its walls, as on the console; no dimming, decided).
@@ -141,9 +147,36 @@ How the visuals work so far:
   nothing moved: it must be the Classic picture. Everything beyond that has no golden: under Remaster rules
   `vikings-remaster --dump STEPS FILE.png` writes what the window would show (three times the size) for looking
   at in the container; `--zoom BY AT_STEP` zooms out, `--hold KEY` holds a key, `--tap KEY AT_STEP` presses one
-  (a level's password box waits for F), `--rewind FROM UNTIL` holds the rewind over those steps, and
+  (a level's password box waits for F), `--rewind FROM UNTIL` holds the rewind over those steps, `--whole
+  AT_STEP` writes the whole level (the view as large as it), `--showcase N` a spot of the effects', and
   `--moments N` writes the last step's pictures at N moments of their refresh each. The user judges motion on the host. Timings in the renderer are counted in pictures (a zoom
   change takes 20, a third of a second).
+
+### Effects (built, 2026-11-25)
+
+The Modern visuals' effects, Remaster rules only, in a window or a dump on the GPU renderer (`--no-effects`
+leaves them out; the Classic renderer and every check never have them). Shaped with the user over several rounds
+of stills; the look they settled on: in the game's pixels (every light worked out at the middle of a picture's
+pixel and in steps of brightness), subtle.
+- **What gives off what** (`effects.cpp`, a table by the names of `animations.hpp`): what an entity was last
+  started on (`Sprite::started`, set by `start_animation`; saved, `kStateVersion` 3, so a rewind or a quickload
+  keeps it). Fire (fire jets, flames, fireballs, arcing fire, fire arrows): an orange light, round, flickering,
+  and embers. Electricity (barriers, fields, Tomator's bars): a blue light along the beam, and sparks. Laser shots
+  (the bullets of the guns, gunners and troopers; the factory's turret shots; drones'; Tomator's): a red glow
+  that goes with them, and a small one where they burst. Not a blow or a hit landing, nor an impact's burst of
+  fire (the user: on the fence, so none). The map's electricity cells: a light along each run of them, and sparks;
+  the spaceship's turning colours (its screens and lights, not its electricity's): a glow around them.
+- **How light is drawn** (`gpu_show.frag`): a light (`Screen::lights`, a box and a reach) casts: it brightens what
+  it falls on, stopped by the ground (`Screen::ground`: the map's ground, walls and slopes pixel by pixel, made
+  by `Effects` when the map changes), with a whiter highlight where it meets it; and its glow is laid over that,
+  fainter in the ground. A colour that glows has it in the palette's alpha.
+- **Particles** are pixels of the colours 1-15 put after the view's sprites (`Effects::add`), moved a picture at
+  a time, only while the play goes on (not over a fade, not going back); a rewind, a quickload or another scene
+  lets them go. While a scene fades the lights darken with it and hold still.
+- **Checking them:** `vikings-remaster --rules remaster --showcase N` holds the view on spot N of 16
+  (`showcase.hpp`: laser shots, barriers, electricity, screens, fire in four worlds; PgDn or `]` on, PgUp or `[`
+  back; it goes to the level and answers what waits for a key itself). With `--dump STEPS FILE.png` it writes that
+  spot; `--whole AT_STEP` writes a whole level. Stills: `gamedata/previews/effects/` (not in the repository).
 
 ### Parallax (built, 2026-11-24)
 

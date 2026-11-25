@@ -21,6 +21,7 @@
 #include "audio/gm.hpp"
 #include "audio/opl3.hpp"
 #include "audio/player.hpp"
+#include "lvr/effects.hpp"
 #include "lvr/minimap.hpp"
 #include "lvr/play.hpp"
 #include "lvr/profile.hpp"
@@ -86,6 +87,17 @@ class Session {
     // Remaster rules' zoom (ADR-0011): a step out (`by` > 0) or back in, between the original's view and twice
     // it. The next step's world has the view; the pictures go from the one to the other over a moment.
     bool zoom(int by) noexcept;
+    // A development tool's (vikings-remaster --dump --whole): the view becomes the whole level at once, with the
+    // HUD's rows under it, and stays so; what is in it is created at the next tick's start. Remaster rules, in a
+    // level being played.
+    bool view_whole_level();
+    // Development tools' too (vikings-remaster --showcase). The view becomes `width` x `height` with its corner at
+    // (x, y), with the HUD's rows under it, and stays there; Remaster rules, in a level being played.
+    bool hold_view(int x, int y, int width, int height);
+    // The level of scene `slot` is started at the next step, as the cheat's F5 and F6 do; from a level (not a menu).
+    bool go_to(int slot);
+    // The world holds until a key is pressed (a level's password, a text).
+    bool waiting_for_key() const noexcept { return play_.world.waiting_for_key; }
     // Remaster rules' minimap, as the last step left it: the level as far as a view has shown it since the game
     // was started. None in a scene that isn't a level, under Vanilla rules, or while it is switched off.
     const Minimap* minimap() const noexcept { return minimap_on_ && !minimap_.pixels.empty() ? &minimap_ : nullptr; }
@@ -131,6 +143,9 @@ class Session {
     bool has_quicksave() const noexcept { return quick_.has_value(); }
     // The cheat on without its password: F5 and F6 change the level, and under Remaster rules the quicksave.
     void cheat() noexcept { play_.world.title.cheat = true; }
+    // Remaster rules' Modern visuals: the effects (effects.hpp) in the pictures from here on. Off by default: for what
+    // shows the pictures on the GPU renderer.
+    void set_effects(bool on) noexcept { effects_on_ = on && play_.world.rules == Rules::kRemaster; }
 
     static std::uint32_t sample_rate() noexcept { return audio::Opl3::kSampleRate; }
     bool has_modern() const noexcept { return modern_ != nullptr; }
@@ -207,6 +222,8 @@ class Session {
     std::vector<std::int16_t> unheard_;  // the version not heard: rendered all the same, and dropped
     bool modern_on_ = false;
     bool live_ = false;
+    bool effects_on_ = false;
+    bool moving_ = false;  // the pictures being made are of the play going on (not made again going back)
     // The zoom: which view is wanted; while the view changes, how many pictures into that it is, and (growing)
     // the view it grows from, in the level. A view that is to shrink does so when its pictures have closed in.
     std::array<int, 2> wanted_view() const;
@@ -214,6 +231,8 @@ class Session {
     Screen::Part part_shown(const View& view);
     int zoom_ = 0;
     std::uint32_t refreshes_ = 0;  // the refreshes the pictures handed out so far are for (Screen::refresh)
+    std::optional<std::array<int, 2>> whole_view_;  // view_whole_level()'s
+    Effects effects_;
     // Smooth movement: where the camera was at the end of the last tick, and the view's size then. None after
     // what wasn't a plain tick.
     struct Scrolled {

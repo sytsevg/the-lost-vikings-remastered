@@ -721,3 +721,87 @@ TEST_CASE("real data: a scene fades out as it was last shown, with everyone in i
         CHECK(first[30].palette != last.back().palette);  // darker by then
     }
 }
+
+TEST_CASE("real data: development tools: to another level, and the view held on a spot there", "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+    REQUIRE(opened);
+    Session& session = **opened;
+    (void)session.step(0);
+    CHECK(session.waiting_for_key());  // the password's box
+    // Answered; then to level 5, which is started (and waits for its password) a step later.
+    for (int step = 0; step < 6; ++step) {
+        (void)session.step(step % 2 != 0 ? key::kF : std::uint16_t{0});
+    }
+    REQUIRE_FALSE(session.waiting_for_key());
+    CHECK_FALSE(session.go_to(37));  // no such level
+    CHECK(session.go_to(4));
+    (void)session.step(0);
+    (void)session.step(0);
+    CHECK(session.scene() == 4);
+    for (int step = 0; step < 6 && session.waiting_for_key(); ++step) {
+        (void)session.step(step % 2 != 0 ? key::kF : std::uint16_t{0});
+    }
+    REQUIRE_FALSE(session.waiting_for_key());
+    // The view held: as large as asked (with the HUD's rows under it), its corner where asked, and there it stays
+    // while the Vikings walk off.
+    REQUIRE(session.hold_view(200, 100, 384, 224));
+    std::vector<Screen> shown;
+    for (int step = 0; step < 30; ++step) {
+        shown = session.step(key::kRight);
+    }
+    REQUIRE_FALSE(shown.empty());
+    CHECK(shown.back().motion.view == std::array<int, 2>{384, 224 + 64});
+    CHECK(shown.back().level_x == 200);
+    CHECK(shown.back().level_y == 100);
+}
+
+TEST_CASE("real data: Remaster rules' effects: lights, glowing colours, what stops light, and particles",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    // Level 4, the view held on an electric barrier (it hums: a light along it, and sparks now and then); the same
+    // play with the effects and without.
+    auto with = Session::open(LVR_ORIGINAL_DIR, 3, {}, Rules::kRemaster);
+    auto without = Session::open(LVR_ORIGINAL_DIR, 3, {}, Rules::kRemaster);
+    REQUIRE(with);
+    REQUIRE(without);
+    (*with)->set_effects(true);
+    std::vector<Screen> lit;
+    std::vector<Screen> plain;
+    bool sparks = false;
+    for (int step = 0; step < 60; ++step) {
+        const auto keys = static_cast<std::uint16_t>(step < 6 && step % 2 != 0 ? key::kF : 0);
+        if (step == 8) {
+            REQUIRE((*with)->hold_view(730, 328, 384, 224));
+            REQUIRE((*without)->hold_view(730, 328, 384, 224));
+        }
+        lit = (*with)->step(keys);
+        plain = (*without)->step(keys);
+        REQUIRE(lit.size() == plain.size());
+        sparks = sparks || lit.back().motion.sprites.size() > plain.back().motion.sprites.size();
+    }
+    const Screen& shown = lit.back();
+    CHECK_FALSE(shown.lights.empty());
+    CHECK(std::ranges::any_of(shown.glow, [](std::uint8_t glow) { return glow != 0; }));  // the screens' colours
+    REQUIRE(shown.ground != nullptr);
+    CHECK(std::ranges::any_of(shown.ground->solid, [](std::uint8_t solid) { return solid != 0; }));
+    CHECK(sparks);
+    // Without them: none of it.
+    CHECK(plain.back().lights.empty());
+    CHECK(std::ranges::none_of(plain.back().glow, [](std::uint8_t glow) { return glow != 0; }));
+    CHECK(plain.back().ground == nullptr);
+    // Vanilla rules have none, asked for or not.
+    auto vanilla = Session::open(LVR_ORIGINAL_DIR, 3);
+    REQUIRE(vanilla);
+    (*vanilla)->set_effects(true);
+    for (int step = 0; step < 12; ++step) {
+        CHECK((*vanilla)
+                  ->step(static_cast<std::uint16_t>(step < 6 && step % 2 != 0 ? key::kF : 0))
+                  .back()
+                  .lights.empty());
+    }
+}

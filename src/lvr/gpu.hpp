@@ -46,6 +46,15 @@ class GpuRenderer {
     // pixel. For a test or a dump.
     std::expected<std::vector<std::uint8_t>, std::string> shown(const Screen& screen, int scale = 1,
                                                                 const Minimap* minimap = nullptr, float between = 0);
+    // A kept picture's view alone, as large as it is (`scale` pixels a pixel of it), without the rows the HUD lies
+    // over or the HUD: with a view as large as a level, a picture of all of it (a development tool). Read back as
+    // shown() reads it.
+    struct Whole {
+        int width = 0;
+        int height = 0;
+        std::vector<std::uint8_t> pixels;
+    };
+    std::expected<Whole, std::string> shown_whole(const Screen& screen, int scale = 1);
 
     // How many times a page of the atlas was set up (a scene's pictures put in anew): for finding what is slow.
     std::size_t pages_set_up() const noexcept;

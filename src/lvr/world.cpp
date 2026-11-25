@@ -286,6 +286,16 @@ void World::set_view(int width, int height) {
     view_to_fill = true;
 }
 
+void World::hold_camera(int x, int y, int width, int height) {
+    set_view(width, height);
+    camera.x = std::clamp(x, 0, std::max(0, camera.max_x));
+    camera.y = std::clamp(y, 0, std::max(0, camera.max_y));
+    camera.moved_x = camera.moved_y = 0;
+    strip_x = cell_of(camera.x);
+    strip_y = cell_of(camera.y);
+    camera_held = true;
+}
+
 void World::create_scrolled_in() {
     const int across = cell_of(camera.x);
     if (across != strip_x) {
@@ -328,6 +338,10 @@ Entity* World::create_by(Entity& creator, std::uint16_t kind, int x, int y, std:
 }
 
 void World::play(Entity& entity, Animation animation) const {
+    start_animation(entity.sprite, program_of(animation));
+}
+
+std::uint16_t World::program_of(Animation animation) const {
     std::uint16_t program = animation.place;
     const int home = animation.home;
     const AnimationPlaces* paired = places;
@@ -340,7 +354,7 @@ void World::play(Entity& entity, Animation animation) const {
             program = here->second;
         }
     }
-    start_animation(entity.sprite, program);
+    return program;
 }
 
 void World::animate(Entity& entity) {
@@ -566,7 +580,9 @@ void World::run(int part, bool starting) {
     // Vikings are taken moves its director to scroll.)
     // The tick's first picture measures how far the Viking is out of the box; the other two only move their share
     // of that, also when he died in between (the last Viking's death leaves nobody to follow).
-    if (const Entity* viking = current_viking != kNobody ? at(current_viking) : nullptr) {
+    if (camera_held) {
+        camera.moved_x = camera.moved_y = 0;
+    } else if (const Entity* viking = current_viking != kNobody ? at(current_viking) : nullptr) {
         follow(camera, viking->x, viking->y, part);
     } else if (part != 0) {
         follow(camera, 0, 0, part);

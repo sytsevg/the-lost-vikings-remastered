@@ -8,17 +8,22 @@
 //       --profile DIR: where Remaster rules keep the player's profile (what the minimap has seen); by default
 //       the folder `profiles` beside this program.
 //       --slow-frames: a step or a picture's showing that takes long is reported on the error output
+//       --showcase N: under Remaster rules, the places where the Modern visuals' effects are seen (showcase.hpp),
+//       from the Nth on: each with the view held on it; PgDn or ] and PgUp or [ go to the next and the one before (with
+//       --dump: the Nth, as --whole writes it)
+//       --no-effects: under Remaster rules, the pictures without the Modern visuals' effects (effects.hpp)
 //       --cheat: the game's cheat on from the start, as if its password had been typed at the title: F5 and F6
 //       change the level, and under Remaster rules F7 and F8 are a quicksave and its load.
 //       play, from scene N (default 39, the first logo; 0-36 are the levels); FILE: other keys, lines
 //       "KEY NAME = action" (input/input.hpp). F12 switches between the Classic and the Modern sound.
 //   vikings-remaster [--data DIR] [--slot N] --dump STEPS FILE.png [--wav FILE.wav] [--zoom BY AT_STEP]
-//                    [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] [--moments N]
+//                    [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] [--whole AT_STEP] [--moments N]
 //       run STEPS steps without a window and without a key (or with KEY held, a name as in a keys file; and the
 //       key of --tap alone at step AT_STEP, for what waits for a key to be pressed: a level's password), write
 //       the last picture (and the sound). Under Remaster rules, --rewind: the rewind held from step FROM until
-//       step UNTIL; --moments: the last step's pictures each at N moments of its refresh as well, FILE-P-M.png,
-//       for what moves between ticks
+//       step UNTIL; --whole: the view is the whole level from step AT_STEP on, and the picture written is all of
+//       it (twice the size, without the HUD); --moments: the last step's pictures each at N moments of its refresh
+//       as well, FILE-P-M.png, for what moves between ticks
 //
 // Keys: arrows, Ctrl/Home and Ins/PgUp (switch Viking), E, S, D, F/Space/Enter, Esc/P (pause; Y, N), Tab
 // (inventory), Alt+X, Alt+Q, F10 (quit) as in the original; a gamepad as the original's joystick (A/B/X/Y: F, D, E,
@@ -48,6 +53,7 @@
 #include "lvr/gpu.hpp"
 #include "lvr/render.hpp"
 #include "lvr/session.hpp"
+#include "lvr/showcase.hpp"
 
 namespace lvr {
 namespace {
@@ -114,8 +120,10 @@ struct DumpOptions {
     std::uint16_t held = 0;
     std::uint16_t tapped = 0;
     int tap_at = -1;
-    int rewind_from = -1;   // the rewind held from this step ...
-    int rewind_until = -1;  // ... until this one
+    int rewind_from = -1;          // the rewind held from this step ...
+    int rewind_until = -1;         // ... until this one
+    int whole_at = -1;             // the view the whole level from this step on
+    Showcase* showcase = nullptr;  // its place, written as --whole writes the whole level
     int moments = 0;
 };
 
@@ -131,7 +139,11 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
             std::println(stderr, "--zoom: step {} is not in a level being played (Remaster rules): no zoom", step);
         }
         session.rewind(step >= options.rewind_from && step < options.rewind_until);
-        frames = session.step(step == options.tap_at ? options.tapped : options.held);
+        if (step == options.whole_at && !session.view_whole_level()) {
+            std::println(stderr, "--whole: step {} is not in a level being played (Remaster rules)", step);
+        }
+        const std::uint16_t keys = step == options.tap_at ? options.tapped : options.held;
+        frames = session.step(options.showcase != nullptr ? options.showcase->before_step(session, keys) : keys);
         refreshes += frames.size();
         if (!frames.empty()) {
             last = frames.back();
@@ -144,7 +156,20 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
         return EXIT_FAILURE;
     }
     std::println("scene {} after {} refreshes", session.scene(), refreshes);
-    if (gpu != nullptr) {
+    if (gpu != nullptr && (options.whole_at >= 0 || options.showcase != nullptr)) {
+        constexpr int kWholeScale = 2;
+        last.motion.phase = -1;  // (as the tick left it)
+        auto whole = gpu->shown_whole(last, kWholeScale);
+        SDL_Surface* surface = whole ? SDL_CreateSurfaceFrom(whole->width, whole->height, SDL_PIXELFORMAT_RGBA32,
+                                                             whole->pixels.data(), whole->width * 4)
+                                     : nullptr;
+        const bool saved = surface != nullptr && SDL_SavePNG(surface, out.string().c_str());
+        SDL_DestroySurface(surface);
+        if (!saved) {
+            std::println(stderr, "vikings-remaster: {}: {}", out.string(), whole ? SDL_GetError() : whole.error());
+            return EXIT_FAILURE;
+        }
+    } else if (gpu != nullptr) {
         if (!save_shown(*gpu, last, session.minimap(), out)) {
             return EXIT_FAILURE;
         }
@@ -213,7 +238,8 @@ void sound_wanted(void* userdata, SDL_AudioStream* stream, int additional, int /
 
 // The game in a window. With `gpu` (and its window), the pictures are the ones it kept and it shows them;
 // without, they are the Classic renderer's and a window is made here.
-int play(Session& session, const input::Bindings& bindings, SDL_Window* window, GpuRenderer* gpu, bool report_slow) {
+int play(Session& session, const input::Bindings& bindings, SDL_Window* window, GpuRenderer* gpu, bool report_slow,
+         Showcase* showcase) {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
         std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
         return EXIT_FAILURE;
@@ -286,6 +312,14 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
                 running = false;
+            } else if (showcase != nullptr && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       (event.key.scancode == SDL_SCANCODE_PAGEDOWN || event.key.scancode == SDL_SCANCODE_PAGEUP ||
+                        event.key.scancode == SDL_SCANCODE_RIGHTBRACKET ||
+                        event.key.scancode == SDL_SCANCODE_LEFTBRACKET)) {
+                const bool on =
+                    event.key.scancode == SDL_SCANCODE_PAGEDOWN || event.key.scancode == SDL_SCANCODE_RIGHTBRACKET;
+                showcase->next(on ? 1 : -1);
+                SDL_SetWindowTitle(window, showcase->title().c_str());
             } else if (event.type == SDL_EVENT_KEY_DOWN && alt_held() &&
                        (event.key.scancode == SDL_SCANCODE_S || event.key.scancode == SDL_SCANCODE_M)) {
                 // Alt+S, Alt+M: the sound switches, acted on after the next tick (a repeat counts again). As
@@ -354,7 +388,8 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
                 session.rewind(held[SDL_SCANCODE_BACKSPACE]);  // Remaster rules: back in time while it is held
                 const std::uint64_t step_began = SDL_GetPerformanceCounter();
                 const std::size_t pages_before = gpu != nullptr ? gpu->pages_set_up() : 0;
-                frames = session.step(static_cast<std::uint16_t>(keyboard | pad),
+                const auto given = static_cast<std::uint16_t>(keyboard | pad);
+                frames = session.step(showcase != nullptr ? showcase->before_step(session, given) : given,
                                       Play::MenuKeys{.yes = held[SDL_SCANCODE_Y],
                                                      .no = held[SDL_SCANCODE_N],
                                                      .quit = held[SDL_SCANCODE_F10] ||
@@ -478,10 +513,12 @@ int main(int argc, char* argv[]) try {
     std::filesystem::path wav;
     SessionSound sound{.modern = false, .soundfont = "gamedata/GeneralUser-GS.sf2"};
     int slot = scene::kLogo;
+    std::optional<Showcase> showcase;  // --showcase
     int steps = 0;
     Rules rules = Rules::kVanilla;
     bool cheat = false;
     bool report_slow = false;       // --slow-frames
+    bool effects = true;            // --no-effects: false
     std::filesystem::path profile;  // Remaster rules: where the player's profile is kept
     DumpOptions dumping;
     std::string held;    // a dump: the key held
@@ -500,6 +537,8 @@ int main(int argc, char* argv[]) try {
             ++i;
         } else if (args[i] == "--cheat") {
             cheat = true;
+        } else if (args[i] == "--no-effects") {
+            effects = false;
         } else if (args[i] == "--slow-frames") {
             report_slow = true;
         } else if (args[i] == "--profile" && i + 1 < args.size()) {
@@ -528,6 +567,12 @@ int main(int argc, char* argv[]) try {
             dumping.rewind_from = *number;
             dumping.rewind_until = *until;
             i += 2;
+        } else if (number && args[i] == "--showcase" && *number >= 1) {
+            showcase.emplace(static_cast<std::size_t>(*number - 1));
+            ++i;
+        } else if (number && args[i] == "--whole") {
+            dumping.whole_at = *number;
+            ++i;
         } else if (const auto step = parse_number(value(2)); step && args[i] == "--tap") {
             tapped = args[i + 1];
             dumping.tap_at = *step;
@@ -543,10 +588,11 @@ int main(int argc, char* argv[]) try {
             std::println(
                 stderr,
                 "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] "
-                "[--soundfont FILE] [--rules vanilla|remaster] [--cheat] [--slow-frames] [--profile DIR] "
+                "[--soundfont FILE] [--rules vanilla|remaster] [--no-effects] [--showcase N] [--cheat] [--slow-frames] "
+                "[--profile DIR] "
                 "[--dump STEPS "
                 "FILE.png [--wav FILE.wav] [--zoom BY AT_STEP] [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] "
-                "[--moments N]]");
+                "[--whole AT_STEP] [--moments N]]");
             return EXIT_FAILURE;
         }
     }
@@ -588,6 +634,13 @@ int main(int argc, char* argv[]) try {
     if (gpu != nullptr && report_slow) {
         std::println(stderr, "the GPU renderer draws on {}", gpu->device_name());
     }
+    if (showcase) {  // it starts in its first scenario's level, under Remaster rules
+        slot = showcase->current().slot;
+        if (rules != Rules::kRemaster) {
+            std::println(stderr, "vikings-remaster: --showcase is for Remaster rules (--rules remaster)");
+            return EXIT_FAILURE;
+        }
+    }
     auto session = Session::open(dir, slot, sound, rules, std::move(draw_with));
     if (!session) {
         std::println(stderr, "vikings-remaster: {}", session.error());
@@ -596,6 +649,7 @@ int main(int argc, char* argv[]) try {
     if (cheat) {
         (*session)->cheat();
     }
+    (*session)->set_effects(effects && gpu != nullptr);  // (the Modern visuals: what the GPU renderer shows)
     // The player's profile (Remaster rules, in a window): in the folder asked for, or `profiles` beside the game's
     // own program, where it is found without knowing where to look.
     if (rules == Rules::kRemaster && dump_to.empty()) {
@@ -613,6 +667,7 @@ int main(int argc, char* argv[]) try {
     if (!dump_to.empty()) {
         dumping.held = input::key_bits(input::default_bindings(), held);
         dumping.tapped = input::key_bits(input::default_bindings(), tapped);
+        dumping.showcase = showcase ? &*showcase : nullptr;
         return dump(**session, steps, dump_to, wav, gpu.get(), dumping);
     }
     input::Bindings bindings = input::default_bindings();
@@ -627,7 +682,10 @@ int main(int argc, char* argv[]) try {
         }
         bindings = std::move(*parsed);
     }
-    const int status = play(**session, bindings, window, gpu.get(), report_slow);
+    if (showcase && window != nullptr) {
+        SDL_SetWindowTitle(window, showcase->title().c_str());
+    }
+    const int status = play(**session, bindings, window, gpu.get(), report_slow, showcase ? &*showcase : nullptr);
     if (const auto saved = (*session)->save_profile(); !saved) {
         std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
     }

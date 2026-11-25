@@ -25,15 +25,14 @@ The whole game under Vanilla rules, with Classic visuals and both sounds.
 rewind, a quicksave, and the player's profile on disk that keeps the last two are built. Nothing of M7 is open.
 
 ## M8: Modern visuals and sound
-- **Events for effects:** the moments in an animation an effect can answer to (a frame shown, a sound asked for,
-  its end), named beside the animation in `animations.hpp` and reported by the engine
-- **Effects on those events:** sparks where electricity strikes, a small burst where a bullet lands; shaders or
-  particles, in the Modern visuals only
+- **Effects** (built, 2026-11-25; HANDOVER.md, "Effects"): light, glow and particles answering to the animation
+  an entity plays (`Sprite::started`, named in `animations.hpp`), the map's electricity and the turning colours;
+  the light cast and stopped by the ground, in the game's pixels; `--showcase` to see them
 - On the GPU renderer (built for Remaster rules, ADR-0006): smooth movement between ticks (built; Remaster rules show
   the Modern visuals, ADR-0005)
 - Parallax: the SNES backdrops behind the levels and the village's scenes, from the user's own ROM image (built,
   2026-11-24; HANDOVER.md, "Parallax")
-- Light sources that affect sprites, shaders (a CRT look, for one)
+- Shaders (a CRT look, for one)
 - Art packs: replace sprites one for one
 - Modern sound: the effects placed by position, and extra effects (notes below)
 - **Sound: the SNES version, as an exercise first.** Its music and effects (sampled instruments with echo, and

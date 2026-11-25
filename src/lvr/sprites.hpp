@@ -120,6 +120,9 @@ struct Sprite {
     std::uint16_t program = kNoAnimation;         // where its animation is in the world's programs
     std::uint16_t delay = 0;                      // ticks until the animation goes on
     std::uint16_t return_to = 0;                  // an animation calls one level deep
+    // Where the animation it was last started on begins (kNoAnimation: none yet). The game never reads it: it is
+    // what the Modern visuals' effects answer to (effects.hpp).
+    std::uint16_t started = kNoAnimation;
 
     bool animating() const noexcept { return program != kNoAnimation; }
     bool operator==(const Sprite&) const = default;

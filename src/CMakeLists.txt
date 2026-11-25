@@ -112,6 +112,7 @@ lvr_target_defaults(lvr_engine)
 
 # --- The engine as a game to play: its pictures and sound per refresh (what a front end needs) ---
 add_library(lvr_session STATIC
+    lvr/effects.cpp
     lvr/profile.cpp
     lvr/session.cpp)
 add_library(lvr::session ALIAS lvr_session)
@@ -177,7 +178,7 @@ if(LVR_BUILD_APPS)
     lvr_target_defaults(lv-replay)
 
     # --- vikings-remaster: the game on the engine ---
-    add_executable(vikings-remaster lvr/main.cpp)
+    add_executable(vikings-remaster lvr/main.cpp lvr/showcase.cpp)
     target_link_libraries(vikings-remaster PRIVATE lvr::session lvr::input lvr::image lvr::gpu SDL3::SDL3)
     lvr_target_defaults(vikings-remaster)
 

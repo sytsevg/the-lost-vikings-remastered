@@ -9,7 +9,7 @@ Target `lvr::engine`, plain C++ on `lvr::assets`.
   dumps every level and cutscene from it ([`docs/formats/level.md`](../../docs/formats/level.md#exported-output)).
 - `render.*`: the Classic renderer: a `View` (what one picture shows) drawn into a 320 × 240 `Screen`. It draws;
   it decides nothing.
-- `gpu.*`, `gpu_quad.*`, `gpu_show.*`, `gpu_over.frag`: the GPU renderer (target `lvr::gpu`, on SDL_GPU) and its shaders: the same
+- `gpu.*`, `gpu_quad.*`, `gpu_show.*`, `gpu_over.frag`, `gpu_mark.frag`, `gpu_gauge.frag`: the GPU renderer (target `lvr::gpu`, on SDL_GPU) and its shaders: the same
   `View` drawn on the graphics card, at any view size, kept there and shown scaled. What Remaster rules show.
 - `sprites.*`: sprite pieces (`Piece`, 128 to a layer in three pools; 2,048 under Remaster rules), an entity's `Sprite`, taking and letting go
   of pieces, the animation player (the original's animation programs, imported and played as they are), and the
@@ -18,6 +18,11 @@ Target `lvr::engine`, plain C++ on `lvr::assets`.
 - `backdrop.*`: Remaster rules' parallax: which pixels of the map show the SNES backdrop, and where the backdrop is
   for a camera.
 - `minimap.*`: Remaster rules' minimap: the level small, by what its cells are, as far as it was seen.
+- `effects.*`: the Modern visuals' effects (Remaster rules): lights, glow and particles answering to what the
+  engine shows (a table of the animations that give them off, the colours that glow, the map's electricity), and
+  what stops light.
+- `showcase.*`: a development tool, `vikings-remaster --showcase N`: spots in the levels where the effects are
+  seen, one after another, with the view held on each.
 - `camera.*`: the camera: its limits, where it starts, how it follows the Viking being played; the size of the
   view (the original's, or a zoomed one).
 - `archive.hpp`: the game's state written out and read back: fixed-width, field by field (ADR-0020).

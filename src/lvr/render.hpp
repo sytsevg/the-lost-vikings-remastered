@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <expected>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -85,6 +86,28 @@ float moved_since(int by, int phase, float between) noexcept;
 // The same for the camera of `motion`'s picture: x and y.
 std::array<float, 2> camera_moved(const Motion& motion, float between) noexcept;
 
+// The Modern visuals' light on a picture (effects.hpp): what gives it off (a box: its middle and half its size, in the
+// picture's pixels), how far from that it reaches, and its colour there (0 to 1 each).
+struct Light {
+    float x = 0;
+    float y = 0;
+    float half_width = 0;
+    float half_height = 0;
+    float reach = 0;
+    std::array<float, 3> colour{};
+};
+inline constexpr std::size_t kMostLights = 64;  // a picture's most (gpu_show.frag takes as many)
+
+// What stops the Modern visuals' light (effects.hpp): a pixel of the level for a pixel, non-zero where the map is
+// solid to it (its ground and walls, and slopes under their surface). One is made anew only when the map changes
+// (`id` says which).
+struct Ground {
+    int width = 0;
+    int height = 0;
+    std::vector<std::uint8_t> solid;
+    std::uint64_t id = 0;
+};
+
 struct Screen {
     std::vector<std::uint8_t> pixels = std::vector<std::uint8_t>(std::size_t{kScreenWidth} * kScreenHeight);
     assets::Palette palette{};
@@ -120,6 +143,11 @@ struct Screen {
     // Remaster rules, in a level being played: how much of the level's rewind is left (0 to 1), shown in a bar along
     // the minimap's bottom.
     std::optional<float> rewind_left;
+    // The Modern visuals' effects (effects.hpp), for what shows the picture: the lights on it, and how much light
+    // each colour of the palette gives off around it (0: none, 255: as bright as it is).
+    std::vector<Light> lights;
+    std::array<std::uint8_t, 256> glow{};
+    std::shared_ptr<const Ground> ground;  // what stops the lights; none: nothing does
 };
 
 // What draws a view: draw() below, or something that is to make the same picture.

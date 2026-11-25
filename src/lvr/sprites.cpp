@@ -554,6 +554,7 @@ std::expected<AnimationTables, std::string> load_animation_tables(std::span<cons
 
 void start_animation(Sprite& sprite, std::uint16_t program) noexcept {
     sprite.program = program;
+    sprite.started = program;
     sprite.delay = 1;
 }
 

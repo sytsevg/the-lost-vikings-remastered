@@ -305,6 +305,9 @@ class World : public WorldState {
     const std::array<AnimationPlaces, kWorlds>* places_from = nullptr;
     // Starts the entity's animation.
     void play(Entity& entity, Animation animation) const;
+    // Where `animation` begins in this world's programs (an animation named in another world's database is found
+    // where this world has it): what a sprite's `started` says when it plays it.
+    std::uint16_t program_of(Animation animation) const;
     // An entity makes a sound: one of the original's effects, by its number. And stops one.
     void sound(const Entity& from, std::uint16_t effect) {
         cues.push_back({.kind = SoundCue::Kind::kEffect, .value = effect, .tune = 0, .entity = from.slot});
@@ -421,6 +424,11 @@ class World : public WorldState {
     void set_view(int width, int height);
     // Where the camera is put by that, without doing it.
     Camera camera_for_view(int width, int height) const noexcept;
+    // A development tool's (vikings-remaster --showcase): the view becomes `width` x `height` with its corner at
+    // (x, y) in the level, as near as the level allows, and stays there whatever the Vikings do. What it shows is
+    // created at the next tick's start. Not part of the world's state that is written out.
+    void hold_camera(int x, int y, int width, int height);
+    bool camera_held = false;
     // The view a zoom that asks for `asked` gives here (Remaster rules, ADR-0011): in a level (not a scene with
     // a map of its own: the village) as large as the original's view at least, never more than the level;
     // elsewhere the view as it is.

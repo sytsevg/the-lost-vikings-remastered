@@ -67,6 +67,9 @@ constexpr int kHudSpare = 31;  // (a pixel less than a tile: the panel's tiles s
 constexpr float kSlidePictures = 10;
 constexpr float kFadePictures = 7;
 constexpr int kMarkPictures = 18;  // the rewind's mark: shown this long, then away this long
+// The Modern visuals' light (gpu_show.frag): how far around a colour that gives light its glow reaches, in the
+// picture's pixels.
+constexpr float kGlowReach = 5;
 // The rewind's bar (Remaster rules), in the original's pixels from the minimap's corner: along its bottom, inside its
 // frame, with a frame as wide as a pixel and corners of this radius (two pixels cut off at each: one, then the next
 // row's first).
@@ -208,6 +211,13 @@ struct GpuRenderer::State {
     float made_room = 0;  // how far the HUD has slid aside for the minimap: 0 not at all, 1 all the way
     float faded_in = 0;   // how much of the minimap is there: 0 nothing, 1 all of it
     SDL_GPUTransferBuffer* palette_upload = nullptr;
+    // What stops the Modern visuals' light (Screen::ground): a texture of it, and which one it holds (0: the empty
+    // one it starts with).
+    SDL_GPUTexture* ground_texture = nullptr;
+    std::uint64_t ground_id = 0;
+    int ground_width = 0;
+    int ground_height = 0;
+    bool upload_ground(SDL_GPUCommandBuffer* commands, const Ground& ground);
     std::size_t quads_room = 0;  // how many the buffers hold
     bool video_started = false;
 
@@ -290,6 +300,7 @@ struct GpuRenderer::State {
             SDL_ReleaseGPUGraphicsPipeline(device, gauge_pipeline);
             SDL_ReleaseGPUGraphicsPipeline(device, over_pipeline);
             SDL_ReleaseGPUTexture(device, palette_texture);
+            SDL_ReleaseGPUTexture(device, ground_texture);
             SDL_ReleaseGPUGraphicsPipeline(device, show_pipeline_own);
             SDL_ReleaseGPUGraphicsPipeline(device, show_pipeline);
             if (window != nullptr) {
@@ -317,8 +328,14 @@ struct GpuRenderer::State {
                                              const SceneGraphics& graphics, const SharedGraphics& common);
     std::expected<void, std::string> render(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* onto,
                                             const Picture& picture, int scale, const Motion* motion, float between);
+    // `whole` > 0: the view alone (without the rows the HUD lies over, or the HUD), this many pixels a pixel of it,
+    // onto a target as large as that: a picture of a whole level.
     std::expected<void, std::string> show(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* onto, int width, int height,
-                                          const Screen& screen, const Minimap* minimap, bool own, float between);
+                                          const Screen& screen, const Minimap* minimap, bool own, float between,
+                                          int whole = 0);
+    // A kept picture shown onto a target of `width` x `height` of our own, read back.
+    std::expected<std::vector<std::uint8_t>, std::string> read_back(const Screen& screen, int width, int height,
+                                                                    const Minimap* minimap, float between, int whole);
     bool upload_over(SDL_GPUCommandBuffer* commands, const Minimap& minimap);
     std::expected<Page*, std::string> free_page();
     std::expected<Page*, std::string> set_up_page(const SceneGraphics& graphics, const SharedGraphics& common);
@@ -399,15 +416,16 @@ std::expected<void, std::string> GpuRenderer::State::set_up() {
     atlas_upload = transfer(SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, std::size_t{kAtlasSize} * kAtlasSize);
     download = transfer(SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, std::size_t{kScreenWidth} * kScreenHeight);
     palette_upload = transfer(SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, kColours * 4);
+    ground_texture = texture(SDL_GPU_TEXTUREFORMAT_R8_UINT, SDL_GPU_TEXTUREUSAGE_SAMPLER, 1, 1);
     if (sampler == nullptr || smooth == nullptr || target == nullptr || atlas_upload == nullptr ||
-        download == nullptr || palette_texture == nullptr || palette_upload == nullptr) {
+        download == nullptr || palette_texture == nullptr || palette_upload == nullptr || ground_texture == nullptr) {
         return sdl_error("the textures");
     }
 
     // Showing: the same two shaders onto the window's format and onto our own.
     SDL_GPUShader* show_vertex = shader(kShowVertexShader, sizeof(kShowVertexShader), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
     SDL_GPUShader* show_fragment =
-        shader(kShowFragmentShader, sizeof(kShowFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 3, 1);
+        shader(kShowFragmentShader, sizeof(kShowFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 4, 1);
     if (show_vertex == nullptr || show_fragment == nullptr) {
         return sdl_error("the shaders");
     }
@@ -1074,12 +1092,61 @@ bool GpuRenderer::State::upload_over(SDL_GPUCommandBuffer* commands, const Minim
     return true;
 }
 
+// What stops light into its texture, made anew when the size is another. False if that failed.
+bool GpuRenderer::State::upload_ground(SDL_GPUCommandBuffer* commands, const Ground& ground) {
+    const std::size_t bytes = static_cast<std::size_t>(ground.width) * static_cast<std::size_t>(ground.height);
+    if (ground.width <= 0 || ground.height <= 0 || ground.solid.size() != bytes) {
+        return false;
+    }
+    if (ground.width != ground_width || ground.height != ground_height) {
+        SDL_ReleaseGPUTexture(device, ground_texture);
+        ground_texture =
+            texture(SDL_GPU_TEXTUREFORMAT_R8_UINT, SDL_GPU_TEXTUREUSAGE_SAMPLER, ground.width, ground.height);
+        ground_width = ground_texture != nullptr ? ground.width : 0;
+        ground_height = ground_texture != nullptr ? ground.height : 0;
+        if (ground_texture == nullptr) {
+            ground_texture = texture(SDL_GPU_TEXTUREFORMAT_R8_UINT, SDL_GPU_TEXTUREUSAGE_SAMPLER, 1, 1);
+            ground_id = 0;
+            return false;
+        }
+    }
+    const SDL_GPUTransferBufferCreateInfo made{
+        .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = static_cast<Uint32>(bytes), .props = 0};
+    SDL_GPUTransferBuffer* upload = SDL_CreateGPUTransferBuffer(device, &made);
+    void* mapped = upload != nullptr ? SDL_MapGPUTransferBuffer(device, upload, false) : nullptr;
+    if (mapped == nullptr) {
+        SDL_ReleaseGPUTransferBuffer(device, upload);
+        return false;
+    }
+    std::memcpy(mapped, ground.solid.data(), bytes);
+    SDL_UnmapGPUTransferBuffer(device, upload);
+    SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
+    const SDL_GPUTextureTransferInfo from{.transfer_buffer = upload,
+                                          .offset = 0,
+                                          .pixels_per_row = static_cast<Uint32>(ground.width),
+                                          .rows_per_layer = 0};
+    const SDL_GPUTextureRegion to{.texture = ground_texture,
+                                  .mip_level = 0,
+                                  .layer = 0,
+                                  .x = 0,
+                                  .y = 0,
+                                  .z = 0,
+                                  .w = static_cast<Uint32>(ground.width),
+                                  .h = static_cast<Uint32>(ground.height),
+                                  .d = 1};
+    SDL_UploadToGPUTexture(copy, &from, &to, false);
+    SDL_EndGPUCopyPass(copy);
+    SDL_ReleaseGPUTransferBuffer(device, upload);
+    ground_id = ground.id;
+    return true;
+}
+
 // A kept picture onto a target of `width` x `height`: as large as whole pixels allow, in the middle, the rest
 // black. It is drawn now, as large as it is shown, and what moves between ticks is moved as it is `between` (0
 // to 1) into the refresh it is shown for.
 std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* onto,
                                                           int width, int height, const Screen& screen,
-                                                          const Minimap* minimap, bool own, float between) {
+                                                          const Minimap* minimap, bool own, float between, int whole) {
     times.samples = 0;
     std::shared_ptr<const Picture> kept_picture;
     if (screen.kept >= 0) {
@@ -1122,7 +1189,7 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
     auto* colours = static_cast<std::uint8_t*>(mapped);
     for (std::size_t i = 0; i < kColours; ++i) {
         const assets::Rgb& colour = screen.palette.at(i);
-        const std::array<std::uint8_t, 4> rgba{colour.r, colour.g, colour.b, 255};
+        const std::array<std::uint8_t, 4> rgba{colour.r, colour.g, colour.b, screen.glow.at(i)};  // (the glow)
         std::memcpy(colours + (i * 4), rgba.data(), rgba.size());  // NOLINT(*-pointer-arithmetic)
     }
     SDL_UnmapGPUTransferBuffer(device, palette_upload);
@@ -1133,6 +1200,8 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         .texture = palette_texture, .mip_level = 0, .layer = 0, .x = 0, .y = 0, .z = 0, .w = kColours, .h = 1, .d = 1};
     SDL_UploadToGPUTexture(copy, &from, &to, true);
     SDL_EndGPUCopyPass(copy);
+    const bool grounded =
+        screen.ground != nullptr && (screen.ground->id == ground_id || upload_ground(commands, *screen.ground));
 
     const int scale = std::max(1, std::min(width / kScreenWidth, height / kScreenHeight));
     const int left = (width - (kScreenWidth * scale)) / 2;  // whole pixels
@@ -1149,9 +1218,11 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
                              .height = std::clamp(screen.part.height, 1.0F, std::max(picture_height, 1.0F))};
     // A view larger than the original's is as high as the whole screen, and the HUD lies over its bottom.
     const bool over = shown.height > kPlayfieldHeight;
-    const float fit = std::min(
-        screen_width / std::max(shown.width, static_cast<float>(kScreenWidth)),
-        screen_height / (over ? std::max(shown.height, static_cast<float>(kScreenHeight)) : shown.height + kHudHeight));
+    const float fit = whole > 0
+                          ? static_cast<float>(whole)
+                          : std::min(screen_width / std::max(shown.width, static_cast<float>(kScreenWidth)),
+                                     screen_height / (over ? std::max(shown.height, static_cast<float>(kScreenHeight))
+                                                           : shown.height + kHudHeight));
     // Drawn as many pixels a pixel as it is shown at (rounded up: shown a little smaller, pixels are mixed).
     const int drawn = std::clamp(static_cast<int>(std::ceil(fit - 0.01F)), 1, kMostScale);
     if (picture != nullptr) {
@@ -1206,8 +1277,26 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
             std::array<float, 4> field;     // where the map is, in the picture's pixels: left, top, right, bottom
             std::array<float, 2> offset;    // where the picture's top left corner is in the backdrop
             float samples;
-            float scale;  // the drawn picture's pixels a pixel of it
+            float scale;               // the drawn picture's pixels a pixel of it
+            std::array<float, 4> lit;  // the Modern visuals' light: how many lights, a glow's reach, the camera moved
+            std::array<float, 4> ground;  // where the picture's corner is in the level; what stops light: its size
+            std::array<std::array<float, 4>, 2 * kMostLights> lights;
         };
+        // The Modern visuals' light (effects.hpp), for the playfield.
+        const std::array<float, 2> camera_now = camera_moved(screen.motion, between);
+        std::array<float, 4> lit{};
+        std::array<std::array<float, 4>, 2 * kMostLights> lights{};
+        const std::size_t light_count = std::min(screen.lights.size(), kMostLights);
+        for (std::size_t i = 0; i < light_count; ++i) {
+            const Light& light = screen.lights[i];
+            lights.at(2 * i) = {light.x, light.y, light.half_width, light.half_height};
+            lights.at((2 * i) + 1) = {light.colour[0], light.colour[1], light.colour[2], std::max(light.reach, 1.0F)};
+        }
+        const bool glows = std::ranges::any_of(screen.glow, [](std::uint8_t glow) { return glow != 0; });
+        lit = {static_cast<float>(light_count), glows ? kGlowReach : 0.0F, camera_now[0], camera_now[1]};
+        const std::array<float, 4> ground_at{
+            static_cast<float>(screen.level_x) + camera_now[0], static_cast<float>(screen.level_y) + camera_now[1],
+            grounded ? static_cast<float>(ground_width) : 0.0F, grounded ? static_cast<float>(ground_height) : 0.0F};
         // The backdrop (Remaster rules' parallax, backdrop.hpp): placed by the camera without the shake, as it is
         // at this moment (what moves between ticks moved too), and what moves by itself by the refreshes.
         std::array<float, 4> behind{};
@@ -1231,9 +1320,10 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         }
         SDL_BindGPUGraphicsPipeline(pass, with);
         SDL_GPUTexture* atlas = picture->page < pages.size() ? pages[picture->page]->texture : work;
-        const std::array<SDL_GPUTextureSamplerBinding, 3> pictures{{{.texture = work, .sampler = sampler},
+        const std::array<SDL_GPUTextureSamplerBinding, 4> pictures{{{.texture = work, .sampler = sampler},
                                                                     {.texture = palette_texture, .sampler = sampler},
-                                                                    {.texture = atlas, .sampler = sampler}}};
+                                                                    {.texture = atlas, .sampler = sampler},
+                                                                    {.texture = ground_texture, .sampler = sampler}}};
         SDL_BindGPUFragmentSamplers(pass, 0, pictures.data(), pictures.size());
         const auto part = [&](std::array<float, 4> dest, std::array<float, 4> source, std::array<float, 4> within,
                               bool playfield) {
@@ -1253,12 +1343,20 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
                                   .field = field,
                                   .offset = offset,
                                   .samples = std::clamp(std::ceil(covers - 0.01F), 1.0F, kMostSamples),
-                                  .scale = static_cast<float>(drawn)};
+                                  .scale = static_cast<float>(drawn),
+                                  .lit = playfield ? lit : std::array<float, 4>{},
+                                  .ground = ground_at,
+                                  .lights = lights};
             times.samples = std::max(times.samples, static_cast<int>(sampled.samples));
             SDL_PushGPUVertexUniformData(commands, 0, &placed, sizeof(placed));
             SDL_PushGPUFragmentUniformData(commands, 0, &sampled, sizeof(sampled));
             SDL_DrawGPUPrimitives(pass, kCorners, 1, 0, 0);
         };
+        if (whole > 0) {
+            part({0, 0, static_cast<float>(width), static_cast<float>(height)},
+                 {0, 0, static_cast<float>(width) / fit, static_cast<float>(height) / fit},
+                 {0, 0, picture_width, picture_height}, true);
+        }
         const float field_height = shown.height * fit;
         // A larger view less high than the screen (a level as low as that) is in the middle of what is above the
         // HUD.
@@ -1267,8 +1365,10 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
             over ? static_cast<float>(top) + std::max(0.0F, (above_hud - field_height) / 2)
                  : static_cast<float>(top) + ((screen_height - (field_height + (kHudHeight * fit))) / 2);
         const auto middle = [&](float wide) { return static_cast<float>(left) + ((screen_width - wide) / 2); };
-        part({middle(shown.width * fit), all_top, shown.width * fit, field_height},
-             {shown.x, shown.y, shown.width, shown.height}, {0, 0, picture_width, picture_height}, true);
+        if (whole == 0) {
+            part({middle(shown.width * fit), all_top, shown.width * fit, field_height},
+                 {shown.x, shown.y, shown.width, shown.height}, {0, 0, picture_width, picture_height}, true);
+        }
         const auto hud_top = picture_height;
         const float hud_at =
             over ? static_cast<float>(top) + screen_height - (kHudHeight * fit) : all_top + field_height;
@@ -1281,8 +1381,10 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
             hud_left += (aside - hud_left) * eased;
         }
         const float hud_seen = std::min(kScreenWidth * fit, static_cast<float>(left) + screen_width - hud_left) / fit;
-        part({hud_left, hud_at, hud_seen * fit, kHudHeight * fit}, {0, hud_top, hud_seen, kHudHeight},
-             {0, hud_top, kScreenWidth, hud_top + kHudHeight}, false);
+        if (whole == 0) {
+            part({hud_left, hud_at, hud_seen * fit, kHudHeight * fit}, {0, hud_top, hud_seen, kHudHeight},
+                 {0, hud_top, kScreenWidth, hud_top + kHudHeight}, false);
+        }
     }
     if (with_minimap) {
         // A square of the minimap around the middle of what the view shows, in the screen's bottom left corner. It
@@ -1359,7 +1461,7 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
     // Time running backwards: two triangles pointing left in the screen's top right corner, flashing (about twice
     // a second; in a picture read back they are there). First dark, a pixel down and right, then light over it.
     marked = screen.rewinding ? marked + 1 : 0;
-    if (screen.rewinding && (own || ((marked - 1) / kMarkPictures) % 2 == 0)) {
+    if (whole == 0 && screen.rewinding && (own || ((marked - 1) / kMarkPictures) % 2 == 0)) {
         constexpr std::uint32_t kCorners = 6;
         constexpr int kWide = 18;  // the two together, in the original's pixels
         constexpr int kHigh = 11;
@@ -1529,26 +1631,24 @@ std::expected<void, std::string> GpuRenderer::show(const Screen& screen, const M
     return {};
 }
 
-std::expected<std::vector<std::uint8_t>, std::string> GpuRenderer::shown(const Screen& screen, int scale,
-                                                                         const Minimap* minimap, float between) {
-    State& s = *state_;
-    const int width = kScreenWidth * scale;
-    const int height = kScreenHeight * scale;
+std::expected<std::vector<std::uint8_t>, std::string> GpuRenderer::State::read_back(const Screen& screen, int width,
+                                                                                    int height, const Minimap* minimap,
+                                                                                    float between, int whole) {
     const std::size_t bytes = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4;
     SDL_GPUTexture* onto =
-        s.texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET, width, height);
+        texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET, width, height);
     const SDL_GPUTransferBufferCreateInfo made{
         .usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, .size = static_cast<Uint32>(bytes), .props = 0};
-    SDL_GPUTransferBuffer* download = SDL_CreateGPUTransferBuffer(s.device, &made);
-    const auto read_back = [&]() -> std::expected<std::vector<std::uint8_t>, std::string> {
+    SDL_GPUTransferBuffer* download_to = SDL_CreateGPUTransferBuffer(device, &made);
+    const auto read = [&]() -> std::expected<std::vector<std::uint8_t>, std::string> {
         SDL_GPUCommandBuffer* commands =
-            onto != nullptr && download != nullptr ? SDL_AcquireGPUCommandBuffer(s.device) : nullptr;
+            onto != nullptr && download_to != nullptr ? SDL_AcquireGPUCommandBuffer(device) : nullptr;
         if (commands == nullptr) {
             return sdl_error("no command buffer");
         }
-        if (auto drawn = s.show(commands, onto, width, height, screen, minimap, true, between); !drawn) {
+        if (auto drawn = show(commands, onto, width, height, screen, minimap, true, between, whole); !drawn) {
             SDL_CancelGPUCommandBuffer(commands);
-            s.in_work.reset();  // (what was drawn into it is gone with the commands)
+            in_work.reset();  // (what was drawn into it is gone with the commands)
             return std::unexpected{drawn.error()};
         }
         SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
@@ -1561,7 +1661,7 @@ std::expected<std::vector<std::uint8_t>, std::string> GpuRenderer::shown(const S
                                         .w = static_cast<Uint32>(width),
                                         .h = static_cast<Uint32>(height),
                                         .d = 1};
-        const SDL_GPUTextureTransferInfo to{.transfer_buffer = download,
+        const SDL_GPUTextureTransferInfo to{.transfer_buffer = download_to,
                                             .offset = 0,
                                             .pixels_per_row = static_cast<Uint32>(width),
                                             .rows_per_layer = 0};
@@ -1569,24 +1669,46 @@ std::expected<std::vector<std::uint8_t>, std::string> GpuRenderer::shown(const S
         SDL_EndGPUCopyPass(copy);
         SDL_GPUFence* done = SDL_SubmitGPUCommandBufferAndAcquireFence(commands);
         if (done == nullptr) {
-            s.in_work.reset();
+            in_work.reset();
             return sdl_error("the picture shown");
         }
-        const bool waited = SDL_WaitForGPUFences(s.device, true, &done, 1);
-        SDL_ReleaseGPUFence(s.device, done);
-        const void* mapped = waited ? SDL_MapGPUTransferBuffer(s.device, download, false) : nullptr;
+        const bool waited = SDL_WaitForGPUFences(device, true, &done, 1);
+        SDL_ReleaseGPUFence(device, done);
+        const void* mapped = waited ? SDL_MapGPUTransferBuffer(device, download_to, false) : nullptr;
         if (mapped == nullptr) {
             return sdl_error("the picture shown, read back");
         }
         std::vector<std::uint8_t> pixels(bytes);
         std::memcpy(pixels.data(), mapped, bytes);
-        SDL_UnmapGPUTransferBuffer(s.device, download);
+        SDL_UnmapGPUTransferBuffer(device, download_to);
         return pixels;
     };
-    auto pixels = read_back();
-    SDL_ReleaseGPUTransferBuffer(s.device, download);
-    SDL_ReleaseGPUTexture(s.device, onto);
+    auto pixels = read();
+    SDL_ReleaseGPUTransferBuffer(device, download_to);
+    SDL_ReleaseGPUTexture(device, onto);
     return pixels;
+}
+
+std::expected<std::vector<std::uint8_t>, std::string> GpuRenderer::shown(const Screen& screen, int scale,
+                                                                         const Minimap* minimap, float between) {
+    return state_->read_back(screen, kScreenWidth * scale, kScreenHeight * scale, minimap, between, 0);
+}
+
+std::expected<GpuRenderer::Whole, std::string> GpuRenderer::shown_whole(const Screen& screen, int scale) {
+    State& s = *state_;
+    const State::Kept* found = screen.kept >= 0 ? &s.kept.at(static_cast<std::size_t>(screen.kept) % kKept) : nullptr;
+    if (found == nullptr || found->number != screen.kept || found->picture == nullptr) {
+        return std::unexpected{std::string{"no such picture kept"}};
+    }
+    const int covered = found->picture->height > kPlayfieldHeight ? kHudHeight : 0;
+    Whole whole{
+        .width = found->picture->width * scale, .height = (found->picture->height - covered) * scale, .pixels = {}};
+    auto pixels = s.read_back(screen, whole.width, whole.height, nullptr, 0, scale);
+    if (!pixels) {
+        return std::unexpected{pixels.error()};
+    }
+    whole.pixels = std::move(*pixels);
+    return whole;
 }
 
 }  // namespace lvr

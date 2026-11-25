@@ -134,7 +134,41 @@ bool Session::zoom(int by) noexcept {
 
 // The view the zoom asks for here.
 std::array<int, 2> Session::wanted_view() const {
-    return play_.world.view_for(kZoomViews.at(static_cast<std::size_t>(zoom_)));
+    return whole_view_ ? *whole_view_ : play_.world.view_for(kZoomViews.at(static_cast<std::size_t>(zoom_)));
+}
+
+bool Session::hold_view(int x, int y, int width, int height) {
+    if (!takes_play_keys()) {
+        return false;
+    }
+    whole_view_ = {width, height + kHudRows};
+    play_.world.hold_camera(x, y, width, height + kHudRows);
+    grows_from_.reset();
+    shrinking_ = false;
+    scrolled_.reset();
+    return true;
+}
+
+bool Session::go_to(int slot) {
+    if (!level_played() || slot < 0 || slot > scene::kLastLevel) {
+        return false;
+    }
+    play_.world.next_scene = slot;
+    play_.world.level_done = true;
+    whole_view_.reset();
+    return true;
+}
+
+bool Session::view_whole_level() {
+    if (!takes_play_keys()) {
+        return false;
+    }
+    World& world = play_.world;
+    whole_view_ = {world.map.pixel_width(), world.map.pixel_height() + kHudRows};
+    world.set_view((*whole_view_)[0], (*whole_view_)[1]);
+    grows_from_.reset();
+    shrinking_ = false;
+    return true;
 }
 
 // Before a step: the world's view becomes the wanted one. A larger one at once (its pictures then open up from
@@ -304,6 +338,13 @@ Screen Session::picture() {
         view.darken_all = true;
     }
     Screen screen;
+    if (effects_on_) {
+        // (While a scene fades every colour is that much darker, of the VGA's 63 levels a colour: the lights too.)
+        constexpr float kLevels = 63;
+        const float brightness =
+            play_.fade ? std::max(0.0F, kLevels - static_cast<float>(*play_.fade)) / kLevels : 1.0F;
+        effects_.add(world, play_.graphics(), view, screen, moving_ && !play_.fade, brightness);
+    }
     draw_(screen, view, play_.graphics(), shared_);
     if (view.hud && gauge_shown(world) && !play_.fade) {  // (not laid over a scene's fades, as the minimap isn't)
         // (A scene that was just started, still in its first step: all of its rewind, as the next step has it.)
@@ -446,6 +487,7 @@ std::vector<Screen> Session::back_to(const Kept& step) {
 // earlier one, and the play as it was before that. (With one step left, or a step that was more than a plain
 // tick, the pictures there are.) Each step undone is one less of the level's rewind.
 std::vector<Screen> Session::step_back() {
+    effects_.clear();
     std::vector<Screen> shown;
     const auto undone = [this] {
         rewind_.pop_back();
@@ -530,6 +572,7 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
         }
         play_.world.title.cheat = true;
         rewind_.clear();  // what led up to here is no longer what came before
+        effects_.clear();
         scrolled_.reset();
         grows_from_.reset();  // (brought back at the view the zoom has: no change of view to show)
         shrinking_ = false;
@@ -563,8 +606,11 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
     cues.clear();
     play_.menu_keys = keys;
     change_view();
+    moving_ = true;
     const int refreshes = play_.step(keyboard, [&] { frames.push_back({.screen = picture(), .cues = take_cues()}); });
+    moving_ = false;
     if (play_.scenes_started != rewind_scene_) {
+        effects_.clear();
         // A scene started (a level again too): what was kept is of the one before, and the new one has all of its
         // rewind.
         rewind_.clear();
