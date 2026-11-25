@@ -402,3 +402,40 @@ TEST_CASE("real data: a lobby the host starts (a new game: the intro, the same o
     CHECK(guest.session->scene() == 0);
     CHECK(guest.session->state_hash() == host.session->state_hash());
 }
+
+TEST_CASE("real data: two join the game under way one right after the other: every machine the same game",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    const NetGame::Identity identity{.build = "test", .game = 1, .name = "host"};
+    Machine host;
+    std::uint16_t port = kFirstPort + 60;
+    for (; port < kFirstPort + 80 && !host.net; ++port) {
+        if (auto opened = NetGame::host(port, 1, 0, false, std::nullopt, identity)) {  // (alone: it starts at once)
+            host.net = std::move(*opened);
+        }
+    }
+    REQUIRE(host.net);
+    --port;
+    auto started = host.net->lobby();
+    REQUIRE(started);
+    REQUIRE(started->has_value());
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 0, {}, Rules::kRemaster, draw, Online{.on = true, .players = 1}, 0);
+    REQUIRE(opened);
+    host.session = std::move(*opened);
+    host.delay = (*started)->delay;
+    host.net->begin(*host.session);
+    run_until({&host}, 40);
+    // The second's hello before the first has arrived (his arrival is 16 steps on, and nobody steps meanwhile): he
+    // is told of the first's arrival to come with the game's state.
+    Machine first = join_under_way(port, "first", {&host});
+    Machine second = join_under_way(port, "second", {&host, &first});
+    CHECK(first.net->player() == 1);
+    CHECK(second.net->player() == 2);
+    run_until({&host, &first, &second}, 140);
+    settle({&host, &first, &second});
+    CHECK(first.session->state_hash() == host.session->state_hash());
+    CHECK(second.session->state_hash() == host.session->state_hash());
+    CHECK(second.session->world().players[1].here);
+}

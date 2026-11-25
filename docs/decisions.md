@@ -405,11 +405,17 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
 - **Out of step:** the state of every 8th confirmed step is hashed and the hashes exchanged; on a difference the
   first step that differs is logged, and each machine writes its state and its log of inputs (in `logs/` beside the
   program) to be played offline.
-- **Transport:** SDL3_net. TCP for the handshake (the protocol's and the state's versions, the build's commit, the
-  game files' release, the names, the start); UDP for the inputs, every packet carrying each input the other side
-  hasn't acknowledged; the TCP connection carries them instead if UDP doesn't get through (TCP_NODELAY and, on
-  Linux, TCP_QUICKACK, which SDL3_net is patched to set: it sets neither). Through the host at first, so only the
-  host needs a port that can be reached; direct, no relay server.
+- **Transport:** SDL3_net. TCP for the handshake (the protocol's and the state's versions, the build's ID: a hash
+  of the game's sources, worked out at every build; the game files' release, the names, the start). The game's own
+  messages go by UDP and TCP both, the same bytes, and the first copy to come wins (the user): every Inputs packet
+  carries each input the other side hasn't acknowledged, so a dropped, reordered or doubled datagram changes
+  nothing, and TCP is there behind it (TCP_NODELAY and, on Linux, TCP_QUICKACK, which SDL3_net is patched to set:
+  it sets neither). What takes them takes a copy twice as once (a round trip the first copy's). A peer silent for
+  10 s is gone though its socket wasn't closed. The host takes a player's inputs and hashes from his own
+  connection only. Who is there when is the host's to decide: the others count a place away only as far as he has
+  said it is decided (`net::Decided`, before his own next step, sent both ways with the comings and goings it
+  covers), so word of an arrival coming late stalls a moment, never puts a machine out of step. Through the host
+  at first, so only the host needs a port that can be reached; direct, no relay server.
 - **Only the host drives the game** (the user): the title, the passwords, the scenes, the pause box and giving up,
   game over, the cheat's keys. The others play their Viking.
 - **A Viking has one player at most, and any number of viewers** (the user). The keys for the Viking before and

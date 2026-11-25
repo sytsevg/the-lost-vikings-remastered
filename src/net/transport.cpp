@@ -26,10 +26,13 @@ constexpr std::uint8_t kPong = 4;
 constexpr std::uint8_t kHello = 5;    // client to host, over UDP: here is my UDP (until welcomed)
 constexpr std::uint8_t kWelcome = 6;  // host to client, over UDP: it got through
 
-constexpr std::uint64_t kPingEvery = 500;    // milliseconds
-constexpr std::uint64_t kHelloEvery = 200;   // the client's UDP introducing itself, until it is welcomed
-constexpr std::uint64_t kQuietUdp = 2000;    // nothing over UDP for this long: the fast messages go over TCP
-constexpr std::size_t kMostDatagram = 1200;  // a fast message longer than this goes over TCP
+constexpr std::uint64_t kPingEvery = 500;   // milliseconds
+constexpr std::uint64_t kHelloEvery = 200;  // the client's UDP introducing itself, until it is welcomed
+constexpr std::uint64_t kQuietUdp = 2000;   // nothing over UDP for this long: the fast messages go over TCP
+// Nothing at all from a peer for this long (its pings come twice a second): gone, though its socket wasn't closed
+// (a cable pulled, the machine asleep, the program hung).
+constexpr std::uint64_t kSilent = 10000;                    // (Transport::set_patience: shorter, for a test)
+constexpr std::size_t kMostDatagram = 1200;                 // a fast message longer than this goes over TCP
 constexpr std::size_t kMostFrame = std::size_t{16} << 20U;  // a frame longer than this: the peer is broken
 constexpr std::size_t kHeader = 5;                          // a frame's length (or a datagram's token) and kind
 
@@ -74,7 +77,9 @@ struct Transport::Inner {
         NET_Address* udp_address = nullptr;
         std::uint16_t udp_port = 0;
         bool udp_ok = false;
-        std::uint64_t udp_last = 0;  // when UDP from it last came
+        std::uint64_t udp_last = 0;    // when UDP from it last came
+        std::uint64_t heard_last = 0;  // when anything from it last came, by either way
+        std::uint32_t pong_last = 0;   // the ping whose answer was taken last (its other copy isn't)
         std::uint64_t ping_last = 0;
         std::uint64_t hello_last = 0;
         std::optional<int> round_trip;
@@ -95,7 +100,8 @@ struct Transport::Inner {
     std::vector<Peer> peers;  // the host's clients; a client's one, the host
     int next_number = 1;
     std::mt19937 tokens{std::random_device{}()};
-    int loss = 0;  // tests: the datagrams lost, in percent
+    int loss = 0;                      // tests: the datagrams lost, in percent
+    std::uint64_t patience = kSilent;  // how long a silent peer is waited for
 
     Inner() = default;
     Inner(const Inner&) = delete;
@@ -161,16 +167,18 @@ struct Transport::Inner {
     }
 
     // A ping or a fast message, by UDP while it gets through, else over TCP.
+    // A fast message both ways, the same bytes (the user: the first to come wins; UDP drops, reorders and doubles,
+    // and TCP is there behind it): what takes it must take it twice as once.
     void write_fast(Peer& peer, std::uint8_t kind, std::span<const std::uint8_t> payload) {
         if (peer.udp_ok && payload.size() <= kMostDatagram) {
             write_udp(peer, kind, payload);
-        } else {
-            write_tcp(peer, kind, payload);
         }
+        write_tcp(peer, kind, payload);
     }
 
     // A frame's kind and payload, from either connection.
     void take(Peer& peer, std::uint8_t kind, std::span<const std::uint8_t> payload, std::vector<Event>& events) {
+        peer.heard_last = SDL_GetTicks();
         switch (kind) {
             case kMessage:
             case kFast:
@@ -186,8 +194,11 @@ struct Transport::Inner {
             case kPing:
                 write_fast(peer, kPong, payload);
                 return;
-            case kPong:
-                peer.round_trip = static_cast<int>(static_cast<std::uint32_t>(SDL_GetTicks()) - get32(payload));
+            case kPong:  // (the first of its copies: the later one isn't the round trip)
+                if (const std::uint32_t sent = get32(payload); sent != peer.pong_last) {
+                    peer.pong_last = sent;
+                    peer.round_trip = static_cast<int>(static_cast<std::uint32_t>(SDL_GetTicks()) - sent);
+                }
                 return;
             default:
                 return;
@@ -235,6 +246,7 @@ struct Transport::Inner {
                 peer.number = next_number++;
                 peer.stream = stream;
                 peer.token = static_cast<std::uint32_t>(tokens());
+                peer.heard_last = now;
                 std::vector<std::uint8_t> token;
                 put32(token, peer.token);
                 write_tcp(peer, kToken, token);
@@ -253,6 +265,10 @@ struct Transport::Inner {
             if (peer.gone) {
                 continue;
             }
+            if (now > peer.heard_last + patience) {  // (heard_last can be later than `now`: what came this pass)
+                peer.gone = true;                    // (left below, as one whose connection broke)
+                continue;
+            }
             if (peer.udp_ok && now - peer.udp_last > kQuietUdp) {
                 peer.udp_ok = false;  // the fast messages over TCP until UDP comes through again
             }
@@ -263,10 +279,7 @@ struct Transport::Inner {
             if (now - peer.ping_last >= kPingEvery) {
                 std::vector<std::uint8_t> sent;
                 put32(sent, static_cast<std::uint32_t>(now));
-                write_fast(peer, kPing, sent);
-                if (peer.udp_ok) {
-                    write_tcp(peer, kPing, sent);  // (the TCP connection too, so it is known to be there)
-                }
+                write_fast(peer, kPing, sent);  // (both ways: the TCP connection too is known to be there)
                 peer.ping_last = now;
             }
         }
@@ -364,6 +377,7 @@ std::expected<std::unique_ptr<Transport>, std::string> Transport::join(const std
     Inner::Peer peer;
     peer.number = 0;
     peer.stream = NET_CreateClient(host, port, 0);
+    peer.heard_last = SDL_GetTicks();
     peer.udp_address = host;  // (the reference resolving gave)
     peer.udp_port = port;
     if (peer.stream == nullptr || NET_WaitUntilConnected(peer.stream, wait_ms) != NET_SUCCESS) {
@@ -423,6 +437,24 @@ bool Transport::fast_link(int peer) const {
     const std::scoped_lock held{inner_->lock};
     const auto found = std::ranges::find(inner_->peers, peer, &Inner::Peer::number);
     return found != inner_->peers.end() && found->udp_ok;
+}
+
+void Transport::simulate_cut() {
+    const std::scoped_lock held{inner_->lock};
+    inner_->loss = 100;
+    if (inner_->datagrams != nullptr) {
+        NET_SimulateDatagramPacketLoss(inner_->datagrams, 100);
+    }
+    for (Inner::Peer& peer : inner_->peers) {
+        if (peer.stream != nullptr) {
+            NET_SimulateStreamPacketLoss(peer.stream, 100);
+        }
+    }
+}
+
+void Transport::set_patience(std::uint64_t ms) {
+    const std::scoped_lock held{inner_->lock};
+    inner_->patience = ms;
 }
 
 void Transport::simulate_loss(int percent) {

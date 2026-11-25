@@ -31,6 +31,8 @@ struct Input {
 inline constexpr std::size_t kGoneByte = kInputBytes - 1;
 // How far a player's inputs are known when they are for ever (he is away, not to come back as far as is known).
 inline constexpr std::uint32_t kAll = std::numeric_limits<std::uint32_t>::max();
+// How far past this machine's step (and the window) another's inputs can be: more than the delays ever are.
+inline constexpr std::uint32_t kMostAhead = 64;
 // The input of a player who is gone: nothing, and the bit that says so.
 constexpr Input gone_input() noexcept {
     Input input;
@@ -72,6 +74,17 @@ struct Settings {
     int hash_every = 8;  // the steps whose states are compared (every 8th)
     // The first step it runs: 0, or for one joining a game under way the step of the game's state he was given.
     std::uint32_t first_step = 0;
+    // Whether this machine decides who is there when (the host, and a game alone). One that doesn't counts the steps
+    // of a player away as known only as far as the one who does has said he decided them (decided_until): his word
+    // of an arrival may come later than the inputs that let a step be confirmed.
+    bool decides_presence = true;
+};
+// A change of who is there: a player there (or away) from that step on.
+struct PresenceChange {
+    int player = 0;
+    std::uint32_t at = 0;
+    bool there = true;
+    bool operator==(const PresenceChange&) const = default;
 };
 
 class Rollback {
@@ -95,6 +108,12 @@ class Rollback {
     void arrive(int player, std::uint32_t at);
     // Whether the player is there at that step.
     bool there(int player, std::uint32_t step) const;
+    // The changes of who is there from that step on, as this machine has them (in order, by player).
+    std::vector<PresenceChange> presence_from(std::uint32_t step) const;
+    // For one that doesn't decide presence: who is there is decided for every step before this one; and the
+    // changes, as the one who decides has them (those this machine has already change nothing).
+    void decided_until(std::uint32_t step);
+    void know_presence(const std::vector<PresenceChange>& changes);
 
     // The next step: run it, after running again what a wrong prediction spoiled. False: it can't be run yet (this
     // machine's input for it isn't given, or the window is used up waiting for another player's: a stall).
@@ -156,7 +175,7 @@ class Rollback {
     std::vector<Input> inputs_for(std::uint32_t step) const;
     void run(std::uint32_t step, bool shown);
     void compare_hashes();
-    static void move_contiguous(Known& known);
+    void move_contiguous(Known& known) const;
     void changes(Known& known, std::uint32_t at, bool there);
 
     Game* game_;
@@ -168,6 +187,7 @@ class Rollback {
     // By step: each player's hash of the state after it (this machine's among them).
     std::map<std::uint32_t, std::array<std::optional<std::uint64_t>, kMostPlayers>> hashes_;
     std::optional<std::uint32_t> out_of_step_;
+    std::uint32_t decided_ = kAll;  // presence decided before this step (kAll: this machine decides it)
 };
 
 }  // namespace lvr::net

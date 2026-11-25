@@ -406,3 +406,44 @@ TEST_CASE("rollback: one joining under way starts at the step of the state he wa
     CHECK(rollback.step() == 101);
     CHECK(rollback.local_from(100).size() == 2);
 }
+
+TEST_CASE("rollback: one that doesn't decide who is there counts a player away only as far as that is decided") {
+    Toy game;
+    Rollback rollback{game, Settings{.players = 3, .local = 1, .delay = 0, .decides_presence = false}};
+    rollback.leave(2, 0);                             // the third place nobody's (as far as is known)
+    for (std::uint32_t step = 0; step < 8; ++step) {  // (the window's: with nothing confirmed, as far as it runs)
+        rollback.add_remote(0, step, held(0, step));
+        REQUIRE(rollback.add_local(held(1, step)));
+        (void)rollback.advance();
+    }
+    CHECK(rollback.confirmed() == 0);  // nothing said yet of who is there
+    rollback.decided_until(6);
+    CHECK(rollback.confirmed() == 6);
+    // An arrival at 8, told after the inputs that would have let 8 be confirmed without him: it isn't.
+    rollback.arrive(2, 8);
+    rollback.decided_until(20);
+    CHECK(rollback.confirmed() == 8);  // his inputs from 8 on are to come
+    rollback.decided_until(4);         // (never back)
+    CHECK(rollback.confirmed() == 8);
+}
+
+TEST_CASE("rollback: a step to put right further back than the states kept: out of step, not a wrong state loaded") {
+    Toy game;
+    Rollback rollback{game, Settings{.players = 2, .local = 0, .delay = 0}};
+    rollback.leave(1, 0);
+    for (std::uint32_t step = 0; step < 30; ++step) {
+        REQUIRE(rollback.add_local(held(0, step)));
+        REQUIRE(rollback.advance());
+    }
+    rollback.arrive(1, 5);  // (no machine may: the host picks a step not confirmed yet)
+    rollback.catch_up();
+    CHECK(rollback.out_of_step() == std::optional<std::uint32_t>{5});
+}
+
+TEST_CASE("rollback: an input said to be for a step far beyond any machine's is not kept") {
+    Toy game;
+    Rollback rollback{game, Settings{.players = 2, .local = 0, .delay = 0}};
+    rollback.add_remote(1, 0xFFFFFF00U, held(1, 0));
+    rollback.add_remote(1, 0, held(1, 0));
+    CHECK(rollback.known(1) == 1);
+}

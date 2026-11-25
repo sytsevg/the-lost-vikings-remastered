@@ -1,6 +1,7 @@
 #include "lvr/coop.hpp"
 
 #include <array>
+#include <charconv>
 #include <format>
 #include <map>
 #include <sstream>
@@ -130,14 +131,24 @@ std::expected<std::optional<std::uint32_t>, std::string> replay_log(const std::f
                     return bad();
                 }
                 for (std::size_t i = 0; i < input.bytes.size(); ++i) {
-                    input.bytes.at(i) = static_cast<std::uint8_t>(std::stoul(hex.substr(i * 2, 2), nullptr, 16));
+                    const char* begin = hex.data() + (i * 2);
+                    if (const auto [end, error] = std::from_chars(begin, begin + 2, input.bytes.at(i), 16);
+                        error != std::errc{} || end != begin + 2) {
+                        return bad();  // (not two hex digits)
+                    }
                 }
             }
         } else if (word == "hash") {
             std::uint32_t step = 0;
             std::string hex;
             words >> step >> hex;
-            hashes[step] = std::stoull(hex, nullptr, 16);
+            std::uint64_t hash = 0;
+            const char* end = hex.data() + hex.size();
+            if (const auto [read_to, error] = std::from_chars(hex.data(), end, hash, 16);
+                hex.empty() || error != std::errc{} || read_to != end) {
+                return bad();  // (a log cut short, say)
+            }
+            hashes[step] = hash;
         }
         if (words.fail() && !words.eof()) {
             return bad();

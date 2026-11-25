@@ -13,6 +13,7 @@ constexpr std::size_t kMostInputs = 64;  // in one message: more than the window
 constexpr std::size_t kMostString = 64;  // a build's commit, a name, why one was refused
 constexpr std::size_t kMostNames = kMostPlayers;
 constexpr std::size_t kMostState = std::size_t{8} << 20U;  // a game's state for one joining: far less than this
+constexpr std::size_t kMostPresence = 32;  // the changes of who is there a joiner is told of: a few at most
 
 class Out {
   public:
@@ -149,6 +150,30 @@ void fields(Io& io, auto& message) {
     }
 }
 
+void write_presence(Out& out, const std::vector<Presence>& presence) {
+    out(static_cast<std::uint8_t>(std::min(presence.size(), kMostPresence)));
+    for (std::size_t i = 0; i < presence.size() && i < kMostPresence; ++i) {
+        out(presence[i].player);
+        out(presence[i].at);
+        out(static_cast<std::uint8_t>(presence[i].there ? 1 : 0));
+    }
+}
+
+bool read_presence(In& in, std::vector<Presence>& presence) {
+    std::uint8_t changes = 0;
+    in(changes);
+    if (changes > kMostPresence) {
+        return false;
+    }
+    presence.resize(changes);
+    for (Presence& change : presence) {
+        in(change.player);
+        in(change.at);
+        in(change.there);
+    }
+    return in.ok();
+}
+
 void write_names(Out& out, const std::vector<std::string>& names) {
     out(static_cast<std::uint8_t>(std::min(names.size(), kMostNames)));
     for (std::size_t i = 0; i < names.size() && i < kMostNames; ++i) {
@@ -198,6 +223,10 @@ std::vector<std::uint8_t> encode(const Message& message) {
                 out(one.slot);
                 out(static_cast<std::uint8_t>(one.cheat ? 1 : 0));
                 write_names(out, one.names);
+            } else if constexpr (std::is_same_v<M, Decided>) {
+                out(one.game);
+                out(one.until);
+                write_presence(out, one.presence);
             } else if constexpr (std::is_same_v<M, Joining>) {
                 out(one.game);
                 out(one.player);
@@ -206,6 +235,7 @@ std::vector<std::uint8_t> encode(const Message& message) {
                 out(one.delay);
                 write_names(out, one.names);
                 out(one.state);
+                write_presence(out, one.presence);
             } else if constexpr (std::is_same_v<M, Inputs>) {
                 out(one.game);
                 out(one.player);
@@ -260,6 +290,15 @@ std::optional<Message> read_one(In& in) {
             return std::nullopt;
         }
         in(message.state);
+        if (!read_presence(in, message.presence)) {
+            return std::nullopt;
+        }
+    } else if constexpr (std::is_same_v<M, Decided>) {
+        in(message.game);
+        in(message.until);
+        if (!read_presence(in, message.presence)) {
+            return std::nullopt;
+        }
     } else if constexpr (std::is_same_v<M, Inputs>) {
         std::uint8_t count = 0;
         in(message.game);

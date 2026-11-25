@@ -6,8 +6,10 @@ namespace lvr {
 
 namespace {
 
+// (Who hears it too: online one player's inventory click isn't another's, though both are nobody's entity's.)
 bool same(const SoundCue& one, const SoundCue& other) noexcept {
-    return one.kind == other.kind && one.value == other.value && one.tune == other.tune && one.entity == other.entity;
+    return one.kind == other.kind && one.value == other.value && one.tune == other.tune && one.entity == other.entity &&
+           one.heard_by == other.heard_by;
 }
 
 }  // namespace

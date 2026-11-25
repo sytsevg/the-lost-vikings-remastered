@@ -13,7 +13,10 @@ constexpr std::size_t kHashesKept = 64;  // steps' hashes kept to compare: enoug
 }  // namespace
 
 Rollback::Rollback(Game& game, const Settings& settings)
-    : game_{&game}, settings_{settings}, step_{settings.first_step} {
+    : game_{&game},
+      settings_{settings},
+      step_{settings.first_step},
+      decided_{settings.decides_presence ? kAll : settings.first_step} {
     settings_.players = std::clamp(settings_.players, 1, kMostPlayers);
     settings_.local = std::clamp(settings_.local, 0, settings_.players - 1);
     settings_.delay = std::max(settings_.delay, 0);
@@ -46,13 +49,17 @@ bool Rollback::there(int player, std::uint32_t step) const {
     return player >= 0 && player < settings_.players && players_.at(static_cast<std::size_t>(player)).there(step);
 }
 
-void Rollback::move_contiguous(Known& known) {
+void Rollback::move_contiguous(Known& known) const {
     while (known.contiguous != kAll) {
         const std::uint32_t at = known.contiguous;
-        if (!known.there(at)) {  // away: known until he comes back, if he does
+        if (!known.there(at)) {  // away: known until he comes back, if he does (as far as that is decided)
             const auto back = std::ranges::find_if(
                 known.presence, [at](const auto& change) { return change.first > at && change.second; });
-            known.contiguous = back != known.presence.end() ? back->first : kAll;
+            const std::uint32_t until = std::min(back != known.presence.end() ? back->first : kAll, decided_);
+            if (until <= at) {
+                break;
+            }
+            known.contiguous = until;
             continue;
         }
         if (at < known.inputs.size() && known.inputs.at(at).has_value()) {
@@ -94,8 +101,11 @@ void Rollback::add_remote(int player, std::uint32_t step, const Input& input) {
     if (player < 0 || player >= settings_.players || player == settings_.local) {
         return;
     }
+    // No machine's inputs can be further ahead of this one than the window and the delays let it run (a step said
+    // to be further on isn't a real one: nothing is kept for it).
+    const std::uint32_t furthest = step_ + static_cast<std::uint32_t>(settings_.window) + kMostAhead;
     Known& known = players_.at(static_cast<std::size_t>(player));
-    if (!known.there(step) || step < settings_.first_step ||
+    if (step > furthest || !known.there(step) || step < settings_.first_step ||
         (step < known.inputs.size() && known.inputs.at(step).has_value())) {
         return;  // (it came before, or he is away then)
     }
@@ -123,6 +133,41 @@ void Rollback::changes(Known& known, std::uint32_t at, bool there) {
             first_wrong_ = std::min(first_wrong_.value_or(step), step);
             break;
         }
+    }
+}
+
+std::vector<PresenceChange> Rollback::presence_from(std::uint32_t step) const {
+    std::vector<PresenceChange> changes;
+    for (int player = 0; player < settings_.players; ++player) {
+        for (const auto& [at, there] : players_.at(static_cast<std::size_t>(player)).presence) {
+            if (at >= step) {
+                changes.push_back({.player = player, .at = at, .there = there});
+            }
+        }
+    }
+    return changes;
+}
+
+void Rollback::know_presence(const std::vector<PresenceChange>& changes) {
+    for (const PresenceChange& change : changes) {
+        // (One from before this machine's first step is the state's it was given, not its to put right.)
+        if (change.player < 0 || change.player >= settings_.players || change.at < settings_.first_step) {
+            continue;
+        }
+        const auto& presence = players_.at(static_cast<std::size_t>(change.player)).presence;
+        if (std::ranges::find(presence, std::pair{change.at, change.there}) == presence.end()) {
+            change.there ? arrive(change.player, change.at) : leave(change.player, change.at);
+        }
+    }
+}
+
+void Rollback::decided_until(std::uint32_t step) {
+    if (settings_.decides_presence || step <= decided_) {
+        return;
+    }
+    decided_ = step;
+    for (Known& known : players_) {
+        move_contiguous(known);
     }
 }
 
@@ -191,6 +236,11 @@ void Rollback::run(std::uint32_t step, bool shown) {
 }
 
 void Rollback::catch_up() {
+    if (first_wrong_ && *first_wrong_ + slots() < step_) {  // its state isn't kept any more: it can't be put right
+        out_of_step_ = std::min(out_of_step_.value_or(*first_wrong_), *first_wrong_);
+        first_wrong_.reset();
+        return;
+    }
     if (first_wrong_ && *first_wrong_ < step_) {
         game_->load(*first_wrong_ % slots());
         for (std::uint32_t step = *first_wrong_; step < step_; ++step) {

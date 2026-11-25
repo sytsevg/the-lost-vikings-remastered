@@ -123,6 +123,21 @@ struct Arrive {
 };
 // Host to the one joining under way, in place of Welcome and Start: his place, the game's state at a confirmed step
 // (Session::state_bytes) to start from, the step he arrives at, the delay and everyone's names.
+struct Presence {
+    std::uint8_t player = 0;
+    std::uint32_t at = 0;
+    bool there = true;
+    bool operator==(const Presence&) const = default;
+};
+// Host to all, as the game goes on (both ways, as its inputs): who is there is decided for every step before `until`
+// (Rollback::decided_until), as `presence` has it, the comings and goings of the last steps (with it whichever copy
+// comes first is enough: nothing waits for an Arrive).
+struct Decided {
+    std::uint16_t game = 0;
+    std::uint32_t until = 0;
+    std::vector<Presence> presence;
+    bool operator==(const Decided&) const = default;
+};
 struct Joining {
     std::uint16_t game = 0;
     std::uint8_t player = 0;
@@ -131,11 +146,12 @@ struct Joining {
     std::uint8_t delay = 0;
     std::vector<std::string> names;
     std::vector<std::uint8_t> state;
+    std::vector<Presence> presence;  // the changes of who is there the host has from the state's step on
     bool operator==(const Joining&) const = default;
 };
 
 using Message = std::variant<Hello, Refused, Welcome, Lobby, Start, Inputs, Status, Hash, Leave, Quit, Echo, Echoed,
-                             Arrive, Joining, Back>;
+                             Arrive, Joining, Back, Decided>;
 
 std::vector<std::uint8_t> encode(const Message& message);
 // None if the bytes aren't a whole message, or one this protocol doesn't know.

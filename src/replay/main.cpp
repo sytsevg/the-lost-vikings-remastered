@@ -25,6 +25,7 @@
 //                      refresh, and the entities then)
 //
 // Exit status 0 when every replay matched.
+#include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -247,7 +248,14 @@ int run_all(int argc, char** argv) {
         } else if (arg == "--saves") {
             options.saves = true;
         } else if (arg == "--rollback" && i + 1 < args.size()) {
-            options.rollback = static_cast<std::size_t>(std::stoul(std::string{args[++i]}));
+            const std::string_view steps = args[++i];
+            std::size_t back = 0;
+            if (const auto [end, error] = std::from_chars(steps.data(), steps.data() + steps.size(), back);
+                error != std::errc{} || end != steps.data() + steps.size()) {
+                print_usage();  // (not a number)
+                return EXIT_FAILURE;
+            }
+            options.rollback = back;
         } else if (arg == "--shot" && i + 1 < args.size()) {
             options.mode = Mode::kShot;
             options.shot = args[++i];

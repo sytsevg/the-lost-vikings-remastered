@@ -17,6 +17,8 @@
 
 namespace lvr::net {
 
+// kReliable: TCP. kFast, the game's own messages: UDP and TCP both, the same bytes, the first to come wins (UDP
+// while it gets through; it may drop, reorder or double them, and TCP is behind it).
 enum class Channel : std::uint8_t { kReliable, kFast };
 
 // What came since the last poll.
@@ -56,8 +58,11 @@ class Transport {
     std::optional<int> round_trip_ms(int peer) const;
     // Whether UDP gets through to the peer (else the fast messages go over TCP).
     bool fast_link(int peer) const;
-    // Tests: that many percent of the datagrams lost, both ways (SDL3_net's own simulation).
+    // Tests: that many percent of the datagrams lost, both ways (SDL3_net's own simulation); or nothing this one
+    // sends getting through at all, TCP too (a cable pulled); and how long a silent peer is waited for (10 s).
     void simulate_loss(int percent);
+    void simulate_cut();
+    void set_patience(std::uint64_t ms);
     bool hosting() const noexcept;
     std::uint16_t port() const noexcept;
 

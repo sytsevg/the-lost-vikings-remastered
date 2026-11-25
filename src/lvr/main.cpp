@@ -62,6 +62,7 @@
 #include "assets/assets.hpp"
 #include "image/png.hpp"
 #include "input/input.hpp"
+#include "lvr/build_id.hpp"
 #include "lvr/gpu.hpp"
 #include "lvr/menu.hpp"
 #include "lvr/online.hpp"
@@ -988,8 +989,10 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
                 const Pace pace{.across = part(Action::kLeft, Action::kRight, from_pads.walk),
                                 .up_down = part(Action::kUp, Action::kDown, from_pads.climb)};
                 std::uint16_t given = keyboard | pad;
-                if (std::exchange(give_up, false)) {
-                    given |= input::game_bits(bit(Action::kPause));  // the menu's: the original's pause box
+                // The menu's GIVE UP LEVEL and QUIT GAME: kept until a step takes this machine's input (online it
+                // can't be given while the game waits for the others' or lets them catch up).
+                if (give_up) {
+                    given |= input::game_bits(bit(Action::kPause));  // the original's pause box
                 }
                 const std::uint64_t step_began = SDL_GetPerformanceCounter();
                 const std::size_t pages_before = gpu != nullptr ? gpu->pages_set_up() : 0;
@@ -997,7 +1000,7 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
                                                .no = held[SDL_SCANCODE_N],
                                                .quit = held[SDL_SCANCODE_F10] ||
                                                        (alt && (held[SDL_SCANCODE_X] || held[SDL_SCANCODE_Q])) ||
-                                                       std::exchange(quit_box, false),
+                                                       quit_box,
                                                .effects = sound_keys.effects,
                                                .music = sound_keys.music,
                                                .previous_level = held[SDL_SCANCODE_F5],
@@ -1012,6 +1015,7 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
                     if (net->wants_input()) {
                         net->give(session.take_input(menu ? std::uint16_t{0} : given,
                                                      menu ? Play::MenuKeys{} : menu_keys, pace));
+                        give_up = quit_box = false;
                     }
                     const Screen again = frames.empty() ? Screen{} : frames.back();
                     std::optional<std::vector<Screen>> pictures = net->step();
@@ -1029,8 +1033,20 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
                     if (session.scene_loaded()) {
                         keyboard = 0;
                     }
+                    if (session.quit()) {  // the game ended (the host quit, or a scene can't be loaded): for everyone
+                        if (!session.error().empty()) {
+                            std::println(stderr, "vikings-remaster: {}", session.error());
+                            status = EXIT_FAILURE;
+                            why = session.error();
+                        } else if (!net->hosting()) {
+                            why = "the host ended the game";
+                        }
+                        running = false;
+                        over = net->hosting();  // (the host's game is his to end; the others back at their title)
+                    }
                     continue;
                 }
+                give_up = quit_box = false;
                 frames =
                     session.step(showcase != nullptr ? showcase->before_step(session, given) : given, menu_keys, pace);
                 if (report_slow) {
@@ -1161,13 +1177,24 @@ std::optional<int> parse_number(std::string_view text) {
 
 // An address to join a game online at (ADR-0012): the host's, and the port after a colon (none, or one that isn't a
 // port: the default).
+// An IPv6 address has colons of its own: with a port it is in brackets ([::1]:47230); without, as it is.
 std::pair<std::string, std::uint16_t> split_address(std::string_view address) {
     constexpr int kPorts = 65536;
-    const std::size_t colon = address.rfind(':');
-    const std::optional<int> port =
-        colon != std::string_view::npos ? parse_number(address.substr(colon + 1)) : std::nullopt;
-    return {std::string{port ? address.substr(0, colon) : address},
-            static_cast<std::uint16_t>(port && *port > 0 && *port < kPorts ? *port : kDefaultPort)};
+    std::string_view host = address;
+    std::optional<int> port;
+    if (address.starts_with('[')) {
+        if (const std::size_t close = address.find(']'); close != std::string_view::npos) {
+            host = address.substr(1, close - 1);
+            if (address.substr(close + 1).starts_with(':')) {
+                port = parse_number(address.substr(close + 2));
+            }
+        }
+    } else if (std::ranges::count(address, ':') == 1) {  // (more than one: an IPv6 address alone)
+        const std::size_t colon = address.find(':');
+        port = parse_number(address.substr(colon + 1));
+        host = port ? address.substr(0, colon) : address;
+    }
+    return {std::string{host}, static_cast<std::uint16_t>(port && *port > 0 && *port < kPorts ? *port : kDefaultPort)};
 }
 
 // Who this build and these game files are, for a game online's hello.
@@ -1176,7 +1203,7 @@ std::expected<NetGame::Identity, std::string> identity_of(const std::filesystem:
     if (!files) {
         return std::unexpected{files.error()};
     }
-    return NetGame::Identity{.build = LVR_BUILD,
+    return NetGame::Identity{.build = std::string{kBuild},
                              .game = files->release().exe_hash ^ files->release().data_content_hash,
                              .name = std::move(name)};
 }
@@ -1435,8 +1462,9 @@ int main(int argc, char* argv[]) try {
             std::println(stderr, "vikings-remaster: {}", files.error());
             return EXIT_FAILURE;
         }
-        const NetGame::Identity identity{
-            .build = LVR_BUILD, .game = files->release().exe_hash ^ files->release().data_content_hash, .name = name};
+        const NetGame::Identity identity{.build = std::string{kBuild},
+                                         .game = files->release().exe_hash ^ files->release().data_content_hash,
+                                         .name = name};
         auto opened = host_port ? NetGame::host(*host_port, players, slot, cheat, delay, identity)
                                 : NetGame::join(join_address, join_port, identity);
         if (!opened) {

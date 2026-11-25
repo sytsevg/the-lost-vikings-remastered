@@ -337,7 +337,9 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
 - **The transport** (M9's fifth part, built 2026-11-25): `src/net/transport.*` (target
   `lvr_transport`, on SDL3_net release-3.2.0 with `cmake/sdl_net.patch` for TCP_NODELAY and TCP_QUICKACK): host
   and join, a TCP connection and UDP to each client (introduced by a token over TCP), reliable and fast messages,
-  the fast ones over TCP while no UDP gets through, pings for the round trip. Tests over 127.0.0.1
+  the fast ones (the game's) by UDP and TCP both, the same bytes, the first to come wins (the user's design;
+  until the review's round they went by TCP only while UDP didn't get through), pings for the round trip, a peer
+  silent for 10 s gone (a cable pulled: its socket never closed). Tests over 127.0.0.1
   (`src/net/tests/test_transport.cpp`).
 - **M9's state on 2026-11-25:** all nine parts committed on the branch `m9-coop-online` (the whole of M9 for one
   review there: the user); main untouched. Not yet tried by hand: the title's HOST GAME and JOIN GAME, the lobby
@@ -403,6 +405,16 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   A/B, self-playing scenes ended by an action key, Enter or Escape only. In the tests: the original ignores a
   player's keys while his Viking is out of his view (`check_viking_in_view`), so after a switch wait for the view
   to come over.
+- **The ultrareview of M9 (2026-11-25)**, of the code alone (`m9-review` against `m9-review-base`, local
+  branches: main with M9's docs and tests, so it fitted the review's 8,000 lines), found ten, all fixed: the host
+  took any connection's inputs for any player, and a step from the network sized a vector (now his own only, and
+  no further than the window and 64 steps); a game ending online wasn't noticed; the menu's GIVE UP and QUIT were
+  lost when the step waited; one joining just after another wasn't told of the first's arrival (`Joining`'s
+  presence), and a guest could confirm steps before he knew of an arrival (`net::Decided`: who is there decided
+  before the host's next step, with the changes, both ways; `Rollback::decided_until`, `know_presence`; a
+  correction older than the states kept is out of step, not a wrong state loaded); a silent peer was never
+  dropped; IPv6 addresses; the build's ID (now a hash of the sources at every build, `cmake/build_id.cmake`); a
+  log's bad number threw; the cue ledger took one player's inventory click for another's.
 - **Too many tests (the user, 2026-11-25):** the unit tests and the replays' goldens, saves, copies and rollback
   are "way too many"; to be cut back a lot, later (a proposal first: which replay modes to merge or drop, which
   unit tests the replays already cover).

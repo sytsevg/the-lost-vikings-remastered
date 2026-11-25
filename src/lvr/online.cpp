@@ -36,6 +36,17 @@ int delay_for(int round_trip_ms) {
     return round_trip_ms < kNone ? 0 : (round_trip_ms < kOne ? 1 : 2);
 }
 
+// The changes of who is there from a step on, as the protocol sends them.
+std::vector<net::Presence> presence_from(const net::Rollback& rollback, std::uint32_t from) {
+    const std::vector<net::PresenceChange> scheduled = rollback.presence_from(from);
+    std::vector<net::Presence> changes;
+    changes.reserve(scheduled.size());
+    for (const net::PresenceChange& change : scheduled) {
+        changes.push_back({.player = static_cast<std::uint8_t>(change.player), .at = change.at, .there = change.there});
+    }
+    return changes;
+}
+
 }  // namespace
 
 NetGame::NetGame(std::unique_ptr<net::Transport> transport, Identity identity)
@@ -173,7 +184,8 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby() {
                      .names = names_,
                      .state = {},
                      .first_step = 0,
-                     .arrives = 0};
+                     .arrives = 0,
+                     .presence = {}};
     return joined_;
 }
 
@@ -209,7 +221,9 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby_event(
     }
     if (hosting()) {
         if (const auto* echoed = std::get_if<net::Echoed>(&*message)) {
-            if (const int player = player_of(event.peer); player > 0) {
+            if (const int player = player_of(event.peer);
+                player > 0 && echoed->sent != echo_taken_.at(static_cast<std::size_t>(player))) {
+                echo_taken_.at(static_cast<std::size_t>(player)) = echoed->sent;  // (the first of its copies)
                 engine_.at(static_cast<std::size_t>(player)) = static_cast<int>(now_ms() - echoed->sent);
             }
             return std::nullopt;
@@ -263,7 +277,8 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby_event(
                          .names = joining->names,
                          .state = joining->state,
                          .first_step = joining->step,
-                         .arrives = joining->arrives};
+                         .arrives = joining->arrives,
+                         .presence = joining->presence};
         return joined_;
     } else if (const auto* start = std::get_if<net::Start>(&*message)) {
         names_ = start->names;
@@ -276,7 +291,8 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby_event(
                          .names = start->names,
                          .state = {},
                          .first_step = 0,
-                         .arrives = 0};
+                         .arrives = 0,
+                         .presence = {}};
         return joined_;
     }
     return std::nullopt;
@@ -383,7 +399,9 @@ void NetGame::begin(Session& session) {
                                  .local = joined.player,
                                  .delay = joined.delay,
                                  .window = kWindow,
-                                 .first_step = joined.first_step};
+                                 .hash_every = 8,
+                                 .first_step = joined.first_step,
+                                 .decides_presence = hosting()};  // (the host's word on who is there, for a client)
     game_ = std::make_unique<CoopGame>(session, static_cast<std::size_t>(kWindow) + 2);
     rollback_ = std::make_unique<net::Rollback>(*game_, settings);
     acked_.assign(net::kMostPlayers, {joined.first_step, joined.first_step, joined.first_step});
@@ -406,9 +424,17 @@ void NetGame::begin(Session& session) {
                 gone_.at(static_cast<std::size_t>(player)) = player != player_;
             }
         }
+        for (const net::Presence& change : joined.presence) {  // the others' comings and goings to come
+            if (change.player < net::kMostPlayers && std::cmp_not_equal(change.player, player_)) {
+                (change.there ? rollback_->arrive(change.player, change.at)
+                              : rollback_->leave(change.player, change.at));
+                gone_.at(change.player) = !change.there;
+            }
+        }
         rollback_->arrive(player_, joined.arrives);
         catch_up_to_ = joined.arrives;
     }
+    decided_sent_ = joined.first_step;
     session.set_player_names(names_);
 }
 
@@ -455,7 +481,8 @@ void NetGame::welcome_under_way(int peer, const net::Hello& hello) {
                       .arrives = arrives,
                       .delay = static_cast<std::uint8_t>(delay_steps_),
                       .names = names_,
-                      .state = Session::state_bytes(game_->snapshot_before(from, rollback_->step()))},
+                      .state = Session::state_bytes(game_->snapshot_before(from, rollback_->step())),
+                      .presence = presence_from(*rollback_, from)},
          net::Channel::kReliable);
     rollback_->arrive(place, arrives);
     broadcast(net::Arrive{.player = static_cast<std::uint8_t>(place), .at = arrives, .name = names_.at(at)},
@@ -492,13 +519,22 @@ std::expected<void, std::string> NetGame::take(int peer, const net::Message& mes
             }
         }
     } else if (const auto* inputs = std::get_if<net::Inputs>(&message)) {
-        if (std::cmp_not_equal(inputs->player, player_) && inputs->game == game_number_) {  // (not a game before)
+        // A player's inputs: on the host from his own connection only (a welcomed one); on a client from the host,
+        // who passes everyone's on. And of this game, not one before.
+        const bool from_him = hosting() ? sender > 0 && std::cmp_equal(inputs->player, sender) : true;
+        if (from_him && std::cmp_not_equal(inputs->player, player_) && inputs->game == game_number_) {
             for (std::size_t i = 0; i < inputs->inputs.size(); ++i) {
                 rollback_->add_remote(inputs->player, inputs->first + static_cast<std::uint32_t>(i), inputs->inputs[i]);
             }
         }
     } else if (const auto* status = std::get_if<net::Status>(&message)) {
-        if (sender >= 0 && std::cmp_less(sender, acked_.size()) && status->game == game_number_) {
+        // (Its copy the other way, the same bytes, later: not taken again, as if it said where he is now.)
+        const bool again = sender >= 0 && std::cmp_less(sender, last_status_.size()) &&
+                           last_status_.at(static_cast<std::size_t>(sender)) == *status;
+        if (!again && sender >= 0 && std::cmp_less(sender, last_status_.size())) {
+            last_status_.at(static_cast<std::size_t>(sender)) = *status;
+        }
+        if (!again && sender >= 0 && std::cmp_less(sender, acked_.size()) && status->game == game_number_) {
             auto& acked = acked_.at(static_cast<std::size_t>(sender));
             for (std::size_t player = 0; player < acked.size(); ++player) {
                 // (Known for ever: that player away; it says nothing of what he gives once he comes.)
@@ -518,11 +554,24 @@ std::expected<void, std::string> NetGame::take(int peer, const net::Message& mes
     } else if (const auto* echo = std::get_if<net::Echo>(&message)) {
         send(peer, net::Echoed{.sent = echo->sent}, net::Channel::kFast);
     } else if (const auto* echoed = std::get_if<net::Echoed>(&message)) {
-        if (sender >= 0 && std::cmp_less(sender, engine_.size())) {
+        // (The first of its copies: the later one isn't the round trip.)
+        if (sender >= 0 && std::cmp_less(sender, engine_.size()) &&
+            echoed->sent != echo_taken_.at(static_cast<std::size_t>(sender))) {
+            echo_taken_.at(static_cast<std::size_t>(sender)) = echoed->sent;
             engine_.at(static_cast<std::size_t>(sender)) = static_cast<int>(now_ms() - echoed->sent);
         }
+    } else if (const auto* decided = std::get_if<net::Decided>(&message)) {
+        if (!hosting() && decided->game == game_number_) {
+            std::vector<net::PresenceChange> changes;
+            changes.reserve(decided->presence.size());
+            for (const net::Presence& change : decided->presence) {
+                changes.push_back({.player = change.player, .at = change.at, .there = change.there});
+            }
+            rollback_->know_presence(changes);  // (before the bound: the changes it covers known with it)
+            rollback_->decided_until(decided->until);
+        }
     } else if (const auto* hash = std::get_if<net::Hash>(&message)) {
-        if (hash->game == game_number_) {
+        if (hash->game == game_number_ && (!hosting() || (sender > 0 && std::cmp_equal(hash->player, sender)))) {
             rollback_->add_remote_hash(hash->player, hash->step, hash->hash);
         }
     } else if (const auto* leave = std::get_if<net::Leave>(&message)) {
@@ -613,6 +662,16 @@ std::expected<void, std::string> NetGame::flush() {
             }
         }
         send(peer, status, net::Channel::kFast);
+    }
+    // Who is there is decided before the host's own next step (an arrival is always after it): said the reliable way,
+    // so after any Arrive or Leave.
+    if (hosting() && rollback_->local_known() != decided_sent_) {
+        constexpr std::uint32_t kRecent = 256;  // the steps whose comings and goings go with it (far more than late)
+        decided_sent_ = rollback_->local_known();
+        broadcast(net::Decided{.game = game_number_,
+                               .until = decided_sent_,
+                               .presence = presence_from(*rollback_, decided_sent_ - std::min(decided_sent_, kRecent))},
+                  net::Channel::kFast);
     }
     if (const std::uint32_t now = now_ms(); now - echoed_at_ >= kEchoEvery) {  // the game's round trips
         echoed_at_ = now;

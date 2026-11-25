@@ -351,6 +351,16 @@ TEST_CASE("players: the cue ledger plays what a step asks once, however often ro
     CHECK(ledger.heard(11, {jump, jump}).play.size() == 1);
     ledger.confirm(11);
     CHECK(ledger.steps_kept() == 1);
+    // Two players' inventory clicks (nobody's entity, each heard by his own player) aren't one another's: the run
+    // again with the other's click as well plays just that one.
+    const SoundCue mine{.kind = SoundCue::Kind::kEffect, .value = 5, .entity = kNobody, .heard_by = 1};
+    SoundCue theirs = mine;
+    theirs.heard_by = 0;
+    (void)ledger.heard(12, {mine});
+    const CueLedger::Heard both = ledger.heard(12, {theirs, mine});
+    REQUIRE(both.play.size() == 1);
+    CHECK(both.play[0].heard_by == 0);
+    CHECK(both.undone.empty());
 }
 
 TEST_CASE("players: one who leaves hands his Viking to the first in its line, and his view keeps nothing active") {

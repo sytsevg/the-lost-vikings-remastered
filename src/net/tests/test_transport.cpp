@@ -67,7 +67,7 @@ struct Pair {
 
 }  // namespace
 
-TEST_CASE("transport: a client joins; messages go both ways, reliably and fast, and the ping comes back") {
+TEST_CASE("transport: a client joins; messages go both ways, reliably and fast (by UDP and TCP both), and the ping") {
     Pair pair;
     REQUIRE(pair.until([&] { return !pair.at_host.empty(); }));
     CHECK(pair.at_host.front().kind == Event::Kind::kJoined);
@@ -76,10 +76,12 @@ TEST_CASE("transport: a client joins; messages go both ways, reliably and fast, 
     pair.client->send(0, std::vector<std::uint8_t>{1, 2, 3}, Channel::kReliable);
     pair.client->send(0, std::vector<std::uint8_t>{4}, Channel::kFast);
     pair.host->send(client, std::vector<std::uint8_t>{9, 9}, Channel::kFast);
+    // (A fast one comes twice, by UDP and by TCP, the same bytes: what takes it takes the first.)
     REQUIRE(pair.until(
-        [&] { return pair.messages(pair.at_host).size() == 2 && pair.messages(pair.at_client).size() == 1; }));
-    CHECK(pair.messages(pair.at_host).front() == std::vector<std::uint8_t>{1, 2, 3});
-    CHECK(pair.messages(pair.at_client).front() == std::vector<std::uint8_t>{9, 9});
+        [&] { return pair.messages(pair.at_host).size() == 3 && pair.messages(pair.at_client).size() == 2; }));
+    CHECK(std::ranges::count(pair.messages(pair.at_host), std::vector<std::uint8_t>{1, 2, 3}) == 1);
+    CHECK(std::ranges::count(pair.messages(pair.at_host), std::vector<std::uint8_t>{4}) == 2);
+    CHECK(std::ranges::count(pair.messages(pair.at_client), std::vector<std::uint8_t>{9, 9}) == 2);
     REQUIRE(pair.until([&] { return pair.client->round_trip_ms(0).has_value(); }));
     CHECK(*pair.client->round_trip_ms(0) >= 0);
 }
@@ -106,6 +108,16 @@ TEST_CASE("transport: a client that goes is seen to go") {
     Pair pair;
     REQUIRE(pair.until([&] { return !pair.at_host.empty(); }));
     pair.client.reset();
+    REQUIRE(pair.until([&] {
+        return std::ranges::any_of(pair.at_host, [](const Event& event) { return event.kind == Event::Kind::kLeft; });
+    }));
+}
+
+TEST_CASE("transport: a client that falls silent, its connection not closed, is seen to go after a while") {
+    Pair pair;
+    REQUIRE(pair.until([&] { return !pair.at_host.empty(); }));
+    pair.host->set_patience(1000);
+    pair.client->simulate_cut();  // (a cable pulled: nothing it sends gets through, TCP included)
     REQUIRE(pair.until([&] {
         return std::ranges::any_of(pair.at_host, [](const Event& event) { return event.kind == Event::Kind::kLeft; });
     }));

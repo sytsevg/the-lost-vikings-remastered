@@ -37,6 +37,7 @@ class NetGame {
         std::vector<std::uint8_t> state;
         std::uint32_t first_step = 0;
         std::uint32_t arrives = 0;
+        std::vector<net::Presence> presence;  // the others' comings and goings the host has from that step on
     };
     // Who this build and these game files are, as a client says in its hello.
     struct Identity {
@@ -143,6 +144,8 @@ class NetGame {
     // The game's round trips: this machine's, by player.
     std::vector<std::optional<int>> engine_;
     std::vector<std::pair<std::uint32_t, std::uint64_t>> hashes_;  // this machine's, as they were sent
+    std::vector<std::optional<net::Status>> last_status_ = std::vector<std::optional<net::Status>>(net::kMostPlayers);
+    std::array<std::uint32_t, net::kMostPlayers> echo_taken_{};  // by player: the echo last taken (not its copy)
     std::filesystem::path log_folder_;
     Identity identity_;
     std::optional<Joined> joined_;
@@ -151,6 +154,7 @@ class NetGame {
     int countdown_ = 0;                // a client: the host's countdown, as the lobby says
     std::uint32_t lobby_sent_at_ = 0;  // host: when the lobby was last told
     std::uint32_t catch_up_to_ = 0;    // joining under way: the steps before his arrival, run unseen at once
+    std::uint32_t decided_sent_ = 0;   // host: the step before which presence was last said to be decided
     int slot_ = 0;
     int player_ = 0;
     std::uint32_t hash_sent_ = 7;  // the next step whose hash is still to be sent

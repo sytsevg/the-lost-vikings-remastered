@@ -47,7 +47,9 @@ TEST_CASE("protocol: every message comes back as it was written") {
                 .arrives = 777,
                 .delay = 1,
                 .names = {"A", "B", "LATE"},
-                .state = std::vector<std::uint8_t>(70000, 0xab)},
+                .state = std::vector<std::uint8_t>(70000, 0xab),
+                .presence = {{.player = 1, .at = 780, .there = true}, {.player = 2, .at = 777, .there = true}}},
+        Decided{.game = 7, .until = 4321, .presence = {{.player = 2, .at = 4300, .there = false}}},
     };
     for (const Message& message : all) {
         const std::vector<std::uint8_t> bytes = encode(message);

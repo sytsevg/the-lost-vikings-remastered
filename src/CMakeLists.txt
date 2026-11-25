@@ -206,11 +206,17 @@ if(LVR_BUILD_APPS)
     lvr_target_defaults(lvr_online)
 
     # --- vikings-remaster: the game on the engine ---
-    # The build's commit: two machines play online only with the same (ADR-0012).
-    execute_process(COMMAND git rev-parse --short HEAD WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-                    OUTPUT_VARIABLE lvr_commit OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    # The build's ID, a hash of the game's sources worked out at every build: two machines play online only with
+    # the same (ADR-0012; cmake/build_id.cmake).
+    set(lvr_build_id ${CMAKE_BINARY_DIR}/generated/lvr/build_id.hpp)
+    add_custom_target(lvr_build_id
+        COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DOUTPUT=${lvr_build_id}
+                -P ${CMAKE_SOURCE_DIR}/cmake/build_id.cmake
+        BYPRODUCTS ${lvr_build_id}
+        VERBATIM)
     add_executable(vikings-remaster lvr/main.cpp lvr/showcase.cpp)
-    target_compile_definitions(vikings-remaster PRIVATE LVR_BUILD="${lvr_commit}")
+    add_dependencies(vikings-remaster lvr_build_id)
+    target_include_directories(vikings-remaster PRIVATE ${CMAKE_BINARY_DIR}/generated)
     target_link_libraries(vikings-remaster PRIVATE lvr::session lvr::online lvr::input lvr::image lvr::gpu SDL3::SDL3)
     lvr_target_defaults(vikings-remaster)
 
