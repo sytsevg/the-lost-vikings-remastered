@@ -98,6 +98,23 @@ PNG), and save states.
   keys) is written at the start of each tick, so both sides get exactly the same input; key events through the
   keyboard controller are for checks of the keyboard handler itself.
 
+## By hand, in a window (on the host)
+The same DOSBox-X and working copy, played by hand, from the repository's root:
+
+```sh
+SDL_VIDEODRIVER=wayland build/dosbox/bin/dosbox-x -conf tools/dosbox/dosbox-x.conf -set "cpu turbo=false" -nomenu \
+    -c "mount c build/dosbox/game" -c "c:" -c "VIKINGS.EXE"
+```
+
+- `SDL_VIDEODRIVER=wayland`: DOSBox-X asks SDL for X11 on Linux unless told otherwise, and its SDL2 here is built
+  without X11 (ADR-0013); without it, it stops at "Can't init SDL x11 not available". In the environment, not in
+  the config: the scripts start the same config headless with `SDL_VIDEODRIVER=dummy`, which a driver named in the
+  config would override.
+- `cpu turbo=false`: the config fast-forwards (for the scripts); played by hand the game would run some 5 times
+  too fast.
+- Another DOSBox with the same folder may stop at "Copy protection failure": the working copy's fingerprint is this
+  build's (above).
+
 ## Lockstep comparison
 
 `tools/lockstep.py STEPS [--hold WORD] [--key STEP[-END] WORD ...] [--held STEP[-END] SCANCODE ...] [--typed STEP

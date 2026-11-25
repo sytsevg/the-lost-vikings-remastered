@@ -477,6 +477,10 @@ int Play::change_scene(const std::function<void()>& picture) {
     }
     world.cues.push_back(SoundCue{
         .kind = SoundCue::Kind::kMusicAction, .value = leaving_level.music.at_end, .tune = leaving_level.music.tune});
+    // The fade shows the scene as it was before the pass below emptied it: the original's fade (0FA0) only darkens
+    // the palette and flips its two pages, which still hold the last pictures drawn (seen in DOSBox: everyone stays
+    // there while it goes dark).
+    fading_out_ = world;
     world.ending = true;
     for (int slot = 0; slot < world.slots(); ++slot) {
         if (Entity* entity = world.at(slot)) {
@@ -492,6 +496,7 @@ int Play::change_scene(const std::function<void()>& picture) {
         picture();
     }
     fade = kFadeSteps;
+    fading_out_.reset();
 
     // The next scene: the game-over scene, the level again or the logos after it, or what the scene itself says.
     // Asked for both in the same tick, the scene's own choice wins: the last Viking dying at the exit starts the

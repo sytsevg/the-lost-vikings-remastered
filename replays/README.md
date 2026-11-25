@@ -13,6 +13,13 @@ The goldens here were recorded from the reference engine (the original's own byt
 compared with the original in DOSBox), which was retired on 2026-11-23 once the engine matched it on every
 replay. They are what is left of it: record one again only for a new replay, never to make a difference go away.
 
+One exception, decided by the user (2026-11-24): **the fade-outs.** The goldens held our renderer's picture of the
+original's state, and when a scene ends the original removes every entity before it fades. But its fade (`0FA0`)
+only darkens the palette and flips its two pages, which still hold the last pictures drawn: on its screen everyone
+stays there while it goes dark (the user saw it in DOSBox). The engine now fades the scene as it was last shown
+(`Play::shown`), and the 102 goldens that change scene were recorded again from it. Compared refresh by refresh
+with the ones before: 885 runs of 69 or 70 refreshes changed (a fade-out is 70), nothing else, sounds included.
+
 A difference is reported with its first refresh and written to `gamedata/previews/match/` (`--out DIR`):
 `NAME-shown.png` (what the engine shows at that refresh) and `NAME.txt` (the refresh, and the entities then:
 slot, kind, position, flags). The golden keeps only hashes, so to see what it should look like, run the commit

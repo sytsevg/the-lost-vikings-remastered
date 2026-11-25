@@ -66,20 +66,26 @@
   so after a changed item it goes on from Olaf's chosen square. Kept (found by a playtest, checked in lockstep).
   [`original/menus.md`](original/menus.md)
 - **The game-over lightning is never erased:** its two frames pile up over the three video pages. Not kept (one of
-  the two known picture differences). [`original/drawing.md`](original/drawing.md)
+  the known picture differences). [`original/drawing.md`](original/drawing.md)
 - **A stray dot in Erik's portrait when he is gone.** The routine that makes a newly chosen Viking blink (`07A2`)
   first shows "the one chosen before" again; at a scene's start there was none (slot −1), and it reads his
   sprite's pieces from a byte before the first slot's. In the village's scene of a new game the first slot's sprite
   starts at piece 24, the word it reads is `0x3000`, and its two writes land `0x3000` past the pieces' tables: in
   the HUD's portraits, which are loaded once (`ds:344D` loses a bit, in Baleog's; `ds:414D` becomes 2, in Erik's
   as he is gone). From then on that portrait has one white pixel at (1, 2); a game started by password has none.
-  Found 2026-11-24 with `tools/lockstep.py`, traced in DOSBox. Not kept (the other known picture difference; the
+  Found 2026-11-24 with `tools/lockstep.py`, traced in DOSBox. Not kept (another known picture difference; the
   user's rule: a fault like this isn't copied).
 - **The health the game-over scene shows is the HUD's bookkeeping,** not the Vikings': the scene reads the words
   the HUD last recorded. [`original/game-flow.md`](original/game-flow.md#slots)
 - **Header flag `0x04` is set for the game-over scene and tested by nothing.** Several header bytes are the same in
   45 of 47 headers and read by no code found. [`formats/unknowns.md`](formats/unknowns.md)
 - **44 of 56 packed sprite sets end in 640 bytes of `0xFF`,** the size of the largest frame; nothing reads them.
+
+- **A scene's fade-out can flicker.** The fade (`0FA0`) draws nothing: each of its 70 steps darkens the palette
+  and flips between the two pages, which hold the last two pictures drawn before the scene ended. Where something
+  moved in that last tick, the screen alternates between the two while it goes dark (seen in DOSBox, 2026-11-24).
+  Not kept: the engine fades the last picture shown, with everyone still in it (`Play::shown`).
+  [`original/drawing.md`](original/drawing.md#palette)
 
 ## The scenes and the kinds (found while writing the engine)
 All kept: the engine does the same, and the replays check it ([`HANDOVER.md`](HANDOVER.md)).

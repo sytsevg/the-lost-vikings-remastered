@@ -67,6 +67,16 @@ renderer must still make the Classic picture; under Remaster rules a visual may 
 The rest of the list is in [`ROADMAP.md`](ROADMAP.md): events in animations and effects on them, lights and
 shaders, art packs, sound placed by position.
 
+- **A scene's fade-out shows everyone (fixed, 2026-11-24; both rules).** The end of a scene removes every entity
+  (the original's game-over pass) before the 70 fade pictures, which were drawn from that empty world. The
+  original's fade (`0FA0`) only darkens the palette and flips its two pages, which still hold the last pictures
+  drawn; the user saw in DOSBox that everyone stays while it goes dark. `Play::change_scene` now keeps a copy of
+  the world from before the pass, and `Play::shown()` gives it to what draws (`Session::picture`, `lv-replay`)
+  until the fade is over; the pass and its sounds are where they were. The user decided to record the goldens of
+  the 102 replays that change scene again for it ([`replays/README.md`](../replays/README.md)): compared refresh
+  by refresh, only fade-out refreshes changed. (The original flips between its two pages, so where something
+  moved in the last tick it alternates between the last two pictures, seen in DOSBox too; ours holds the last
+  one: a quirk not kept.)
 - **The jumble at the top left (fixed, 2026-11-24).** Zooming out while the world holds (every level opens with
   its password box, which waits for a key) created what the larger view showed at once; their first turn, where
   their animations put their pieces in place, only comes with the next tick. Meanwhile their pieces were drawn
@@ -137,14 +147,6 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
 
 ## Open
 
-- **A scene's fade-out shows no entities** (both rules; the user, 2026-11-24): when a level ends, the Vikings
-  and every other entity are gone before the picture darkens. `Play::change_scene` runs the original's
-  game-over pass first (every entity's turn as on leaving the active area: each is removed and its pieces let
-  go) and then draws each of the 70 fade pictures again from that emptied world. The original's fade (`0FA0`)
-  only darkens the palette and flips its two pages, which still hold the last pictures drawn, so it keeps
-  showing everyone. A fix: the fade drawn from the picture before the pass. It changes the goldens of every
-  replay that changes scene (the goldens hold our renderer's picture of the original's state); not checked in
-  DOSBox (the user dropped that).
 - **Frames now and then a refresh or more late** in the window (the user's AMD Radeon 890M, RADV), mostly noticed
   while moving. `--slow-frames` shows the time is spent waiting for the window's next picture (the card or the
   compositor holding frames), not in the game's step, its drawing, or its uploads; it was there before smooth
@@ -202,7 +204,8 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   Rebuild the release preset before asking the user to try something: `goldens.sh` only builds the replay tool.
 - **A golden is never recorded again to make a difference go away.** There is no oracle left to record from: a
   difference is a change of behaviour until shown otherwise. `lv-replay` writes what the engine shows at the
-  first refresh that differs; run the commit before the change the same way to see what it showed before.
+  first refresh that differs; run the commit before the change the same way to see what it showed before. The
+  one exception so far is the user's: the fade-outs, once DOSBox showed the original's ([`replays/README.md`](../replays/README.md)).
 - **Something new or in doubt about the original:** `tools/lockstep.py` plays the same input to the original in
   DOSBox and to the engine and compares the pictures ([`dosbox.md`](dosbox.md)). It starts at the first logo;
   with the cheat's password typed, F6 goes on a level at a time, and `--place` puts the Vikings where they are
@@ -224,6 +227,7 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
 
 ## Known differences from the original
 
-Two, both meant ([`quirks.md`](quirks.md), "Drawing"): the game-over lightning that the original never erases, and
-a stray white dot in Erik's portrait when he is gone. `tools/lockstep.py` reports the second as one pixel at
+Three, all meant ([`quirks.md`](quirks.md), "Drawing"): the game-over lightning that the original never erases, a
+stray white dot in Erik's portrait when he is gone, and a scene's fade-out, which holds the last picture where the
+original may flicker between its last two. `tools/lockstep.py` reports the second as one pixel at
 (46, 197) whenever Erik is gone in a game begun from the title's first choice (not by password).

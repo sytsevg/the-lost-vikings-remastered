@@ -32,7 +32,10 @@ all 256 colours the same way: the fades.) **The fades** (every slot load, `1080`
 69, and `0F5D` after the level start's tick, steps 70 down to 0, one refresh each (70 + 71, about 2.4 s): each
 step is put in the first tint and every one of the 256 colours mixed by `0F03` (the step or-ed with the second
 tint, subtracted, at least 0), then flipped. In between, the faded palette stays uploaded, so the level start's
-four draws are black. The engine darkens the palette by the step at each of those refreshes (`Play::fade`).
+four draws are black. The engine darkens the palette by the step at each of those refreshes (`Play::fade`). The
+fade out draws nothing: the pages still hold the last pictures, from before the game-over pass removed everyone,
+so everyone stays on screen while it goes dark (seen in DOSBox, 2026-11-24). The engine draws those refreshes
+from the world as it was before that pass (`Play::shown`).
 
 ## Order
 0. **The shown view** (the flip, `6775`): the camera plus the shake's offsets (`039E` across, `03A0` down; counted

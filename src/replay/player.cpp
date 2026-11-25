@@ -57,7 +57,7 @@ Refresh LvrPlayer::picture() {
     const LoadedLevel& loaded = play_.loaded();
     // (The painter is the same from scene to scene: the original never clears the buffer its packed frames are
     // unpacked into, so a piece that hasn't had a frame of its own yet shows what the last one left there.)
-    View view = view_of(play_.world, loaded, painter_, pictures_);
+    View view = view_of(play_.shown(), loaded, painter_, pictures_);
     if (play_.fade) {  // between scenes every colour is darkened
         view.darken = {*play_.fade, *play_.fade, *play_.fade};
         view.darken_all = true;

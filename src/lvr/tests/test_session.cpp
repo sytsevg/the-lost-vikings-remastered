@@ -620,3 +620,36 @@ TEST_CASE("real data: Remaster rules' own keys act only in a level being played;
     REQUIRE(vanilla);
     CHECK_FALSE((*vanilla)->takes_play_keys());
 }
+
+TEST_CASE("real data: a scene fades out as it was last shown, with everyone in it", "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    for (const Rules rules : {Rules::kVanilla, Rules::kRemaster}) {
+        auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, rules);
+        REQUIRE(opened);
+        Session& session = **opened;
+        session.cheat();
+        for (int step = 0; step < 4; ++step) {  // the password's box, answered
+            (void)session.step(step == 2 ? key::kF : std::uint16_t{0});
+        }
+        for (int step = 0; step < 10; ++step) {
+            (void)session.step(key::kRight);
+        }
+        // The level ends (the cheat's next level key, acted on after the tick); the next step fades it out.
+        const std::vector<Screen> last = session.step(0, Play::MenuKeys{.next_level = true});
+        REQUIRE_FALSE(last.empty());
+        const std::vector<Screen> loading = session.step(0);
+        REQUIRE(session.scene_loaded());
+        // Its first picture (after the last one shown again for the refreshes the step has more than pictures)
+        // isn't darkened yet: it is the last one shown, the Vikings and everything else still there, and stays so
+        // as it darkens (the original's fade only darkens what its pages hold).
+        const auto first = std::ranges::find_if(loading, [](const Screen& screen) { return screen.fading; });
+        REQUIRE(first != loading.end());
+        REQUIRE(std::distance(first, loading.end()) > 30);
+        CHECK(first->pixels == last.back().pixels);
+        CHECK(first->vikings.at(0).there);
+        CHECK(first[30].vikings.at(0).there);
+        CHECK(first[30].palette != last.back().palette);  // darker by then
+    }
+}

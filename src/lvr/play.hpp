@@ -84,6 +84,9 @@ class Play {
 
     // What the world shown now was loaded from.
     const LoadedLevel& loaded() const noexcept { return *loaded_; }
+    // The world a picture shows: `world`, but while a scene fades out the world as it was before the scene's end
+    // removed everyone (the original's fade only darkens what it last showed: everyone stays there, still).
+    const World& shown() const noexcept { return fading_out_ ? *fading_out_ : world; }
     // The pictures to draw it with: the scene's, or (once the title's menu has cleared the screen) a black screen
     // with what the scene showed in the HUD's place a little below its top.
     const SceneGraphics& graphics();
@@ -215,6 +218,11 @@ class Play {
     bool playing_demo() const noexcept { return playback_; }
 
     World world;
+
+  private:
+    std::optional<World> fading_out_;  // while the scene fades out: what it fades (shown()); beside `world`, as aligned
+
+  public:
     // The user's SNES image, for the scenes' backdrops (Remaster rules; load_slot). Must outlive the play.
     const assets::SnesRom* snes = nullptr;
     // The keys the menus read as held, apart from the keyboard word: set before a step.

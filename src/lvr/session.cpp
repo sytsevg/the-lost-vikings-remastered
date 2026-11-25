@@ -298,7 +298,8 @@ Screen Session::picture() {
     const LoadedLevel& loaded = play_.loaded();
     // (The painter is the same from scene to scene: the original never clears the buffer its packed frames are
     // unpacked into, so a piece that hasn't had a frame of its own yet shows what the last one left there.)
-    View view = view_of(play_.world, loaded, painter_, pictures_);
+    const World& world = play_.shown();
+    View view = view_of(world, loaded, painter_, pictures_);
     if (play_.fade) {  // between scenes every colour is darkened
         view.darken = {*play_.fade, *play_.fade, *play_.fade};
         view.darken_all = true;
@@ -309,16 +310,16 @@ Screen Session::picture() {
     screen.level_x = view.camera_x;
     screen.level_y = view.camera_y;
     screen.fading = play_.fade.has_value();
-    screen.motion.scroll = {play_.world.camera.x, play_.world.camera.y};
+    screen.motion.scroll = {world.camera.x, world.camera.y};
     screen.motion.view = {view.width, view.height};
     screen.motion.sprites.reserve(view.sprites.size());
     for (const DrawnSprite& sprite : view.sprites) {
         screen.motion.sprites.push_back(sprite.moves);
     }
-    for (int who = 0; who < kVikingSlots && play_.world.has_vikings; ++who) {
-        if (const Entity* viking = play_.world.at(who); viking != nullptr && !viking->dead) {
+    for (int who = 0; who < kVikingSlots && world.has_vikings; ++who) {
+        if (const Entity* viking = world.at(who); viking != nullptr && !viking->dead) {
             screen.vikings.at(static_cast<std::size_t>(who)) = {
-                .x = viking->x, .y = viking->y, .there = true, .played = who == play_.world.current_viking};
+                .x = viking->x, .y = viking->y, .there = true, .played = who == world.current_viking};
         }
     }
     return screen;
