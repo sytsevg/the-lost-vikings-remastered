@@ -384,26 +384,25 @@ std::optional<std::string> NetGame::waiting_for() const {
 }
 
 std::optional<int> NetGame::network_ms(int player) const {
-    if (player == player_) {
-        return std::nullopt;
+    if (player <= 0 || player >= net::kMostPlayers) {
+        return std::nullopt;  // (the host: nothing to measure)
     }
-    if (const int peer = peer_of(player); peer >= 0) {
-        return transport_->round_trip_ms(peer);
+    if (hosting()) {
+        const int peer = peer_of(player);
+        return peer >= 0 ? transport_->round_trip_ms(peer) : std::nullopt;
     }
-    const std::uint16_t reported =
-        player >= 0 && player < net::kMostPlayers ? host_network_.at(static_cast<std::size_t>(player)) : net::kUnknown;
+    const std::uint16_t reported = host_network_.at(static_cast<std::size_t>(player));
     return reported != net::kUnknown ? std::optional<int>{reported} : std::nullopt;
 }
 
 std::optional<int> NetGame::engine_ms(int player) const {
-    if (player == player_ || player < 0) {
+    if (player <= 0 || player >= net::kMostPlayers) {
         return std::nullopt;
     }
-    if (peer_of(player) >= 0) {
+    if (hosting()) {
         return std::cmp_less(player, engine_.size()) ? engine_.at(static_cast<std::size_t>(player)) : std::nullopt;
     }
-    const std::uint16_t reported =
-        player < net::kMostPlayers ? host_engine_.at(static_cast<std::size_t>(player)) : net::kUnknown;
+    const std::uint16_t reported = host_engine_.at(static_cast<std::size_t>(player));
     return reported != net::kUnknown ? std::optional<int>{reported} : std::nullopt;
 }
 

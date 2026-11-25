@@ -117,7 +117,11 @@ TEST_CASE("real data: a host and a client play level 1 online, the same game", "
         std::this_thread::sleep_for(std::chrono::milliseconds{2});
     }
     CHECK(sessions[0]->state_hash() == sessions[1]->state_hash());
+    // The round trips to the host, as the host measures them, the same on both machines; the host's own: none.
     CHECK(host->network_ms(1).has_value());
     CHECK(host->engine_ms(1).has_value());
-    CHECK_FALSE(host->network_ms(0).has_value());  // his own
+    CHECK((*client)->network_ms(1).has_value());
+    CHECK((*client)->engine_ms(1).has_value());
+    CHECK_FALSE(host->network_ms(0).has_value());
+    CHECK_FALSE((*client)->network_ms(0).has_value());
 }

@@ -61,8 +61,8 @@ class Menu {
     // the first page's lines.
     struct PlayerLine {
         std::string name;
-        // His round trips ("23 MS"; "-" where it isn't known): the network's ("YOU" for this machine's player) and
-        // the game's.
+        // His round trips to the host ("23 MS"; "-" for the host, or where it isn't known): the network's and the
+        // game's.
         std::string network;
         std::string engine;
         bool operator==(const PlayerLine&) const = default;

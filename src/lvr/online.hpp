@@ -69,9 +69,10 @@ class NetGame {
     // Since when it has been waiting for a player's input (refreshes), and for whom (his name); none: it isn't.
     std::optional<std::string> waiting_for() const;
     int waited() const noexcept { return waited_; }
-    // The round trip to a player, in milliseconds: the network's (answered at once by the transport's thread) and
-    // the game's (answered by his game as it next takes what came, once a refresh). A client has the host's to the
-    // other clients from the host. None: not measured yet, or this machine's own player.
+    // A player's round trip to the host, in milliseconds, as the host measures it (the same on every machine: a
+    // client has it from the host's Status): the network's (answered at once by the transport's thread) and the
+    // game's (answered by the other game as it next takes what came, once a refresh). None: the host himself, or
+    // not measured yet.
     std::optional<int> network_ms(int player) const;
     std::optional<int> engine_ms(int player) const;
     int player() const noexcept { return player_; }

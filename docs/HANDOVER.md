@@ -355,7 +355,8 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   shows two round trips (the user): NETWORK, the transport's pings, answered at once by its own thread
   (`Transport::Inner::pump_once`, every millisecond, every socket under one lock; `SDL_CleanupTLS` at its end), and
   GAME, an `Echo` the other game's loop answers once a refresh (on one machine 17 or 33 ms: two windows on one
-  monitor refresh together); a client has the host's to the other clients through `Status`. A step that changes the scene waits for every
+  monitor refresh together); each guest's round trips to the host, as the host measures them, the same on every
+  screen (the user): a client has them from the host's `Status`, its own too, and the host's row has none. A step that changes the scene waits for every
   input (`net::Game::waits_for_inputs`). Tested: a real-data test of two sessions under rollback over a lossy
   simulated network against one with every input (`test_coop.cpp`), a host and a client in one process through the
   real transport (`test_online.cpp`), and two `--dump` processes over 127.0.0.1 (stills in
