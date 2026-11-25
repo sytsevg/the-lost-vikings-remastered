@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <string_view>
 
 #include "lvr/dialogue.hpp"
 #include "lvr/enemies.hpp"
@@ -33,17 +34,21 @@ class Logo : public Entity {
 };
 
 // The title. Left alone for 220 ticks it shows a demo. Enter or F opens the menu (the screen dims, clears and
-// comes back with it): a new game, a password, or quit, chosen with up and down, or N, P and Q. The password's
+// comes back with it): a new game, a password, or quit, chosen with up and down, or N, P and Q. Under Remaster
+// rules offline also hosting a game online and joining one (ADR-0012), before quitting, or H and J: their pages are
+// the Remaster menu's, over the title (the front end opens them, World::Title::online). The password's
 // four letters are typed, or turned with up and down, left and right moving between them; a level's password
 // starts that level.
 class Title : public Entity {
   public:
     void update(World& world) override {
         const bool confirm = (world.host().pressed & key::kEnter) != 0 || (world.host().pressed & key::kF) != 0;
+        world.title.online = 0;  // (asked for one tick: the front end has opened its page meanwhile)
+        const int last = choices(world) - 1;
         switch (s.state) {
             case State::kStart:
                 world.play(*this, anim::kTitleStands);
-                world.animate(*this);
+                animate_moved(world);
                 world.host().viking = 0;
                 count_down_from(kPatience);
                 s.state = State::kTitle;
@@ -64,8 +69,7 @@ class Title : public Entity {
                     return;
                 }
                 world.title.screen_cleared = true;
-                s.choice = 0;
-                world.play(*this, anim::kTitlePointerAtChoice.at(0));
+                point_at(world, 0, row_of(world, 0));
                 s.step = 0;
                 set_tint(world, kBrightening.at(0));
                 s.state = State::kBrightening;
@@ -79,9 +83,16 @@ class Title : public Entity {
                 return show_menu(world);
             case State::kMenuComing:
                 world.colour_boxes(0);
-                put(world, 0xff, 14, 14);
-                put(world, 0x100, 14, 16);
-                put(world, 0x110, 14, 18);
+                put(world, 0xff, 14, row_of(world, 0));
+                put(world, 0x100, 14, row_of(world, 1));
+                if (last == kHostJoinQuit) {
+                    write(world, "HOST GAME", 14, row_of(world, 2));
+                    write(world, "JOIN GAME", 14, row_of(world, 3));
+                }
+                put(world, 0x110, 14, row_of(world, last));
+                if (last == kHostJoinQuit) {  // (from the password's screen: the menu's rows again)
+                    point_at(world, s.choice, row_of(world, s.choice));
+                }
                 s.state = State::kMenuShown;
                 return;
             case State::kMenuShown:
@@ -92,11 +103,9 @@ class Title : public Entity {
                 break;
             case State::kMenu:
                 if ((world.host().pressed & key::kUp) != 0) {
-                    s.choice = s.choice == 0 ? 2 : s.choice - 1;
-                    chosen(world);
+                    chosen(world, s.choice == 0 ? last : s.choice - 1);
                 } else if ((world.host().pressed & key::kDown) != 0) {
-                    s.choice = s.choice == 2 ? 0 : s.choice + 1;
-                    chosen(world);
+                    chosen(world, s.choice == last ? 0 : s.choice + 1);
                 } else if (world.typed == 'N' ||
                            (world.typed != 'P' && world.typed != 'Q' && confirm && s.choice == 0)) {
                     world.sound(*this, effect::kTitleChosen);
@@ -104,10 +113,15 @@ class Title : public Entity {
                     return;
                 } else if (world.typed == 'P' || (world.typed != 'Q' && confirm && s.choice == 1)) {
                     world.sound(*this, effect::kTitlePassword);
-                    world.play(*this, anim::kTitlePointerAtChoice.at(1));
-                    world.animate(*this);
+                    point_at(world, 1, kPasswordRow);  // (the password's screen: the original's rows)
+                    animate_moved(world);
                     s.state = State::kPasswordComing;
                     return;
+                } else if (const int online = online_chosen(world, confirm, last); online != 0) {
+                    world.sound(*this, effect::kTitleChosen);
+                    point_at(world, online == 1 ? 2 : 3, row_of(world, online == 1 ? 2 : 3));
+                    world.title.online = static_cast<std::uint8_t>(online);
+                    countdown = kPatience;
                 } else if (world.typed == 'Q' || confirm) {
                     world.title.quit = true;
                     return;
@@ -123,8 +137,11 @@ class Title : public Entity {
                 return;
             case State::kPasswordComing:
                 world.play(*this, anim::kTitlePasswordStands);
-                world.animate(*this);
+                animate_moved(world);
                 world.colour_boxes(0);
+                for (int row = 12; last == kHostJoinQuit && row <= 20; row += kRowsApart) {
+                    put(world, 0x101, 14, row);  // (the five choices' rows, cleared first)
+                }
                 put(world, 0x101, 14, 14);
                 put(world, 0x100, 14, 16);
                 put(world, 0x101, 14, 18);
@@ -152,13 +169,12 @@ class Title : public Entity {
                     return;
                 }
                 world.clear_text();
-                s.choice = 1;
-                world.play(*this, anim::kTitlePointerAtChoice.at(1));
+                s.choice = 1;  // (pointed at as the menu comes)
                 return show_menu(world);
             case State::kDone:
                 return;
         }
-        world.animate(*this);
+        animate_moved(world);
     }
 
   private:
@@ -183,6 +199,35 @@ class Title : public Entity {
     static constexpr std::uint16_t kPatience = 220;
     static constexpr std::uint16_t kBackspace = 0x80;  // as typed characters
     static constexpr std::uint16_t kReturn = 0x81;
+    // The menu's choices: the original's three, two rows apart; under Remaster rules offline, HOST GAME and JOIN
+    // GAME between PASSWORD and QUIT TO DOS.
+    static constexpr int kRowsApart = 2;
+    static constexpr int kHostJoinQuit = 4;
+    static constexpr int kPasswordRow = 16;
+    // A choice's row: the original's from 14 on; with five, from 12 (the text layer ends at row 21).
+    static int row_of(const World& world, int choice) {
+        return (choices(world) == 5 ? 12 : 14) + (choice * kRowsApart);
+    }
+    static int choices(const World& world) { return world.rules == Rules::kRemaster && !world.online ? 5 : 3; }
+    // HOST GAME (1) or JOIN GAME (2) chosen: by their keys, or confirmed on their line; else 0.
+    int online_chosen(const World& world, bool confirm, int last) const {
+        if (last != kHostJoinQuit || world.typed == 'Q' || world.typed == 'N' || world.typed == 'P') {
+            return 0;
+        }
+        if (world.typed == 'H' || (confirm && s.choice == 2)) {
+            return 1;
+        }
+        return world.typed == 'J' || (confirm && s.choice == 3) ? 2 : 0;
+    }
+    // A text of the Remaster's own in the font, a character a cell.
+    static void write(World& world, std::string_view text, int column, int row) {
+        for (std::size_t i = 0; i < text.size(); ++i) {
+            world.say({.kind = Line::Kind::kCharacter,
+                       .column = static_cast<std::uint16_t>(column + static_cast<int>(i)),
+                       .row = static_cast<std::uint16_t>(row),
+                       .value = static_cast<std::uint8_t>(text[i])});
+        }
+    }
 
     static void set_tint(World& world, std::uint8_t by) {
         const auto doubled = static_cast<std::uint8_t>(by * 2U);
@@ -200,13 +245,29 @@ class Title : public Entity {
         s.state = State::kDone;
     }
     void show_menu(World& world) {
-        world.animate(*this);
+        animate_moved(world);
         s.state = State::kMenuComing;
     }
-    void chosen(World& world) {
+    void chosen(World& world, int choice) {
         countdown = kPatience;
         world.sound(*this, effect::kMenuMoves);
-        world.play(*this, anim::kTitlePointerAtChoice.at(static_cast<std::size_t>(s.choice)));
+        point_at(world, choice, row_of(world, choice));
+    }
+    // The pointer at a choice, on a row: the original's animation for the first three (rows 14, 16 and 18), the
+    // third's for one further on; placed as many rows further as it takes (animate_moved).
+    void point_at(World& world, int choice, int row) {
+        constexpr int kCellPixels = 8;
+        const int shown = std::min(choice, 2);
+        s.moved = static_cast<std::int16_t>((row - (14 + (shown * kRowsApart))) * kCellPixels);
+        s.choice = choice;
+        world.play(*this, anim::kTitlePointerAtChoice.at(static_cast<std::size_t>(shown)));
+    }
+    // The animation run with the title that much further down (the pieces it places are placed from there), and
+    // then back where it is: the camera follows the title, the menu's text doesn't.
+    void animate_moved(World& world) {
+        y = static_cast<std::int16_t>(y + s.moved);
+        world.animate(*this);
+        y = static_cast<std::int16_t>(y - s.moved);
     }
 
     // The letter after or before one, as up and down turn them: the digits, then the letters the passwords use.
@@ -305,8 +366,7 @@ class Title : public Entity {
             world.sound(*this, effect::kTitleChosen);
             world.clear_text();
             world.hide_pieces(*this);
-            s.choice = 1;
-            world.play(*this, anim::kTitlePointerAtChoice.at(1));
+            point_at(world, 1, kPasswordRow);
             show_menu(world);
             return true;
         }
@@ -329,7 +389,8 @@ class Title : public Entity {
         State state = State::kStart;
         std::size_t step = 0;
         int choice = 0;
-        int at = 0;  // which of the password's letters the pointer is at
+        int at = 0;              // which of the password's letters the pointer is at
+        std::int16_t moved = 0;  // how much further down the pointer is placed, in pixels: the choices further on
     } s;
     LVR_SAVES(Entity)
 };

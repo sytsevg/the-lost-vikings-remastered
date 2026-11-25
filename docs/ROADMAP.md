@@ -52,7 +52,7 @@ rollback. In this order, a commit each:
 - The transport: SDL3_net, UDP with TCP behind it
 - The front end: hosting and joining, the names under the Vikings, the latency in the menu, a mark while waiting
 - Joining a game under way, and joining again (built, 2026-11-25: ADR-0012)
-- Hosting and joining from the menu
+- Hosting and joining from the title's menu (built, 2026-11-25: ADR-0012)
 
 ## M10: Extra sound effects (Modern sound)
 - **What:** new effects on top of the original's: an electric buzz near the electric traps, the bow drawn and

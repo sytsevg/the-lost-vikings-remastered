@@ -220,6 +220,9 @@ struct WorldState {
         bool cheat = false;           // the cheat's password was typed: F5 and F6 change the level
         bool quit = false;            // its menu: the game ends
         bool screen_cleared = false;  // its menu cleared the scene's picture; what that showed below is at the top
+        // Remaster rules, offline (ADR-0012): HOST GAME or JOIN GAME was chosen in its menu this tick: the front
+        // end opens that page (none: kNoOnline).
+        std::uint8_t online = 0;
     } title;
     std::array<std::uint8_t, 3> tint{};   // how much darker red, green and blue are shown (the title's menu, the alarm)
     std::array<std::uint8_t, 3> tint2{};  // a second one on top of it: a bomb's flash

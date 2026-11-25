@@ -435,8 +435,15 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   divider (the user: not a page of its own), as the host measures them and so the same on every screen (the host's
   own row: none): the network's (answered at once by the transport's own thread) and the game's (an Echo answered
   by the other game's loop, once a refresh). No rewind online, and so no rewind bar (the user). Hosting and joining
-  from the command line first, then from the menu (a port, a level's password and a name; an address and a name),
-  kept in the profile.
+  from the command line, and from the title's own menu (the user: the game's main menu, not the Escape menu in a
+  level, so going online is easier): under Remaster rules offline it has HOST GAME and JOIN GAME between PASSWORD
+  and QUIT TO DOS (its five choices from row 12, the text layer ending at row 21; the pointer's choices further on
+  placed from as many rows further down, `Title::animate_moved`, the camera not following). Each opens its page of
+  the Remaster menu over the title: a name, a port and a level's password (the first level's to start with); a
+  name and the host's IP:PORT; typed into, kept in the profile (`settings.txt`). A game hosted there starts at once
+  in that level, and the others join it under way; the level's opening box holds it until the host answers. When
+  a game online ends for this machine (left, or the host gone), the game offline is back at its title; why, if it
+  wasn't the player's wish, said on the page he went from.
 - **Joining a game under way, and coming back.** An online world has a place for each of the three players there
   can be, those nobody has taken absent (`Player::here`); rollback has them too, away (`net::Rollback::leave`) and
   their input `net::gone_input()`. One who says hello while the game goes on is given a free place (the first left,

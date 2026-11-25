@@ -15,7 +15,7 @@ using input::Action;
 namespace {
 
 Menu::Choices all_choices() {
-    return {.has_modern = true, .screens = {"none", "crt", "xbr"}};
+    return {.has_modern = true, .screens = {"none", "crt", "xbr"}, .online = false, .passwords = {}};
 }
 
 // To line `line` of the page, from its first.
@@ -124,7 +124,7 @@ TEST_CASE("menu: the options change the settings") {
     // Without a SoundFont there is only the Classic sound.
     Settings modern;
     modern.modern_sound = true;
-    Menu without{modern, {.has_modern = false, .screens = {"none"}}};
+    Menu without{modern, {.has_modern = false, .screens = {"none"}, .online = false, .passwords = {}}};
     go_to(without, 0);
     (void)without.press(Key::kChoose);
     CHECK(without.lines().at(0).value == "CLASSIC");
@@ -247,4 +247,104 @@ TEST_CASE("menu: its picture is a box over the screen, the rest clear") {
     (void)menu.press(Key::kChoose);
     go_to(menu, 18);
     CHECK(menu_picture(menu, font).size() == picture.size());
+}
+
+TEST_CASE("menu: HOST GAME and JOIN GAME, from the title: lines typed into, checked, and back closes the menu") {
+    Settings settings;
+    settings.host_password.clear();
+    Menu menu{settings,
+              {.has_modern = false, .screens = {"none"}, .online = false, .passwords = {"AAAA", "BBBB", "CCCC"}}};
+    menu.open_host();
+    CHECK(menu.title() == "HOST GAME");
+    CHECK(labels(menu) == std::vector<std::string>{"NAME", "PORT", "PASSWORD", "START HOSTING", "BACK"});
+    CHECK(menu.lines()[0].value == "PLAYER 1");  // (no name yet: the one the game gives)
+    CHECK(menu.lines()[1].value == "47230");
+    CHECK(menu.lines()[2].value == "AAAA");  // the first level's, to start with
+
+    // The name: typed (letters made capitals, what the font hasn't left out), at most 8; erased; done with Enter.
+    CHECK(menu.press(Key::kChoose) == Menu::Asked::kNothing);
+    CHECK(menu.waiting() == Menu::Waiting::kText);
+    menu.take_text(" red-beard!9");
+    CHECK(menu.lines()[0].value == "REDBEARD");
+    CHECK(menu.lines()[0].typing);  // (a block after it, where the next letter goes)
+    CHECK_FALSE(menu.lines()[1].typing);
+    CHECK(menu.press(Key::kClear) == Menu::Asked::kNothing);
+    menu.erase();
+    CHECK(menu.lines()[0].value == "REDBEA");
+    CHECK(menu.note().back() == "BACKSPACE ERASES, ENTER/ESC DONE");
+    (void)menu.press(Key::kDown);  // (no other key while typing)
+    CHECK(menu.chosen() == 0);
+    (void)menu.press(Key::kChoose);
+    CHECK(menu.waiting() == Menu::Waiting::kNothing);
+    CHECK(menu.settings().name == "REDBEA");
+
+    // The port: digits only, 1 to 65535.
+    go_to(menu, 1);
+    (void)menu.press(Key::kChoose);
+    for (int i = 0; i < 5; ++i) {
+        menu.erase();
+    }
+    menu.take_text("0x");
+    menu.stop_waiting();
+    CHECK(menu.settings().host_port == 0);
+    go_to(menu, 3);
+    CHECK(menu.press(Key::kChoose) == Menu::Asked::kNothing);
+    CHECK(menu.note().front() == "THE PORT IS 1 TO 65535");
+    go_to(menu, 1);
+    (void)menu.press(Key::kChoose);
+    menu.erase();
+    menu.take_text("4000");
+    menu.stop_waiting();
+    CHECK(menu.settings().host_port == 4000);
+
+    // The password: a level's, or nothing starts.
+    go_to(menu, 2);
+    (void)menu.press(Key::kChoose);
+    menu.erase();
+    menu.take_text("x");
+    menu.stop_waiting();
+    go_to(menu, 3);
+    CHECK(menu.press(Key::kChoose) == Menu::Asked::kNothing);
+    CHECK(menu.note().front() == "NO LEVEL HAS THAT PASSWORD");
+    go_to(menu, 2);
+    (void)menu.press(Key::kChoose);
+    for (int i = 0; i < 4; ++i) {
+        menu.erase();
+    }
+    menu.take_text("cccc");  // (four at most)
+    menu.take_text("D");
+    menu.stop_waiting();
+    go_to(menu, 3);
+    CHECK(menu.press(Key::kChoose) == Menu::Asked::kHost);
+    CHECK(menu.level() == 2);
+    CHECK(menu.settings().host_password == "CCCC");
+
+    // Back from it: back to the title, the menu closed.
+    CHECK(menu.press(Key::kBack) == Menu::Asked::kResume);
+
+    Menu join{menu.settings(), {}};
+    join.open_join();
+    CHECK(join.title() == "JOIN GAME");
+    CHECK(labels(join) == std::vector<std::string>{"NAME", "ADDRESS", "JOIN", "BACK"});
+    CHECK(join.lines()[0].value == "REDBEA");  // the same name
+    go_to(join, 2);
+    CHECK(join.press(Key::kChoose) == Menu::Asked::kNothing);
+    CHECK(join.note().front() == "TYPE THE HOST'S IP FIRST");
+    go_to(join, 1);
+    (void)join.press(Key::kChoose);
+    CHECK(join.note().front() == "THE HOST'S IP, AND :PORT IF NOT 47230");
+    join.take_text("192.168.100.200:4000 x");  // (21 at most: what the line has room for)
+    CHECK(join.lines()[1].value == "192.168.100.200:4000X");
+    join.take_text("Y");
+    CHECK(join.lines()[1].value == "192.168.100.200:4000X");
+    join.erase();
+    (void)join.press(Key::kBack);  // (Escape ends the typing; it doesn't go back)
+    CHECK(join.waiting() == Menu::Waiting::kNothing);
+    CHECK(join.settings().join_address == "192.168.100.200:4000");
+    go_to(join, 2);
+    CHECK(join.press(Key::kChoose) == Menu::Asked::kJoin);
+    go_to(join, 3);
+    CHECK(join.press(Key::kChoose) == Menu::Asked::kResume);
+    join.tell("THE HOST LEFT");
+    CHECK(join.note().front() == "THE HOST LEFT");
 }

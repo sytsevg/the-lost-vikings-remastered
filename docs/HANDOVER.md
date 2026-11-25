@@ -339,8 +339,10 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   and join, a TCP connection and UDP to each client (introduced by a token over TCP), reliable and fast messages,
   the fast ones over TCP while no UDP gets through, pings for the round trip. Tests over 127.0.0.1
   (`src/net/tests/test_transport.cpp`).
-- **M9's state on 2026-11-25:** parts 1 to 8 of nine committed on the branch `m9-coop-online` (the whole of M9
-  for one review there: the user); main untouched. Next: part 9, hosting and joining from the menu.
+- **M9's state on 2026-11-25:** all nine parts committed on the branch `m9-coop-online` (the whole of M9 for one
+  review there: the user); main untouched. Not yet tried by hand: the title's HOST GAME and JOIN GAME in two
+  windows. Open: a game hosted from the title has no input delay (nobody to measure a round trip as it starts), so
+  a joiner over the internet rolls back more; a delay chosen as each joins, if it shows.
 - **The front end** (M9's sixth part, built 2026-11-25): `src/net/protocol.*` (the messages: Hello, Welcome,
   Refused, Lobby, Start, Inputs, Status, Hash, Leave, Quit; the host in the middle passing each player's inputs on),
   `src/lvr/coop.*` (a step's input as 16 bytes a player; `CoopGame`: the session as `net::Game`, its snapshots,
@@ -375,8 +377,13 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   `Rollback::arrive`, `Settings::first_step`). Found by its test: a Status's "known for ever" of a place nobody had
   was taken as an acknowledgement, so the newcomer's inputs were never passed on (`NetGame::take`). Tested in
   `test_online.cpp` (a third joins at step 60 and plays Olaf; the guest leaves and another comes into his place and
-  plays Baleog; every machine the same state, the host's log played again). Not yet: the lobby in the window, and
-  hosting and joining from the menu (part 9).
+  plays Baleog; every machine the same state, the host's log played again). Hosting and joining from the title
+  (part 9, ADR-0012): under Remaster rules offline the title's menu has HOST GAME and JOIN GAME (`Title`, the
+  choice asked for one tick in `World::Title::online`, state version 10); the front end opens that page of the menu
+  (`Menu::open_host`, `open_join`; lines typed into: `Menu::Waiting::kText`, SDL's text input), `play` ends with
+  the wish, and `main` opens the game online (`go_online`: hosting at once, or a box over the title while joining,
+  Escape giving up) and plays it, then goes back to the title's play. `--dump`'s `--menu` opens the pages with + and
+  *, and types what isn't one of its keys (stills: `gamedata/previews/coop/host-game.png`, `join-game.png`).
 - **Not checked by anything but the eye:** whatever the GPU renderer shows beyond the original's view, and
   whether a level still plays well zoomed out (enemies run for longer and further; nothing resets as often).
 - **The GPU renderer has run on one graphics card** (the user's) and the container's software driver. Vulkan

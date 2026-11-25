@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <format>
+#include <string>
 #include <utility>
 
 #include "lvr/render.hpp"
@@ -15,6 +16,17 @@ using input::Action;
 
 // (No line to resume: Escape, B or Start does that, the user.)
 constexpr std::array<std::string_view, 5> kFirstLines{"OPTIONS", "KEYBOARD", "GAMEPAD", "GIVE UP LEVEL", "QUIT GAME"};
+// HOST GAME's lines and JOIN GAME's.
+enum class Host : std::uint8_t { kName, kPort, kPassword, kStart, kBack };
+constexpr std::size_t kHostLines = 5;
+enum class Join : std::uint8_t { kName, kAddress, kJoin, kBack };
+constexpr std::size_t kJoinLines = 4;
+// What can be typed into them: a name as the game shows it (net::shown_name: letters, digits and spaces, at most 8),
+// a port's digits, a password's four letters and digits (the title's), an address and its port.
+constexpr std::size_t kMostName = 8;
+constexpr std::size_t kMostPort = 5;
+constexpr std::size_t kMostPassword = 4;
+constexpr int kMostPortNumber = 65535;
 enum class Option : std::uint8_t { kSound, kMusic, kEffects, kScreen, kZoom, kMinimap, kLights, kBack };
 constexpr std::size_t kOptions = 8;
 constexpr std::array<std::string_view, Session::kZoomSteps> kZoomNames{"1X", "1.5X", "2X"};
@@ -87,6 +99,42 @@ Menu::Menu(Settings settings, Choices choices) : settings_{std::move(settings)},
     if (choices_.screens.empty()) {
         choices_.screens.emplace_back("none");
     }
+    port_ = std::to_string(settings_.host_port);
+    if (settings_.host_password.empty() && !choices_.passwords.empty()) {
+        settings_.host_password = choices_.passwords.front();  // (the first level's, to start with)
+    }
+}
+
+std::string* Menu::text_of(std::size_t line) {
+    return const_cast<std::string*>(
+        std::as_const(*this).text_of(line));  // NOLINT(cppcoreguidelines-pro-type-const-cast)
+}
+
+const std::string* Menu::text_of(std::size_t line) const {
+    if (page_ == Page::kHost) {
+        switch (static_cast<Host>(line)) {
+            case Host::kName:
+                return &settings_.name;
+            case Host::kPort:
+                return &port_;
+            case Host::kPassword:
+                return &settings_.host_password;
+            case Host::kStart:
+            case Host::kBack:
+                break;
+        }
+    } else if (page_ == Page::kJoin) {
+        switch (static_cast<Join>(line)) {
+            case Join::kName:
+                return &settings_.name;
+            case Join::kAddress:
+                return &settings_.join_address;
+            case Join::kJoin:
+            case Join::kBack:
+                break;
+        }
+    }
+    return nullptr;
 }
 
 std::size_t Menu::line_count() const {
@@ -96,10 +144,24 @@ std::size_t Menu::line_count() const {
         case Page::kKeyboard:
         case Page::kGamepad:
             return input::kActionCount + kControlsAfter;
+        case Page::kHost:
+            return kHostLines;
+        case Page::kJoin:
+            return kJoinLines;
         case Page::kFirst:
             break;
     }
     return kFirstLines.size();
+}
+
+void Menu::open_host() noexcept {
+    page_ = Page::kHost;
+    waiting_ = Waiting::kNothing;
+}
+
+void Menu::open_join() noexcept {
+    page_ = Page::kJoin;
+    waiting_ = Waiting::kNothing;
 }
 
 std::string_view Menu::title() const noexcept {
@@ -110,6 +172,10 @@ std::string_view Menu::title() const noexcept {
             return "KEYBOARD";
         case Page::kGamepad:
             return "GAMEPAD";
+        case Page::kHost:
+            return "HOST GAME";
+        case Page::kJoin:
+            return "JOIN GAME";
         case Page::kFirst:
             break;
     }
@@ -125,11 +191,29 @@ std::vector<Menu::Line> Menu::lines() const {
         made.value = std::move(value);
         made.changes = changes;
     };
+    // A line typed into: its text (while it is typed into, as it is: the picture marks where the next letter goes).
+    const auto typed = [this](std::size_t at, std::string_view none = "-") {
+        const std::string& text = *text_of(at);
+        return text.empty() && !(waiting_ == Waiting::kText && chosen() == at) ? std::string{none} : text;
+    };
     switch (page_) {
         case Page::kFirst:
             for (const std::string_view label : kFirstLines) {
                 line(label);
             }
+            break;
+        case Page::kHost:
+            line("NAME", typed(static_cast<std::size_t>(Host::kName), "PLAYER 1"));
+            line("PORT", typed(static_cast<std::size_t>(Host::kPort)));
+            line("PASSWORD", typed(static_cast<std::size_t>(Host::kPassword)));
+            line("START HOSTING");
+            line("BACK");
+            break;
+        case Page::kJoin:
+            line("NAME", typed(static_cast<std::size_t>(Join::kName), "PLAYER 2"));
+            line("ADDRESS", typed(static_cast<std::size_t>(Join::kAddress)));
+            line("JOIN");
+            line("BACK");
             break;
         case Page::kOptions: {
             const auto screen = settings_.screen == "none" ? std::string{"OFF"} : upper(settings_.screen);
@@ -161,6 +245,9 @@ std::vector<Menu::Line> Menu::lines() const {
             break;
         }
     }
+    if (waiting_ == Waiting::kText && chosen() < lines.size()) {
+        lines.at(chosen()).typing = true;
+    }
     return lines;
 }
 
@@ -171,6 +258,10 @@ std::vector<std::string> Menu::note() const {
     }
     if (waiting_ == Waiting::kPad) {
         return {std::format("PRESS A BUTTON FOR {}", action()), "START LEAVES IT AS IT IS"};
+    }
+    if (waiting_ == Waiting::kText) {
+        const bool address = page_ == Page::kJoin && chosen() == static_cast<std::size_t>(Join::kAddress);
+        return {address ? "THE HOST'S IP, AND :PORT IF NOT 47230" : "TYPE IT IN", "BACKSPACE ERASES, ENTER/ESC DONE"};
     }
     std::vector<std::string> note;
     if (!said_.empty()) {
@@ -191,6 +282,10 @@ std::vector<std::string> Menu::note() const {
         case Page::kGamepad:
             note.emplace_back("ENTER/A ADD, DEL/Y CLEAR, ESC/B BACK");
             break;
+        case Page::kHost:
+        case Page::kJoin:
+            note.emplace_back("ENTER/A TYPES OR CHOOSES, ESC/B BACK");
+            break;
     }
     return note;
 }
@@ -207,6 +302,14 @@ void Menu::set_has_pad(bool has_pad) noexcept {
 }
 
 Menu::Asked Menu::press(Key key) {
+    if (waiting_ == Waiting::kText) {  // (a gamepad's A or B ends it too)
+        if (key == Key::kChoose || key == Key::kBack) {
+            stop_waiting();
+        } else if (key == Key::kClear) {
+            erase();
+        }
+        return Asked::kNothing;
+    }
     if (waiting_ != Waiting::kNothing) {
         return Asked::kNothing;
     }
@@ -229,8 +332,8 @@ Menu::Asked Menu::press(Key key) {
         case Key::kChoose:
             return choose();
         case Key::kBack:
-            if (page_ == Page::kFirst) {
-                return Asked::kResume;
+            if (page_ == Page::kFirst || page_ == Page::kHost || page_ == Page::kJoin) {
+                return Asked::kResume;  // (HOST GAME and JOIN GAME: back to the title they were opened from)
             }
             page_ = Page::kFirst;
             break;
@@ -264,6 +367,34 @@ Menu::Asked Menu::choose() {
                 change(1);
             }
             break;
+        case Page::kHost:
+        case Page::kJoin: {
+            if (text_of(chosen) != nullptr) {
+                waiting_ = Waiting::kText;
+                break;
+            }
+            const bool host = page_ == Page::kHost;
+            if (chosen == (host ? static_cast<std::size_t>(Host::kBack) : static_cast<std::size_t>(Join::kBack))) {
+                return Asked::kResume;
+            }
+            if (host) {
+                const auto level = std::ranges::find(choices_.passwords, settings_.host_password);
+                if (settings_.host_port < 1 || settings_.host_port > kMostPortNumber) {
+                    said_ = "THE PORT IS 1 TO 65535";
+                } else if (level == choices_.passwords.end()) {
+                    said_ = "NO LEVEL HAS THAT PASSWORD";
+                } else {
+                    level_ = static_cast<int>(level - choices_.passwords.begin());
+                    return Asked::kHost;
+                }
+                break;
+            }
+            if (settings_.join_address.empty()) {
+                said_ = "TYPE THE HOST'S IP FIRST";
+                break;
+            }
+            return Asked::kJoin;
+        }
         case Page::kKeyboard:
         case Page::kGamepad: {
             const bool pad = page_ == Page::kGamepad;
@@ -355,6 +486,48 @@ void Menu::take_pad(std::string_view input) {
 
 void Menu::stop_waiting() noexcept {
     waiting_ = Waiting::kNothing;
+}
+
+void Menu::take_text(std::string_view typed) {
+    std::string* text = waiting_ == Waiting::kText ? text_of(chosen()) : nullptr;
+    if (text == nullptr) {
+        return;
+    }
+    const std::size_t line = chosen();
+    const bool host = page_ == Page::kHost;
+    const bool name = line == 0;  // (the first line of both)
+    const bool port = host && line == static_cast<std::size_t>(Host::kPort);
+    const bool password = host && line == static_cast<std::size_t>(Host::kPassword);
+    const std::size_t most = name       ? kMostName
+                             : port     ? kMostPort
+                             : password ? kMostPassword
+                                        : static_cast<std::size_t>(kValueColumns);  // (the block after it: the margin)
+    for (char each : typed) {
+        each = each >= 'a' && each <= 'z' ? static_cast<char>(each - 'a' + 'A') : each;
+        const bool letter = each >= 'A' && each <= 'Z';
+        const bool digit = each >= '0' && each <= '9';
+        const bool fits = name       ? letter || digit || (each == ' ' && !text->empty())
+                          : port     ? digit
+                          : password ? letter || digit || each == '!'
+                                     : letter || digit || each == '.' || each == ':' || each == '-';
+        if (fits && text->size() < most) {
+            text->push_back(each);
+        }
+    }
+    if (port) {
+        settings_.host_port = port_.empty() ? 0 : std::stoi(port_);
+    }
+}
+
+void Menu::erase() {
+    std::string* text = waiting_ == Waiting::kText ? text_of(chosen()) : nullptr;
+    if (text == nullptr || text->empty()) {
+        return;
+    }
+    text->pop_back();
+    if (page_ == Page::kHost && chosen() == static_cast<std::size_t>(Host::kPort)) {
+        settings_.host_port = port_.empty() ? 0 : std::stoi(port_);
+    }
 }
 
 namespace {
@@ -526,6 +699,9 @@ std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<asset
         } else if (!line.value.empty()) {
             canvas.text(value_x, top + 1, line.value, ink, font);
             value_x += static_cast<int>(line.value.size()) * kCharacter;
+        }
+        if (line.typing && flash_shown) {  // where the next letter goes: a block, coming and going
+            canvas.fill(value_x, top + 1, kCharacter - 2, kCharacter - 1, ink);
         }
         if (line.changes && is_chosen) {
             canvas.arrow(value_x + 6, top + 4, Canvas::Pointing::kRight, ink);

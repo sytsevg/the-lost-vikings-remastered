@@ -271,6 +271,8 @@ std::string format_settings(const Settings& settings) {
     };
     table("key", settings.controls.keys);
     table("pad", settings.controls.pad);
+    text += std::format("name {}\nhost-port {}\nhost-password {}\njoin-address {}\n", settings.name, settings.host_port,
+                        settings.host_password, settings.join_address);
     return text;
 }
 
@@ -325,6 +327,14 @@ Settings parse_settings(std::string_view text, std::vector<std::string>& problem
             settings.minimap = *flag;
         } else if (flag && name == "visual-fx") {
             settings.visual_fx = *flag;
+        } else if (name == "name") {  // (the rest of the line, as it may have a space; none: the default)
+            settings.name = line;
+        } else if (volume && *volume >= 1 && *volume <= 65535 && name == "host-port") {
+            settings.host_port = *volume;
+        } else if (name == "host-password") {
+            settings.host_password = line;
+        } else if (name == "join-address") {
+            settings.join_address = line;
         } else {
             said("not understood");
         }

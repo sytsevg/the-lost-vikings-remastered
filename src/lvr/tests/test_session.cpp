@@ -1006,3 +1006,51 @@ TEST_CASE("real data: Remaster rules' effects hold still under the original's pa
     last = session.step(0).back();
     CHECK_FALSE(lights_change());
 }
+
+TEST_CASE("real data: Remaster rules' title, offline, has HOST GAME and JOIN GAME before QUIT TO DOS", "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    // To the title's menu (Enter, the screen dims and comes back with it), then the keys given.
+    const auto at_menu = [](Rules rules) {
+        auto opened = Session::open(LVR_ORIGINAL_DIR, scene::kTitle, {}, rules);
+        REQUIRE(opened);
+        for (int step = 0; step < 50; ++step) {
+            (*opened)->step(step == 20 ? key::kEnter : 0);
+        }
+        return std::move(*opened);
+    };
+    const auto press = [](Session& session, std::uint16_t keys) {
+        session.step(keys);
+        session.step(0);
+    };
+    auto remaster = at_menu(Rules::kRemaster);
+    press(*remaster, key::kDown);
+    press(*remaster, key::kDown);
+    remaster->step(key::kEnter);
+    CHECK(remaster->world().title.online == 1);  // HOST GAME: for the front end, one tick
+    remaster->step(0);
+    CHECK(remaster->world().title.online == 0);
+    press(*remaster, key::kDown);
+    remaster->step(key::kEnter);
+    CHECK(remaster->world().title.online == 2);  // JOIN GAME
+    press(*remaster, key::kDown);
+    remaster->step(key::kEnter);  // QUIT TO DOS, the last
+    remaster->step(0);            // (the game ends as the next step starts)
+    CHECK(remaster->quit());
+    // Up from the first goes to the last.
+    auto around = at_menu(Rules::kRemaster);
+    press(*around, key::kUp);
+    around->step(key::kEnter);
+    around->step(0);  // (the game ends as the next step starts)
+    CHECK(around->quit());
+
+    // Vanilla rules: the original's three.
+    auto vanilla = at_menu(Rules::kVanilla);
+    press(*vanilla, key::kDown);
+    press(*vanilla, key::kDown);
+    vanilla->step(key::kEnter);
+    CHECK(vanilla->world().title.online == 0);
+    vanilla->step(0);  // (the game ends as the next step starts)
+    CHECK(vanilla->quit());
+}

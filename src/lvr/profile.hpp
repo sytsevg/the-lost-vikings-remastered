@@ -53,6 +53,9 @@ std::expected<void, std::string> save_quicksave(const std::filesystem::path& fol
 
 // The player's settings (Remaster rules): what the game's menu sets (menu.hpp), kept from one run to the next.
 inline constexpr int kLoudest = 10;  // a volume's top: as loud as the game asks for (0: not heard)
+// The port a game online is hosted on unless another is given, and joined at.
+inline constexpr int kDefaultPort = 47230;
+
 struct Settings {
     bool modern_sound = false;    // the Modern sound (if there is a SoundFont), or the Classic
     int music = kLoudest;         // how loud the music is, 0 to kLoudest
@@ -62,11 +65,18 @@ struct Settings {
     bool minimap = true;          // shown in a level
     bool visual_fx = true;        // the Modern visuals' effects (effects.hpp): light, glow and particles
     input::Controls controls = input::remaster_controls();
+    // Co-op online (ADR-0012): the player's name (none: PLAYER and his number), and what the menu's HOST GAME and
+    // JOIN GAME were last given: a port, a level's password; an address with its port.
+    std::string name;
+    int host_port = kDefaultPort;
+    std::string host_password;
+    std::string join_address;
 
     bool operator==(const Settings&) const = default;
 };
 // As text: a line naming the file's kind, then a line a setting ("sound modern", "music 7", "screen tv", "zoom 1",
-// "minimap on", ...), and a line for each key of an action ("key ACTION KEY NAME") and each gamepad input
+// "minimap on", ..., "name ERIK", "host-port 47230", "host-password ABCD", "join-address 10.0.0.2:47230"), and a line
+// for each key of an action ("key ACTION KEY NAME") and each gamepad input
 // ("pad ACTION INPUT"); an action with none has its word and name alone. Read leniently, as a player may edit it:
 // a line that isn't understood is said in `problems` and skipped, and what a file doesn't name stays as it is by
 // default (an action it names has only the keys it gives).

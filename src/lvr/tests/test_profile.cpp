@@ -132,7 +132,12 @@ TEST_CASE("profile: the settings are written as lines and read back the same") {
     REQUIRE(input::bind_key(settings.controls, input::Action::kZoomIn, "Keypad -"));  // a name with spaces and -
     REQUIRE(input::bind_pad(settings.controls, input::Action::kRewind, "righttrigger"));
     settings.controls.keys.at(static_cast<std::size_t>(input::Action::kQuicksave)).clear();  // none
+    settings.name = "RED BEARD";                                                             // (a space in it)
+    settings.host_port = 1234;
+    settings.host_password = "ABCD";
+    settings.join_address = "10.0.0.2:4000";
     const std::string text = format_settings(settings);
+    CHECK(text.ends_with("\nname RED BEARD\nhost-port 1234\nhost-password ABCD\njoin-address 10.0.0.2:4000\n"));
     CHECK(text.starts_with(
         "lvr-settings 1\nsound modern\nmusic 3\nsound-fx 0\nscreen crt\nzoom 2\nminimap off\nvisual-fx off\n"));
     CHECK(text.find("\nkey zoom-in Keypad -\n") != std::string::npos);

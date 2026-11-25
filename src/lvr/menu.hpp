@@ -4,9 +4,11 @@
 // game, which holds while it is open (no step runs: the game never sees it). Its pages: the first (resume, the
 // options, the keyboard's and the gamepad's controls, giving up the level, quitting), the options (the sound and
 // its two volumes, the screen's look, the zoom, the minimap, the visual effects), and the controls, where an action is
-// bound to the next key or button pressed. It works on a copy of the player's settings (profile.hpp), which the
-// front end takes into use as they change. Nothing here knows about windows or devices: the front end gives it the
-// keys (Key) and the names of what is pressed, and lays its picture (menu_picture) over the screen.
+// bound to the next key or button pressed. And at the title, under Remaster rules offline, HOST GAME and JOIN GAME
+// (ADR-0012): opened by the title's own menu, their lines typed into, closed again by going back. It works on a
+// copy of the player's settings (profile.hpp), which the front end takes into use as they change. Nothing here knows
+// about windows or devices: the front end gives it the keys (Key) and the names of what is pressed, and lays its
+// picture (menu_picture) over the screen.
 
 #include <array>
 #include <cstddef>
@@ -29,6 +31,8 @@ class Menu {
         bool has_modern = false;
         std::vector<std::string> screens{"none"};
         bool online = false;  // co-op online (ADR-0012): the players and their latency, under the first page's lines
+        // Every level's password, in order: what HOST GAME's is checked against (the level the host starts in).
+        std::vector<std::string> passwords;
     };
     Menu(Settings settings, Choices choices);
 
@@ -42,16 +46,29 @@ class Menu {
         kResume,  // the menu is closed, the game goes on
         kGiveUp,  // closed, and the original's pause box is opened (where the level is given up)
         kQuit,    // closed, and the original's quit box is opened
+        kHost,    // closed: host a game online, as the settings say, in the level of `level()`
+        kJoin,    // closed: join the game at the settings' address
     };
     Asked press(Key key);
 
     // Waiting for the key (or the gamepad's input) to bind to an action: the front end gives the next one pressed.
     // A fixed one (input.hpp) is refused and says so; Escape (or Start) gives up waiting (stop_waiting).
-    enum class Waiting : std::uint8_t { kNothing, kKey, kPad };
+    // Or the line chosen is being typed into (kText): the front end gives what is typed (take_text), and Backspace
+    // (erase); Enter or Escape ends it (stop_waiting).
+    enum class Waiting : std::uint8_t { kNothing, kKey, kPad, kText };
     Waiting waiting() const noexcept { return waiting_; }
     void take_key(std::string_view key);
     void take_pad(std::string_view input);
     void stop_waiting() noexcept;
+    void take_text(std::string_view typed);
+    void erase();
+    // What the menu says in its note until the next key (a game online that couldn't be joined, and why).
+    void tell(std::string said) { said_ = std::move(said); }
+    // Opens on HOST GAME or JOIN GAME (the title's menu asked for it): going back from it closes the menu.
+    void open_host() noexcept;
+    void open_join() noexcept;
+    // The level the host starts in, by its password (Asked::kHost): its scene's slot.
+    int level() const noexcept { return level_; }
 
     const Settings& settings() const noexcept { return settings_; }
     // Whether a gamepad is there, as it is plugged in and out: the gamepad's page says so ("found", or flashing
@@ -78,6 +95,7 @@ class Menu {
         std::optional<int> slider;  // a volume: shown as a bar of kLoudest
         bool changes = false;       // left and right change the value
         bool dim = false;           // nothing can be chosen there
+        bool typing = false;        // being typed into: a block after its value, where the next letter goes
     };
     std::string_view title() const noexcept;
     std::vector<Line> lines() const;
@@ -86,8 +104,11 @@ class Menu {
     bool note_flashes() const noexcept;     // its first line comes and goes (no gamepad)
 
   private:
-    enum class Page : std::uint8_t { kFirst, kOptions, kKeyboard, kGamepad };
-    static constexpr std::size_t kPages = 4;
+    enum class Page : std::uint8_t { kFirst, kOptions, kKeyboard, kGamepad, kHost, kJoin };
+    static constexpr std::size_t kPages = 6;
+    // The text a line of HOST GAME or JOIN GAME holds; none: it isn't one.
+    std::string* text_of(std::size_t line);
+    const std::string* text_of(std::size_t line) const;
     std::size_t line_count() const;
     void change(int by);  // the chosen option's value
     Asked choose();
@@ -100,6 +121,8 @@ class Menu {
     std::string said_;  // what the last key did, if it says something (a key that can't be bound)
     bool has_pad_ = false;
     std::vector<PlayerLine> players_;
+    std::string port_;  // HOST GAME's port, as typed (into the settings as a number)
+    int level_ = 0;
 };
 
 // The menu's picture, the original's screen's size (kScreenWidth x kScreenHeight, render.hpp): red, green, blue and
