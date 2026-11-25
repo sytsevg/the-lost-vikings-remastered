@@ -54,6 +54,7 @@ struct Lobby {
     std::array<std::uint16_t, kMostPlayers> network{kUnknown, kUnknown, kUnknown};
     std::array<std::uint16_t, kMostPlayers> engine{kUnknown, kUnknown, kUnknown};
     std::uint16_t slot = 0;
+    std::uint8_t countdown = 0;  // the host has started it: seconds until it starts (0: he hasn't)
     bool operator==(const Lobby&) const = default;
 };
 struct Start {

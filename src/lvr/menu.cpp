@@ -105,10 +105,12 @@ Menu::Menu(Settings settings, Choices choices) : settings_{std::move(settings)},
 
 std::vector<Menu::First> Menu::first_lines() const {
     std::vector<First> lines{First::kOptions, First::kKeyboard, First::kGamepad};
-    if (choices_.online && choices_.hosting) {
+    if (choices_.online && choices_.hosting && choices_.lobby) {
         lines.push_back(First::kLobby);
     }
-    lines.push_back(First::kGiveUp);
+    if (!choices_.online || choices_.hosting) {  // (only the host drives the game: its pause box is his)
+        lines.push_back(First::kGiveUp);
+    }
     lines.push_back(First::kQuit);
     return lines;
 }
@@ -191,14 +193,19 @@ std::size_t Menu::line_count() const {
     return first_lines().size();
 }
 
-void Menu::open_host() noexcept {
+void Menu::open_host() {
     page_ = Page::kHost;
     waiting_ = Waiting::kNothing;
+    // (What is filled in already: on to START HOSTING at once.)
+    chosen_.at(static_cast<std::size_t>(Page::kHost)) =
+        static_cast<std::size_t>(settings_.name.empty() ? Host::kName : Host::kStart);
 }
 
-void Menu::open_join() noexcept {
+void Menu::open_join() {
     page_ = Page::kJoin;
     waiting_ = Waiting::kNothing;
+    chosen_.at(static_cast<std::size_t>(Page::kJoin)) = static_cast<std::size_t>(
+        settings_.join_address.empty() ? (settings_.name.empty() ? Join::kName : Join::kAddress) : Join::kJoin);
 }
 
 void Menu::open_lobby(bool hosting) {
@@ -221,6 +228,9 @@ std::string_view Menu::title() const noexcept {
         case Page::kJoin:
             return "JOIN GAME";
         case Page::kLobby:
+            if (countdown_ > 0) {
+                return title_;
+            }
             return "LOBBY";
         case Page::kFirst:
             break;
@@ -251,7 +261,7 @@ std::vector<Menu::Line> Menu::lines() const {
         case Page::kLobby:
             if (lobby_host_) {
                 line("PASSWORD", typed(0, "NONE"));  // (what it starts with: under the lines)
-                line("START GAME");
+                line(countdown_ > 0 ? "CANCEL START" : "START GAME");
             }
             line("LEAVE");
             break;
@@ -436,6 +446,8 @@ Menu::Asked Menu::choose() {
         case Page::kLobby:
             if (text_of(chosen) != nullptr) {
                 waiting_ = Waiting::kText;
+            } else if (lobby_host_ && chosen == 1 && countdown_ > 0) {
+                return Asked::kCancel;
             } else if (lobby_host_ && chosen == 1) {  // START GAME
                 if (const std::optional<int> level = level_typed()) {
                     level_ = *level;
@@ -748,9 +760,15 @@ std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<asset
     const int height =
         6 + kCharacter + 6 + (shown * kLine) + players_height + 6 + (static_cast<int>(note.size()) * kNoteLine) + 4;
     const int x = (kScreenWidth - width) / 2;
-    const int y = (kScreenHeight - height) / 2;
+    // The title's pages: under its logo, nothing of the title's own menu showing through (the user: a menu of its
+    // own, not one laid over the game).
+    constexpr int kUnderLogo = 90;
+    const bool of_title = menu.of_title();
+    const int y = of_title ? std::min(kUnderLogo, kScreenHeight - height - 2) : (kScreenHeight - height) / 2;
+    const Colour inside = of_title ? Colour{kDark.r, kDark.g, kDark.b, 255} : kDark;
+    const Colour band = of_title ? Colour{kChosenBand.r, kChosenBand.g, kChosenBand.b, 255} : kChosenBand;
     Canvas canvas;
-    canvas.framed(x, y, width, height, kDark, kWhite);
+    canvas.framed(x, y, width, height, inside, kWhite);
     const int text_x = x + kPadding;
     const std::string_view title = menu.title();
     canvas.text(x + ((width - (static_cast<int>(title.size()) * kCharacter)) / 2), y + 6, title, kWhite, font);
@@ -764,7 +782,7 @@ std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<asset
         const bool is_chosen = first + i == chosen;
         const int top = lines_y + (i * kLine);
         if (is_chosen) {
-            canvas.fill(text_x - 4, top, (kColumns * kCharacter) + 8, kLine, kChosenBand);
+            canvas.fill(text_x - 4, top, (kColumns * kCharacter) + 8, kLine, band);
         }
         const Colour ink = line.dim ? kDimmed : is_chosen ? kWhite : kGrey;
         canvas.text(text_x, top + 1, line.label, ink, font);

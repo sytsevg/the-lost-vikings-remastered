@@ -16,7 +16,12 @@ using input::Action;
 namespace {
 
 Menu::Choices all_choices() {
-    return {.has_modern = true, .screens = {"none", "crt", "xbr"}, .online = false, .hosting = false, .passwords = {}};
+    return {.has_modern = true,
+            .screens = {"none", "crt", "xbr"},
+            .online = false,
+            .hosting = false,
+            .lobby = false,
+            .passwords = {}};
 }
 
 // To line `line` of the page, from its first.
@@ -125,8 +130,9 @@ TEST_CASE("menu: the options change the settings") {
     // Without a SoundFont there is only the Classic sound.
     Settings modern;
     modern.modern_sound = true;
-    Menu without{modern,
-                 {.has_modern = false, .screens = {"none"}, .online = false, .hosting = false, .passwords = {}}};
+    Menu without{
+        modern,
+        {.has_modern = false, .screens = {"none"}, .online = false, .hosting = false, .lobby = false, .passwords = {}}};
     go_to(without, 0);
     (void)without.press(Key::kChoose);
     CHECK(without.lines().at(0).value == "CLASSIC");
@@ -330,8 +336,12 @@ TEST_CASE("menu: HOST GAME and JOIN GAME, from the title: lines typed into, chec
     // Back from it: back to the title, the menu closed.
     CHECK(menu.press(Key::kBack) == Menu::Asked::kResume);
 
+    Menu again{menu.settings(), {}};
+    again.open_host();
+    CHECK(again.chosen() == 3);  // a name there already: START HOSTING at once
     Menu join{menu.settings(), {}};
     join.open_join();
+    CHECK(join.chosen() == 1);  // a name, no address yet: ADDRESS
     CHECK(join.title() == "JOIN GAME");
     CHECK(labels(join) == std::vector<std::string>{"NAME", "ADDRESS", "JOIN", "BACK"});
     CHECK(join.lines()[0].value == "REDBEA");  // the same name
@@ -351,6 +361,9 @@ TEST_CASE("menu: HOST GAME and JOIN GAME, from the title: lines typed into, chec
     CHECK(join.settings().join_address == "192.168.100.200:4000");
     go_to(join, 2);
     CHECK(join.press(Key::kChoose) == Menu::Asked::kJoin);
+    Menu filled{join.settings(), {}};
+    filled.open_join();
+    CHECK(filled.chosen() == 2);  // both: JOIN at once
     go_to(join, 3);
     CHECK(join.press(Key::kChoose) == Menu::Asked::kResume);
     join.tell("THE HOST LEFT");
@@ -358,8 +371,12 @@ TEST_CASE("menu: HOST GAME and JOIN GAME, from the title: lines typed into, chec
 }
 
 TEST_CASE("menu: the lobby: the host's password and START GAME, a client's waiting; RETURN TO LOBBY in a game") {
-    const Menu::Choices choices{
-        .has_modern = false, .screens = {"none"}, .online = false, .hosting = false, .passwords = {"AAAA", "BBBB"}};
+    const Menu::Choices choices{.has_modern = false,
+                                .screens = {"none"},
+                                .online = false,
+                                .hosting = false,
+                                .lobby = false,
+                                .passwords = {"AAAA", "BBBB"}};
     Menu host{Settings{}, choices};
     host.open_lobby(true);
     CHECK(host.in_lobby());
@@ -395,13 +412,16 @@ TEST_CASE("menu: the lobby: the host's password and START GAME, a client's waiti
     CHECK(client.press(Key::kChoose) == Menu::Asked::kLeave);
 
     // In a game online, the host's first page goes back to the lobby; a client's has no such line.
-    Menu playing{Settings{},
-                 {.has_modern = false, .screens = {"none"}, .online = true, .hosting = true, .passwords = {}}};
+    Menu playing{
+        Settings{},
+        {.has_modern = false, .screens = {"none"}, .online = true, .hosting = true, .lobby = true, .passwords = {}}};
     CHECK(labels(playing) ==
           std::vector<std::string>{"OPTIONS", "KEYBOARD", "GAMEPAD", "RETURN TO LOBBY", "GIVE UP LEVEL", "QUIT GAME"});
     go_to(playing, 3);
     CHECK(playing.press(Key::kChoose) == Menu::Asked::kLobby);
-    Menu guest{Settings{},
-               {.has_modern = false, .screens = {"none"}, .online = true, .hosting = false, .passwords = {}}};
-    CHECK(labels(guest) == std::vector<std::string>{"OPTIONS", "KEYBOARD", "GAMEPAD", "GIVE UP LEVEL", "QUIT GAME"});
+    Menu guest{
+        Settings{},
+        {.has_modern = false, .screens = {"none"}, .online = true, .hosting = false, .lobby = false, .passwords = {}}};
+    CHECK(labels(guest) ==
+          std::vector<std::string>{"OPTIONS", "KEYBOARD", "GAMEPAD", "QUIT GAME"});  // (the host drives)
 }

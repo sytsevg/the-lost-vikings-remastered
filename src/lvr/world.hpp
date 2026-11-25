@@ -462,7 +462,8 @@ class World : public WorldState {
     class Aside {
       public:
         Aside(World& world, int slot) : world_(&world), before_(world.talking_to) {
-            world.talking_to = world.online ? world.player_of(slot) : kNobody;
+            // (While a recording plays, what is said is everyone's: they all watch it.)
+            world.talking_to = world.online && !world.attract ? world.player_of(slot) : kNobody;
         }
         ~Aside() { world_->talking_to = before_; }
         Aside(const Aside&) = delete;
@@ -500,6 +501,14 @@ class World : public WorldState {
     // Online: a player comes (into the game under way, or back): onto a Viking nobody plays, else into the line of
     // the first living one; his view on him.
     void player_arrives(int player);
+    // Online, a scene played by a recording (the intro of a new game, `attract`): only the first player plays it, as
+    // the recording has it; the others have no Viking (every Viking reads his keys, as with one player), and their
+    // views follow his (the user: the intro is everyone watching the Viking it plays).
+    void watch_recording();
+    // The Viking a player's view follows: his own; while a recording plays online, the first player's.
+    int followed_by(const Player& player) const noexcept {
+        return attract && online ? players[0].viking : player.viking;
+    }
     // The players not in the game, a bit each (online: the places nobody has taken yet, or that were left).
     std::uint8_t absent() const noexcept;
     // The player whose keys the Viking in `slot` goes by: his own, or the last one's who played him.

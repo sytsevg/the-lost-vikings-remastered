@@ -168,7 +168,7 @@ void run_until(std::vector<Machine*> machines, std::uint32_t until) {
                     held(one->net->player(), one->steps + static_cast<std::uint32_t>(one->delay)), {}, {}));
             }
             if (one->net->step()) {
-                ++one->steps;
+                one->steps = one->net->at_step();  // (one joining under way catches up several at once)
             }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds{1});
@@ -345,11 +345,25 @@ TEST_CASE("real data: a lobby the host starts (a new game: the intro, the same o
     CHECK(guest.net->names() == std::vector<std::string>{"HOST", "GUEST"});
     CHECK(guest.net->player() == 1);
 
-    // Started by the host's word: a new game, the intro played from its recording on both.
+    // The host's START counts down, everyone told; cancelled, it doesn't start.
+    host.net->start();
+    in_lobby([&](const auto& at_host, const auto& at_guest) {
+        return guest.net->countdown() == 3 && !at_host && !at_guest;
+    });
+    host.net->cancel_start();
+    in_lobby([&](const auto& at_host, const auto& at_guest) {
+        return guest.net->countdown() == 0 && !at_host && !at_guest;
+    });
+
+    // Started by the host's word, after the countdown: a new game, the intro played from its recording on both.
     const auto start = [&](int slot) {
         host.net->start();
-        const auto [at_host, at_guest] =
-            in_lobby([](const auto& at_host, const auto& at_guest) { return at_host && at_guest; });
+        bool counted = false;
+        const auto [at_host, at_guest] = in_lobby([&](const auto& at_host, const auto& at_guest) {
+            counted = counted || guest.net->countdown() == 1;  // (3, 2, 1, as the guest sees it)
+            return at_host && at_guest;
+        });
+        CHECK(counted);
         REQUIRE(at_guest->slot == slot);
         for (Machine* one : {&host, &guest}) {
             auto opened = Session::open(LVR_ORIGINAL_DIR, slot, {}, Rules::kRemaster, draw,

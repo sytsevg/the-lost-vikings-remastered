@@ -539,6 +539,21 @@ std::uint8_t World::absent() const noexcept {
     return static_cast<std::uint8_t>(bits);
 }
 
+void World::watch_recording() {
+    for (int who = 1; who < player_count; ++who) {
+        Player& other = players.at(static_cast<std::size_t>(who));
+        other.viking = kNobody;
+        other.controls = false;
+        if (const Entity* followed = at(followed_by(other))) {
+            start_camera(other.camera, followed->x, followed->y);
+            other.strip_x = cell_of(other.camera.x);
+            other.strip_y = cell_of(other.camera.y);
+            other.view_to_fill = true;
+        }
+    }
+    keys_from.fill(0);
+}
+
 void World::player_arrives(int player) {
     Player& coming = players.at(static_cast<std::size_t>(player));
     if (coming.here) {
@@ -809,7 +824,8 @@ void World::run(int part, bool starting) {
         Camera& camera = player.camera;
         if (camera_held) {
             camera.moved_x = camera.moved_y = 0;
-        } else if (const Entity* viking = player.viking != kNobody ? at(player.viking) : nullptr) {
+        } else if (const int followed = followed_by(player);
+                   const Entity* viking = followed != kNobody ? at(followed) : nullptr) {
             follow(camera, viking->x, viking->y, part);
         } else if (part != 0) {
             follow(camera, 0, 0, part);

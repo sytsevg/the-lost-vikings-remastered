@@ -215,7 +215,7 @@ struct HudView {
     };
     std::array<Viking, 3> vikings;  // Erik, Baleog, Olaf
     // Co-op online (ADR-0012): under each portrait the name of the player who plays him, in the game's font, its
-    // letters only; above it, grey, those watching him, the next in line nearest. Empty: none.
+    // letters only; above it, grey, those watching him, in their line's order, as one name (A/B). Empty: none.
     std::array<std::string, 3> names;
     std::array<std::vector<std::string>, 3> watching;
     std::array<std::optional<int>, kSquares> icons;  // the item's icon in each square; none: left as the panel has it

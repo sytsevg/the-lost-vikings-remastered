@@ -85,7 +85,10 @@ So the 1993 cartridge is the DOS game's content: **no level or scene the DOS gam
 levels, the interludes and the languages of later editions and of the Genesis version are not in this image. Three scenes have backdrops of their own (the village's sky, the ship, game
 over), in the same fields as a level's (`load_scene_backdrop`). The DOS game draws those three scenes as tiled maps
 too: the village leaves its sky in colour 0 as the levels do, and with the backdrop behind it is the console's
-picture; the ship and game over cover every such pixel (game over has none), so their backdrops never show.
+picture; the ship and game over cover every such pixel (game over has none), so their backdrops never show. The
+village's demo (344, the night the Vikings are taken) has a backdrop of its own (340): the console's night with the
+ship flying in. Behind the DOS night, whose sky and ship are its own, it shows as the ship scrolling past behind the
+houses: the Remaster leaves it out (the user, 2026-11-25; `kSnesSceneHeaders`).
 
 ## Maps, quads, tiles, colours
 - **Map** (the level's and the backdrop's): `u16` per cell, row by row. The low 10 bits are the quad; the level

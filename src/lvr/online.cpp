@@ -132,6 +132,16 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby() {
         send_lobby();
         broadcast(net::Echo{.sent = now}, net::Channel::kFast);
     }
+    if (counting_until_) {  // each second of the countdown told; at its end, the start
+        if (const int left = countdown(); left != countdown_sent_) {
+            countdown_sent_ = left;
+            send_lobby();
+        }
+        if (countdown() == 0) {
+            counting_until_.reset();
+            start_wanted_ = true;
+        }
+    }
     if (auto_start_ ? std::cmp_less(names_.size(), wanted_) : !start_wanted_) {
         return std::nullopt;
     }
@@ -145,6 +155,7 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby() {
         longest = std::max(longest, round_trip.value_or(0));
     }
     start_wanted_ = false;
+    countdown_sent_ = 0;
     ++game_number_;
     const int delay = delay_.value_or(delay_for(longest));
     broadcast(net::Start{.game = game_number_,
@@ -237,6 +248,7 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby_event(
         host_network_ = lobby->network;
         host_engine_ = lobby->engine;
         slot_ = lobby->slot;
+        countdown_ = lobby->countdown;
     } else if (const auto* refused = std::get_if<net::Refused>(&*message)) {
         return std::unexpected{std::format("refused: {}", refused->why)};
     } else if (const auto* joining = std::get_if<net::Joining>(&*message)) {  // a game under way
@@ -270,8 +282,46 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby_event(
     return std::nullopt;
 }
 
+void NetGame::start(bool at_once) {
+    if (!hosting()) {
+        return;
+    }
+    constexpr std::uint32_t kCountdownMs = 3000;
+    if (at_once) {
+        start_wanted_ = true;
+    } else if (!counting_until_) {
+        counting_until_ = now_ms() + kCountdownMs;
+        countdown_sent_ = countdown();
+        send_lobby();
+    }
+}
+
+void NetGame::cancel_start() {
+    if (hosting() && counting_until_) {
+        counting_until_.reset();
+        countdown_sent_ = 0;
+        send_lobby();
+    }
+}
+
+int NetGame::countdown() const {
+    if (!hosting()) {
+        return countdown_;
+    }
+    if (!counting_until_) {
+        return 0;
+    }
+    constexpr int kSecond = 1000;
+    const auto left = static_cast<std::int32_t>(*counting_until_ - now_ms());
+    return left <= 0 ? 0 : static_cast<int>((left + kSecond - 1) / kSecond);
+}
+
 void NetGame::send_lobby() {
-    net::Lobby message{.names = names_, .network = {}, .engine = {}, .slot = static_cast<std::uint16_t>(slot_)};
+    net::Lobby message{.names = names_,
+                       .network = {},
+                       .engine = {},
+                       .slot = static_cast<std::uint16_t>(slot_),
+                       .countdown = static_cast<std::uint8_t>(countdown())};
     for (int player = 0; player < net::kMostPlayers; ++player) {
         message.network.at(static_cast<std::size_t>(player)) = as_sent(network_ms(player));
         message.engine.at(static_cast<std::size_t>(player)) = as_sent(engine_ms(player));
@@ -296,6 +346,8 @@ void NetGame::to_lobby() {
     waited_ = 0;
     back_ = false;
     joined_.reset();
+    countdown_ = 0;
+    catch_up_to_ = 0;
     host_network_.fill(net::kUnknown);
     host_engine_.fill(net::kUnknown);
     if (hosting()) {
@@ -355,6 +407,7 @@ void NetGame::begin(Session& session) {
             }
         }
         rollback_->arrive(player_, joined.arrives);
+        catch_up_to_ = joined.arrives;
     }
     session.set_player_names(names_);
 }
@@ -387,7 +440,9 @@ void NetGame::welcome_under_way(int peer, const net::Hello& hello) {
     // The state before the last step every input is known for (all machines have it so), and his first step: past
     // any the host's input is known for, so no machine has confirmed it.
     const std::uint32_t from = std::min(rollback_->confirmed(), rollback_->step());
-    const std::uint32_t arrives = std::max(rollback_->step(), rollback_->local_known()) + 1;
+    // (Far enough on for him to load the level meanwhile, so the others don't wait for him: about 0.8 s.)
+    constexpr std::uint32_t kJoinLead = 16;
+    const std::uint32_t arrives = std::max(rollback_->step(), rollback_->local_known()) + kJoinLead;
     peers_.at(at) = peer;
     names_.at(at) = net::shown_name(hello.name, place);
     gone_.at(at) = false;
@@ -632,6 +687,15 @@ void NetGame::give(const StepInput& input) {
 }
 
 std::optional<std::vector<Screen>> NetGame::step() {
+    if (rollback_->step() < catch_up_to_) {  // joined under way: up to his arrival at once, unseen, then fading in
+        while (rollback_->step() < catch_up_to_ && rollback_->advance(false)) {
+        }
+        session_->drop_carried_effects();
+        if (rollback_->step() < catch_up_to_) {
+            return std::nullopt;  // (the others' inputs for the rest still on their way)
+        }
+        session_->fade_in();
+    }
     if (rollback_->ahead()) {
         rollback_->catch_up();  // a refresh to let the others catch up
         return std::nullopt;

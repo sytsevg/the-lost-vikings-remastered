@@ -139,11 +139,12 @@ void use_settings(Session& session, GpuRenderer* gpu, const Settings& settings) 
 
 // What the menu has to choose from: the Modern sound if there is one, and the screen's looks; online, whether this
 // machine hosts a game from the title's lobby (RETURN TO LOBBY).
-Menu::Choices menu_choices(const Session& session, bool hosting = false) {
+Menu::Choices menu_choices(const Session& session, bool hosting = false, bool lobby = false) {
     Menu::Choices choices{.has_modern = session.has_modern(),
                           .screens = {},
                           .online = session.online(),
                           .hosting = hosting,
+                          .lobby = lobby,
                           .passwords = {}};
     for (const GpuRenderer::Look look : GpuRenderer::kLooks) {
         choices.screens.emplace_back(GpuRenderer::name_of(look));
@@ -570,6 +571,13 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
         return held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT];
     };
     const auto key_name = [](SDL_Scancode key) { return std::string_view{SDL_GetScancodeName(key)}; };
+    // Any key ends a demo (the original); under Remaster rules a scene that plays by itself (the intro and the night
+    // after it, the title's demos, the ending) only an action key, Enter or Escape (the user: not a key pressed by
+    // the way).
+    const auto skips_demo = [&](std::uint16_t keys) {
+        constexpr auto kSkips = static_cast<std::uint16_t>(key::kAction | key::kEnter);
+        return !remaster || (unsigned{keys} & unsigned{kSkips}) != 0;
+    };
     // The keys of a key pressed or let go: under Remaster rules Escape opens the menu in a level being played, and is
     // the original's pause key elsewhere, as it was.
     const auto key_actions = [&](SDL_Scancode key) {
@@ -612,7 +620,7 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
     };
     const auto open_menu = [&] {
         menu.emplace(settings_now(session, gpu, remastered->settings),
-                     menu_choices(session, net != nullptr && net->hosting() && from_lobby));
+                     menu_choices(session, net != nullptr && net->hosting(), from_lobby));
         menu->set_has_pad(!pads.empty());
         keyboard = 0;  // what is held now is let go in the menu
         session.rewind(false);
@@ -640,17 +648,20 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
             *wish = OnlineWish{.host = asked == Menu::Asked::kHost, .level = menu->level()};
             running = false;  // (the front end opens the game online, and comes back here after it)
         }
-        if (asked == Menu::Asked::kStart && lobby != nullptr) {  // the lobby's host: it starts (the menu until then)
+        if (asked == Menu::Asked::kStart && lobby != nullptr) {  // the lobby's host: it starts, after a countdown
             lobby->set_slot(menu->level() < 0 ? scene::kIntro : menu->level());
             lobby->start();
+            return;
+        }
+        if (asked == Menu::Asked::kCancel && lobby != nullptr) {
+            lobby->cancel_start();
             return;
         }
         if (asked == Menu::Asked::kLeave) {
             running = false;  // (the front end drops the connection: the title again)
         }
-        if (asked == Menu::Asked::kLobby && net != nullptr) {  // the host: everyone back to the lobby
-            net->back_to_lobby();
-            back = true;
+        if (asked == Menu::Asked::kLobby && net != nullptr) {  // the host: everyone back to the lobby, once the
+            back = true;                                       // play has ended (its game is the play's until then)
             running = false;
         }
         if (asked != Menu::Asked::kNothing) {
@@ -856,8 +867,8 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
                 if (!(remaster && !event.key.repeat && act(actions))) {
                     keyboard |= input::game_bits(actions);
                 }
-                if (session.demo()) {  // the keyboard handler: any key during a demo
-                    keyboard = 0xFFFF;
+                if (session.demo() && skips_demo(input::game_bits(actions))) {  // the keyboard handler: a key during a
+                    keyboard = 0xFFFF;                                          // demo
                 }
             } else if (event.type == SDL_EVENT_KEY_UP) {
                 // As the original's handler: a release clears the bit even if another key with it is held.
@@ -910,14 +921,17 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
                 }
                 std::vector<Menu::PlayerLine> lines = lobby_lines(*lobby);
                 std::string start_with = start_words(session, lobby->slot());
-                if (lines != menu->players() || start_with != menu->start()) {
+                if (lines != menu->players() || start_with != menu->start() ||
+                    lobby->countdown() != menu->countdown()) {
                     menu->set_players(std::move(lines));
                     menu->set_start(std::move(start_with));
+                    menu->set_countdown(lobby->countdown());
                     draw_menu();
                 }
             }
         }
-        if (net != nullptr) {  // what came, and what is due to be sent
+        if (net != nullptr) {                      // what came, and what is due to be sent
+            session.set_dimmed(menu.has_value());  // (the game goes on under the menu: darkened, as offline)
             if (const auto polled = net->poll(); !polled) {
                 std::println(stderr, "vikings-remaster: {}", polled.error());
                 status = EXIT_FAILURE;
@@ -945,7 +959,7 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
         for (; refreshes < due && running; ++refreshes) {
             while (running && next_frame >= frames.size()) {
                 if (menu && net == nullptr) {  // the game holds: its pictures as it is, a zoom shown at once
-                    frames = session.held();
+                    frames = session.held(!menu->of_title());  // (the title's own pages: under its logo, lit)
                     cues = std::move(session.cues);
                     next_frame = 0;
                     continue;
@@ -957,7 +971,7 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
                 if (remaster && reading.at(start_button) > 0.5F && !session.takes_play_keys()) {
                     pad |= input::game_bits(bit(Action::kPause));  // Start: the original's pause, as it was
                 }
-                if (pad != 0 && session.demo()) {  // any joystick input during a demo
+                if (pad != 0 && session.demo() && skips_demo(pad)) {  // joystick input during a demo
                     pad = 0xFFFF;
                 }
                 const bool alt = held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT];
@@ -1629,14 +1643,19 @@ int main(int argc, char* argv[]) try {
                     tell = said(there.why);
                     break;
                 }
-                if (!lobby.hosting()) {
-                    lobby.to_lobby();  // (the host is there already)
+                if (lobby.hosting()) {
+                    lobby.back_to_lobby();  // (the others told)
+                } else {
+                    lobby.to_lobby();
                 }
                 started.reset();
             }
             if (played.done) {
                 break;
             }
+        }
+        if (connected) {
+            connected->net.reset();  // (the lobby left: the others see this one go now, not when the program ends)
         }
         if (tell.empty()) {
             wish.reset();  // (given up, or left: the title as it was)

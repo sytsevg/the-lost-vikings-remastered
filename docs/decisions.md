@@ -449,7 +449,19 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   way. In the game, the host's Escape menu has RETURN TO LOBBY (the user): everyone back in the lobby with the same
   connections (`net::Back`; those who left closed up, each told his number again), for another level or a new
   game. Each game has a number its Inputs, Status and Hash carry, so what is late of the one before isn't taken
-  into the next. When a game online ends for this machine (left, or the host gone), the game offline is back at
+  into the next. The host's START counts down (3, 2, 1, everyone told; START GAME is CANCEL START meanwhile). The
+  title's pages (HOST GAME, JOIN GAME, the lobby) are a menu of their own under its logo, not see-through, the
+  title not darkened (the user). In the intro and the night after it (a recording plays them), only the first
+  player plays, as the recording has it: the others have no Viking (every Viking reads his keys, as with one
+  player), their views follow his, his Viking's portrait is lit on their HUDs, and what is said is everyone's
+  (`World::watch_recording`, `followed_by`; the user: everyone watches the Viking the intro plays). Under Remaster
+  rules a scene that plays by itself ends on an action key, Enter or Escape only, not any key (the user). One who
+  joins under way comes in 16 steps on (he loads the level meanwhile, so nobody waits for him), runs the steps
+  before then at once and unseen (`NetGame::step`, `Rollback::advance(false)`; their effects' sounds dropped, the
+  music kept), and fades in (`Session::fade_in`); the pictures of the level's start as it was opened aren't shown.
+  Online the menu darkens the game going on under it, as offline (`Session::set_dimmed`). Those waiting in a
+  Viking's line are one name above his portrait, A/B in their order (the user: two rows didn't fit). GIVE UP
+  LEVEL is only on the menu of whoever drives the game (offline, or the host). When a game online ends for this machine (left, or the host gone), the game offline is back at
   its title; why, if it wasn't the player's wish, said on the page he went from.
 - **Joining a game under way, and coming back.** An online world has a place for each of the three players there
   can be, those nobody has taken absent (`Player::here`); rollback has them too, away (`net::Rollback::leave`) and

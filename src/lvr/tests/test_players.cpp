@@ -370,3 +370,31 @@ TEST_CASE("players: one who leaves hands his Viking to the first in its line, an
     room.world.mark_outside_active_area();
     CHECK(there->has_flag(entity_flag::kLeftTheActiveArea));
 }
+
+TEST_CASE("players: two in a Viking's line: each plays him in turn, in the order they joined it") {
+    Room room(3);
+    room.ticks(2);
+    constexpr std::uint16_t kPrevious = 0x0020;
+    room.tick(keys(0, kPrevious));  // the second from Baleog to Erik, whom the first plays: in his line
+    room.tick(keys(0, 0, kNext));   // the third from Olaf on to Erik too: behind him
+    REQUIRE(room.world.players[1].viking == 0);
+    REQUIRE(room.world.players[2].viking == 0);
+    CHECK_FALSE(room.world.players[1].controls);
+    CHECK_FALSE(room.world.players[2].controls);
+    CHECK(room.world.players[2].in_line > room.world.players[1].in_line);
+    room.tick(keys(kNext));  // the first on to Baleog: Erik the second's, the third still waiting
+    CHECK(room.world.host().viking == 1);
+    CHECK(room.world.players[1].controls);
+    CHECK_FALSE(room.world.players[2].controls);
+    CHECK(room.world.keys_from[0] == 1);
+    room.tick(keys(0, kNext));  // the second on to Baleog (the first's: in his line); Erik the third's
+    CHECK(room.world.players[1].viking == 1);
+    CHECK_FALSE(room.world.players[1].controls);
+    CHECK(room.world.players[2].viking == 0);
+    CHECK(room.world.players[2].controls);
+    CHECK(room.world.keys_from[0] == 2);
+    room.ticks(40);  // (his view comes over to Erik from Olaf: until it is there, his keys do nothing, the original)
+    const int erik = room.x_of(0);
+    room.ticks(10, keys(0, 0, kRight));
+    CHECK(room.x_of(0) > erik);
+}

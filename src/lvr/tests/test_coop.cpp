@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "lvr/coop.hpp"
+#include "lvr/names.hpp"
 #include "lvr/session.hpp"
 #include "net/rollback.hpp"
 
@@ -182,4 +183,32 @@ TEST_CASE("coop: a player gone is so in the step's input") {
     const StepInput input = unpack(inputs);
     CHECK_FALSE(input.players[0].gone);
     CHECK(input.players[1].gone);
+}
+
+TEST_CASE("real data: online, the intro is the first player's to play, as the recording has it; the others watch",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    auto alone = Session::open(LVR_ORIGINAL_DIR, scene::kIntro, {}, Rules::kRemaster);
+    auto guest =
+        Session::open(LVR_ORIGINAL_DIR, scene::kIntro, {}, Rules::kRemaster, draw, Online{.on = true, .players = 2}, 1);
+    REQUIRE(alone);
+    REQUIRE(guest);
+    const World& world = (*guest)->world();
+    CHECK(world.attract);
+    CHECK(world.players[1].viking == kNobody);  // no Viking of his own ...
+    for (int step = 0; step < 300; ++step) {
+        (*alone)->step(0);
+        (*guest)->step(static_cast<std::uint16_t>(kRight | kF));  // ... and what he presses is nothing meanwhile
+        REQUIRE(world.players[1].lines.empty());                  // what is said is everyone's
+    }
+    // The Vikings as with one player; his view where the first player's is, on the Viking the recording plays.
+    for (int slot = 0; slot < 3; ++slot) {
+        CHECK(world.at(slot)->x == (*alone)->world().at(slot)->x);
+        CHECK(world.at(slot)->y == (*alone)->world().at(slot)->y);
+    }
+    CHECK(world.followed_by(world.players[1]) == world.players[0].viking);
+    CHECK(world.players[1].camera.x == world.players[0].camera.x);
+    CHECK(world.players[1].camera.y == world.players[0].camera.y);
 }

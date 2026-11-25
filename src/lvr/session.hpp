@@ -44,6 +44,9 @@ struct SessionSound {
     bool live = false;
 };
 
+// How long one joining a game under way takes to fade in: half a second.
+inline constexpr int kFadeInRefreshes = 30;
+
 class Session {
   public:
     // The game from `dir`, started in scene `slot` (0-36 the levels, 39 the first logo: the game's own start).
@@ -92,10 +95,17 @@ class Session {
     // The players' names, by player: shown under the portraits of the Vikings they play.
     void set_player_names(std::vector<std::string> names) { player_names_ = std::move(names); }
     // Instead of a step, while the play is held (Remaster rules' menu is open): a tick's three pictures of the world
-    // as it is, a little darker as under the original's menus. Nothing of the play moves and nothing is kept for the
+    // as it is, a little darker as under the original's menus (`dimmed`; the title's own pages: not). Nothing of the
+    // play moves and nothing is kept for the
     // rewind; only a change of view the zoom asks for goes on, as while the world holds for a key (what it brings into
     // view is created at the next step). No sound.
-    std::vector<Screen> held();
+    std::vector<Screen> held(bool dimmed = true);
+    // Online the menu doesn't hold the game: its pictures darkened all the same while it is open (presentation only).
+    void set_dimmed(bool dimmed) noexcept { dimmed_ = dimmed; }
+    // One joining a game under way, caught up: the pictures from now fade in (presentation only); and of the sounds
+    // the steps caught up asked for, the music only (not a burst of their effects).
+    void fade_in() noexcept;
+    void drop_carried_effects();
 
     // Live sound. Safe to call from two threads: the front end's (hear_now, set_modern) and the sound card's
     // (render_live); nothing else here touches the players then.
@@ -345,6 +355,8 @@ class Session {
     std::filesystem::path profile_;  // where the player's profile is kept; empty: nowhere
     Minimap minimap_;
     bool minimap_on_ = true;
+    bool dimmed_ = false;            // online, the menu open: the pictures darkened
+    std::uint8_t fade_in_left_ = 0;  // refreshes of fade_in's still to come
     int zoom_pictures_ = 0;
     std::optional<Screen::Part> grows_from_;
     bool shrinking_ = false;

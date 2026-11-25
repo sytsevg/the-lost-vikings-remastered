@@ -686,6 +686,9 @@ int Play::change_scene(const std::function<void()>& picture) {
     started.after_game_over = world.scene == scene::kGameOver;
     started.cues.insert(started.cues.begin(), world.cues.begin(), world.cues.end());
     world = std::move(started);
+    if (world.online && world.attract) {
+        world.watch_recording();  // (the intro: everyone watches the Viking the recording plays)
+    }
     ++scenes_started;
     owned_ = std::move(loaded);
     loaded_ = owned_.get();
@@ -768,9 +771,9 @@ View view_of(const World& world, const LoadedLevel& loaded, PiecePainter& painte
             }
             hud.vikings.at(static_cast<std::size_t>(who)) = HudView::Viking{
                 .shown = true,
-                .portrait = viking->dead
-                                ? HudView::Portrait::kDead
-                                : (who == whose.viking ? HudView::Portrait::kChosen : HudView::Portrait::kWaiting),
+                .portrait = viking->dead ? HudView::Portrait::kDead
+                                         : (who == world.followed_by(whose) ? HudView::Portrait::kChosen
+                                                                            : HudView::Portrait::kWaiting),
                 // With the shield item's point the second set of health pictures is shown.
                 .health = (viking->health + (world.armour.at(static_cast<std::size_t>(who)) != 0 ? 4 : 0)) / 2};
         }

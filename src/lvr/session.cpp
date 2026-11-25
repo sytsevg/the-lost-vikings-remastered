@@ -335,6 +335,16 @@ std::expected<void, std::string> Session::write_quicksave() const {
 }
 
 // The quicksave's file: its level is loaded again, a world made for it, and what was written read into that.
+void Session::fade_in() noexcept {
+    fade_in_left_ = static_cast<std::uint8_t>(kFadeInRefreshes);
+}
+
+void Session::drop_carried_effects() {
+    std::erase_if(carried_, [](const SoundCue& cue) {
+        return cue.kind == SoundCue::Kind::kEffect || cue.kind == SoundCue::Kind::kStopEffect;
+    });
+}
+
 std::vector<std::uint8_t> Session::state_bytes(const Play::Snapshot& snapshot) {
     std::vector<std::uint8_t> bytes;
     Writer to{bytes, Widths::kVariable};  // (for the network: mostly small numbers)
@@ -384,6 +394,8 @@ std::expected<void, std::string> Session::take_state(std::span<const std::uint8_
     if (play_.restore(snapshot)) {
         play_.scene_sound();
     }
+    start_frames.clear();  // (the pictures of the scene's start, as it was opened: not the game under way)
+    cues.clear();
     rewind_.clear();
     effects_.clear();
     scrolled_.reset();
@@ -458,8 +470,8 @@ Screen Session::picture(bool dimmed) {
     const World& world = play_.shown();
     View view = view_of(world, loaded, painter_, pictures_, player_);
     if (view.hud && world.online) {
-        // Under each portrait the name of the player who plays him; above it those watching, in their line's order
-        // (ADR-0012).
+        // Under each portrait the name of the player who plays him; above it those watching, in their line's order,
+        // as one name: A/B (ADR-0012; the user: two rows of them didn't fit).
         for (int viking = 0; viking < kVikingSlots; ++viking) {
             if (const int who = world.player_of(viking); who >= 0 && std::cmp_less(who, player_names_.size())) {
                 view.hud->names.at(static_cast<std::size_t>(viking)) = player_names_.at(static_cast<std::size_t>(who));
@@ -472,18 +484,27 @@ Screen Session::picture(bool dimmed) {
                 }
             }
             std::ranges::sort(line);
+            std::string watching;
             for (const auto& [place, who] : line) {
-                view.hud->watching.at(static_cast<std::size_t>(viking))
-                    .push_back(player_names_.at(static_cast<std::size_t>(who)));
+                watching += (watching.empty() ? "" : "/") + player_names_.at(static_cast<std::size_t>(who));
+            }
+            if (!watching.empty()) {
+                view.hud->watching.at(static_cast<std::size_t>(viking)).push_back(std::move(watching));
             }
         }
     }
-    if (dimmed && view.darken == std::array<std::uint8_t, 3>{}) {
+    if ((dimmed || dimmed_) && view.darken == std::array<std::uint8_t, 3>{}) {
         view.darken = kMenuTint;
     }
     if (play_.fade) {  // between scenes every colour is darkened
         view.darken = {*play_.fade, *play_.fade, *play_.fade};
         view.darken_all = true;
+    } else if (fade_in_left_ > 0) {  // (one joining under way: the game as it is, coming in)
+        constexpr int kDarkest = 63;
+        const auto dark = static_cast<std::uint8_t>(kDarkest * fade_in_left_ / kFadeInRefreshes);
+        view.darken = {dark, dark, dark};
+        view.darken_all = true;
+        --fade_in_left_;
     }
     Screen screen;
     if (effects_on_) {
@@ -517,7 +538,7 @@ Screen Session::picture(bool dimmed) {
                 .x = viking->x,
                 .y = viking->y,
                 .there = true,
-                .played = who == world.players.at(static_cast<std::size_t>(player_)).viking};
+                .played = who == world.followed_by(world.players.at(static_cast<std::size_t>(player_)))};
         }
     }
     return screen;
@@ -726,14 +747,14 @@ void Session::half_refresh_sound(std::vector<std::int16_t>& out) {
     unheard_.clear();
 }
 
-std::vector<Screen> Session::held() {
+std::vector<Screen> Session::held(bool dimmed) {
     constexpr int kTick = 3;
     scrolled_.reset();  // (the next step's pictures aren't moved from where the camera was before)
     change_view(true);
     cues.clear();
     std::vector<Screen> shown;
     for (int refresh = 0; refresh < kTick; ++refresh) {
-        shown.push_back(picture(true));
+        shown.push_back(picture(dimmed));
         cues.emplace_back();
     }
     last_ = shown.back();

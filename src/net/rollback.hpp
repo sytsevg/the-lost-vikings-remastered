@@ -98,7 +98,8 @@ class Rollback {
 
     // The next step: run it, after running again what a wrong prediction spoiled. False: it can't be run yet (this
     // machine's input for it isn't given, or the window is used up waiting for another player's: a stall).
-    bool advance();
+    // `shown`: whether the game shows the step (false: one joining under way catching up, unseen).
+    bool advance(bool shown = true);
     // Only what a wrong prediction spoiled, run again (advance does it first): while the game waits, or at its end.
     void catch_up();
 

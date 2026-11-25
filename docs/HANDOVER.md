@@ -391,6 +391,18 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   the host's lobby with %, and types what isn't one of its keys (stills in `gamedata/previews/coop/`: `host-game`,
   `join-game`, `lobby`, `lobby-new-game`). Tested: `test_online.cpp` (a lobby the host starts: the intro the same
   on both; back to the lobby, level 1, the same on both), `test_menu.cpp` (the lobby's page, RETURN TO LOBBY).
+  The user's play-test of the lobby (2026-11-25), fixed: a connection outlived leaving the lobby (`main`'s loop
+  kept it through the title's play: the host gone still had a lobby for the guest, a guest gone was still listed
+  and waited for at the start); RETURN TO LOBBY crashed (the menu ended the game's rollback in the middle of the
+  play's pass, which then polled into it: now `main` takes everyone back once the play has ended); a guest had
+  GIVE UP LEVEL; the intro gave each player a Viking of his own, so the recording's switching went into their
+  lines and its texts to one player alone (`World::watch_recording`); the night after it showed the SNES's ship
+  scrolling behind the houses (its backdrop left out); one joining under way saw the level's start before the
+  game, then waited (catch-up unseen, fade-in). Added: the countdown, the title's pages opaque under its logo, the
+  menu darkening the game online, HOST/JOIN GAME opening on their last line when filled in, the line's names as
+  A/B, self-playing scenes ended by an action key, Enter or Escape only. In the tests: the original ignores a
+  player's keys while his Viking is out of his view (`check_viking_in_view`), so after a switch wait for the view
+  to come over.
 - **Not checked by anything but the eye:** whatever the GPU renderer shows beyond the original's view, and
   whether a level still plays well zoomed out (enemies run for longer and further; nothing resets as often).
 - **The GPU renderer has run on one graphics card** (the user's) and the container's software driver. Vulkan

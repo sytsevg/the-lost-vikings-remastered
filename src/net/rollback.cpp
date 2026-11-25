@@ -201,7 +201,7 @@ void Rollback::catch_up() {
     compare_hashes();
 }
 
-bool Rollback::advance() {
+bool Rollback::advance(bool shown) {
     catch_up();
     if (local_known() <= step_) {
         return false;  // this machine's input for it isn't given yet
@@ -213,7 +213,7 @@ bool Rollback::advance() {
         all != kAll && step_ >= all + static_cast<std::uint32_t>(settings_.window)) {
         return false;  // as far ahead of the others' inputs as it may run: it waits for them
     }
-    run(step_, true);
+    run(step_, shown);
     ++step_;
     return true;
 }

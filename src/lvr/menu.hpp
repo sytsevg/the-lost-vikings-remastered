@@ -14,6 +14,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -32,7 +33,8 @@ class Menu {
         bool has_modern = false;
         std::vector<std::string> screens{"none"};
         bool online = false;   // co-op online (ADR-0012): the players and their latency, under the first page's lines
-        bool hosting = false;  // online, this machine hosts a game from the title's lobby: RETURN TO LOBBY
+        bool hosting = false;  // online, this machine hosts: it drives the game (GIVE UP LEVEL is its only)
+        bool lobby = false;    // online, from the title's lobby: the host's RETURN TO LOBBY
         // Every level's password, in order: what HOST GAME's is checked against (the level the host starts in).
         std::vector<std::string> passwords;
     };
@@ -53,6 +55,7 @@ class Menu {
         kStart,   // the lobby's host: the game starts, in the level of `level()` (the menu stays until it does)
         kLeave,   // the lobby left
         kLobby,   // the host in a game online: everyone back to the lobby
+        kCancel,  // the lobby's host: the countdown to the start stopped
     };
     Asked press(Key key);
 
@@ -70,14 +73,23 @@ class Menu {
     // What the menu says in its note until the next key (a game online that couldn't be joined, and why).
     void tell(std::string said) { said_ = std::move(said); }
     // Opens on HOST GAME or JOIN GAME (the title's menu asked for it): going back from it closes the menu.
-    void open_host() noexcept;
-    void open_join() noexcept;
+    void open_host();
+    void open_join();
     // Opens on the lobby: the host's has the password to start with and START GAME; going back leaves it.
     void open_lobby(bool hosting);
     bool in_lobby() const noexcept { return page_ == Page::kLobby; }
+    // HOST GAME, JOIN GAME and the lobby: pages of the title's (a menu of their own under its logo, not laid over a
+    // game going on).
+    bool of_title() const noexcept { return page_ == Page::kHost || page_ == Page::kJoin || page_ == Page::kLobby; }
     // What the lobby's game starts with, as the front end words it (NEW GAME, or a level and its password).
     void set_start(std::string start) { start_ = std::move(start); }
     const std::string& start() const noexcept { return start_; }
+    // The host has started it: the seconds until it starts (its title says so; the host's START GAME cancels it).
+    void set_countdown(int seconds) {
+        countdown_ = seconds;
+        title_ = std::format("STARTING IN {}", seconds);
+    }
+    int countdown() const noexcept { return countdown_; }
     // The level the host starts in, by its password (Asked::kHost, kStart): its scene's slot; -1: no password, a
     // new game (from the intro, as the title's NEW GAME).
     int level() const noexcept { return level_; }
@@ -147,6 +159,8 @@ class Menu {
     int level_ = -1;
     bool lobby_host_ = false;
     std::string start_;
+    int countdown_ = 0;
+    std::string title_;  // (a title made of the countdown, for title())
 };
 
 // The menu's picture, the original's screen's size (kScreenWidth x kScreenHeight, render.hpp): red, green, blue and

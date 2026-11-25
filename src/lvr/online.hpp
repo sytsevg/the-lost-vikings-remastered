@@ -65,8 +65,12 @@ class NetGame {
     // The scene the game starts in: the host's choice (set_slot), as a client has it from the lobby.
     int slot() const noexcept { return slot_; }
     void set_slot(int slot) noexcept { slot_ = slot; }
-    // Host: the game starts with the next lobby(), with whoever is there.
-    void start() noexcept { start_wanted_ = true; }
+    // Host: the game starts with whoever is there, after a countdown everyone is told of (3, 2, 1); or at once.
+    // Cancelled: it doesn't.
+    void start(bool at_once = false);
+    void cancel_start();
+    // The countdown's seconds left (the host's, as a client has it from the lobby); 0: none.
+    int countdown() const;
     // Host, in the game: everyone back to the lobby (net::Back), this machine at once (to_lobby). A client is told
     // in a poll (back_asked; nothing after it is taken until he is in the lobby again).
     void back_to_lobby();
@@ -88,6 +92,8 @@ class NetGame {
     // The next step if it can run now: its pictures. None: this refresh waits (for another player's input, or to
     // let the others catch up).
     std::optional<std::vector<Screen>> step();
+    // The next step it runs (one joining under way: from the state he was given on, the steps caught up counted).
+    std::uint32_t at_step() const noexcept { return rollback_ ? rollback_->step() : 0; }
     // Since when it has been waiting for a player's input (refreshes), and for whom (his name); none: it isn't.
     std::optional<std::string> waiting_for() const;
     int waited() const noexcept { return waited_; }
@@ -123,41 +129,45 @@ class NetGame {
     // The lobby's handling of one event: an error ends it.
     std::expected<std::optional<Joined>, std::string> lobby_event(const net::Event& event);
 
+    // (In the order that leaves no padding: the largest first.)
     std::unique_ptr<net::Transport> transport_;
-    Identity identity_;
-    // The lobby.
-    int wanted_ = 1;          // host: how many players start the game ...
-    bool auto_start_ = true;  // ... as they are there; else when the host says (start_wanted_)
-    bool start_wanted_ = false;
-    bool welcomed_ = false;
-    std::uint32_t lobby_sent_at_ = 0;  // host: when the lobby was last told
-    std::uint16_t game_number_ = 0;    // the game's number (net::Start): what a game's messages carry
-    bool back_ = false;                // a client: told to go back to the lobby
-    std::vector<net::Event> pending_;  // what came after that, for the lobby
-    int slot_ = 0;
-    bool cheat_ = false;
-    std::optional<int> delay_;
-    std::vector<std::string> names_;
-    std::vector<int> peers_;  // host: by player, the transport's number of his connection (the host's own: -1)
-    int player_ = 0;
-    std::optional<Joined> joined_;
-    // The game.
     Session* session_ = nullptr;
     std::unique_ptr<CoopGame> game_;
     std::unique_ptr<net::Rollback> rollback_;
+    std::vector<net::Event> pending_;  // a client told to go back to the lobby: what came after that, for the lobby
+    std::vector<std::string> names_;
+    std::vector<int> peers_;  // host: by player, the transport's number of his connection (the host's own: -1)
     // By peer, by player: how far that peer has acknowledged the player's inputs (he knows them before that step).
     std::vector<std::array<std::uint32_t, net::kMostPlayers>> acked_;
-    std::uint32_t hash_sent_ = 7;  // the next step whose hash is still to be sent
-    std::vector<bool> gone_;       // by player
-    int waited_ = 0;
-    int delay_steps_ = 0;  // the game's input delay
-    // The game's round trips: this machine's, by player; and on a client the host's, as his Status says.
+    std::vector<bool> gone_;  // by player
+    // The game's round trips: this machine's, by player.
     std::vector<std::optional<int>> engine_;
-    std::array<std::uint16_t, net::kMostPlayers> host_network_{net::kUnknown, net::kUnknown, net::kUnknown};
-    std::array<std::uint16_t, net::kMostPlayers> host_engine_{net::kUnknown, net::kUnknown, net::kUnknown};
-    std::uint32_t echoed_at_ = 0;                                  // when the last echoes went out
     std::vector<std::pair<std::uint32_t, std::uint64_t>> hashes_;  // this machine's, as they were sent
     std::filesystem::path log_folder_;
+    Identity identity_;
+    std::optional<Joined> joined_;
+    int wanted_ = 1;                   // host: how many players start the game, as they are there (auto_start_)
+    int countdown_sent_ = 0;           // host: the seconds the lobby was last told
+    int countdown_ = 0;                // a client: the host's countdown, as the lobby says
+    std::uint32_t lobby_sent_at_ = 0;  // host: when the lobby was last told
+    std::uint32_t catch_up_to_ = 0;    // joining under way: the steps before his arrival, run unseen at once
+    int slot_ = 0;
+    int player_ = 0;
+    std::uint32_t hash_sent_ = 7;  // the next step whose hash is still to be sent
+    int waited_ = 0;
+    int delay_steps_ = 0;                          // the game's input delay
+    std::uint32_t echoed_at_ = 0;                  // when the last echoes went out
+    std::optional<std::uint32_t> counting_until_;  // host: when the countdown ends
+    std::optional<int> delay_;
+    std::uint16_t game_number_ = 0;  // the game's number (net::Start): what a game's messages carry
+    // On a client the host's round trips, as his Status says.
+    std::array<std::uint16_t, net::kMostPlayers> host_network_{net::kUnknown, net::kUnknown, net::kUnknown};
+    std::array<std::uint16_t, net::kMostPlayers> host_engine_{net::kUnknown, net::kUnknown, net::kUnknown};
+    bool auto_start_ = true;  // host: the game starts as `wanted_` are there; else when he says (start_wanted_)
+    bool start_wanted_ = false;
+    bool welcomed_ = false;
+    bool back_ = false;  // a client: told to go back to the lobby
+    bool cheat_ = false;
     bool logged_ = false;
 };
 

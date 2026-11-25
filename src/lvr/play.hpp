@@ -89,6 +89,9 @@ class Play {
         state_.demo_wanted = slot == scene::kIntro;
         start_demo(slot);
         world.attract = state_.playback;  // (as a scene started after another has it)
+        if (world.online && world.attract) {
+            world.watch_recording();
+        }
     }
 
     // What the world shown now was loaded from.

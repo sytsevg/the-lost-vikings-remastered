@@ -190,6 +190,7 @@ std::vector<std::uint8_t> encode(const Message& message) {
                     out(engine);
                 }
                 out(one.slot);
+                out(one.countdown);
             } else if constexpr (std::is_same_v<M, Start>) {
                 out(one.game);
                 out(one.players);
@@ -239,6 +240,7 @@ std::optional<Message> read_one(In& in) {
             in(engine);
         }
         in(message.slot);
+        in(message.countdown);
     } else if constexpr (std::is_same_v<M, Start>) {
         in(message.game);
         in(message.players);

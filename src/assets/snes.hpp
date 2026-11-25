@@ -125,14 +125,16 @@ std::expected<Backdrop, std::string> load_backdrop(const SnesRom& rom, std::uint
 std::expected<Backdrop, std::string> load_level_backdrop(const SnesRom& rom, std::uint8_t number);
 
 // The scenes with a backdrop of their own (docs/formats/snes.md, "The scenes"): their name in catalog.hpp's kScenes,
-// and their header chunk.
+// and their header chunk. (The night the Vikings are taken, home-demo, has one too: the SNES's night sky with the ship
+// flying in, which behind the DOS scene's houses is the ship scrolling past them; left out, the user, 2026-11-25.)
 struct SnesScene {
     std::string_view name;
     std::uint16_t header_chunk = 0;
 };
 inline constexpr std::array kSnesSceneHeaders{
-    SnesScene{.name = "home-intro", .header_chunk = 343},  SnesScene{.name = "home-demo", .header_chunk = 344},
-    SnesScene{.name = "home-ending", .header_chunk = 346}, SnesScene{.name = "ship", .header_chunk = 130},
+    SnesScene{.name = "home-intro", .header_chunk = 343},
+    SnesScene{.name = "home-ending", .header_chunk = 346},
+    SnesScene{.name = "ship", .header_chunk = 130},
     SnesScene{.name = "game-over", .header_chunk = 284},
 };
 
