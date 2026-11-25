@@ -1,8 +1,8 @@
 #pragma once
 
 // The player's profile: what is theirs and not the simulation's, kept in a folder from one run of the game to the
-// next (ADR-0011, Remaster rules). So far: how much of each level the minimap has seen, the quicksave, and the
-// screen's look.
+// next (ADR-0011, Remaster rules): how much of each level the minimap has seen, the quicksave, and the player's
+// settings.
 
 #include <cstdint>
 #include <expected>
@@ -12,6 +12,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "input/input.hpp"
 
 namespace lvr {
 
@@ -49,9 +51,29 @@ struct SavedPlay {
 std::expected<std::optional<SavedPlay>, std::string> load_quicksave(const std::filesystem::path& folder);
 std::expected<void, std::string> save_quicksave(const std::filesystem::path& folder, const SavedPlay& play);
 
-// The screen's look (GpuRenderer::Look), by its name: a line naming the file's kind, then `look NAME`. Reading:
-// none if there is no file; an error if it can't be understood.
-std::expected<std::optional<std::string>, std::string> load_screen_look(const std::filesystem::path& folder);
-std::expected<void, std::string> save_screen_look(const std::filesystem::path& folder, std::string_view look);
+// The player's settings (Remaster rules): what the game's menu sets (menu.hpp), kept from one run to the next.
+inline constexpr int kLoudest = 10;  // a volume's top: as loud as the game asks for (0: not heard)
+struct Settings {
+    bool modern_sound = false;    // the Modern sound (if there is a SoundFont), or the Classic
+    int music = kLoudest;         // how loud the music is, 0 to kLoudest
+    int sound_fx = kLoudest;      // and the sound effects
+    std::string screen = "none";  // the screen's look, by its name (GpuRenderer::name_of)
+    int zoom = 0;                 // the zoom's step (Session::zoom_level)
+    bool minimap = true;          // shown in a level
+    bool visual_fx = true;        // the Modern visuals' effects (effects.hpp): light, glow and particles
+    input::Controls controls = input::remaster_controls();
+
+    bool operator==(const Settings&) const = default;
+};
+// As text: a line naming the file's kind, then a line a setting ("sound modern", "music 7", "screen tv", "zoom 1",
+// "minimap on", ...), and a line for each key of an action ("key ACTION KEY NAME") and each gamepad input
+// ("pad ACTION INPUT"); an action with none has its word and name alone. Read leniently, as a player may edit it:
+// a line that isn't understood is said in `problems` and skipped, and what a file doesn't name stays as it is by
+// default (an action it names has only the keys it gives).
+std::string format_settings(const Settings& settings);
+Settings parse_settings(std::string_view text, std::vector<std::string>& problems);
+// `settings.txt` in the profile's folder (the defaults if there is none); writing makes the folder if need be.
+Settings load_settings(const std::filesystem::path& folder, std::vector<std::string>& problems);
+std::expected<void, std::string> save_settings(const std::filesystem::path& folder, const Settings& settings);
 
 }  // namespace lvr

@@ -113,11 +113,12 @@ lvr_target_defaults(lvr_engine)
 # --- The engine as a game to play: its pictures and sound per refresh (what a front end needs) ---
 add_library(lvr_session STATIC
     lvr/effects.cpp
+    lvr/menu.cpp
     lvr/profile.cpp
     lvr/session.cpp)
 add_library(lvr::session ALIAS lvr_session)
 target_include_directories(lvr_session PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(lvr_session PUBLIC lvr::assets lvr::engine lvr::audio)
+target_link_libraries(lvr_session PUBLIC lvr::assets lvr::engine lvr::audio lvr::input)
 lvr_target_defaults(lvr_session)
 
 # --- The pixel-match harness (ADR-0017): replays, what an engine shows per refresh, the comparison ---
@@ -157,7 +158,7 @@ if(LVR_BUILD_APPS)
     set(lvr_shader_dir ${CMAKE_CURRENT_BINARY_DIR}/shaders)
     file(MAKE_DIRECTORY ${lvr_shader_dir})
     foreach(shader gpu_quad.vert gpu_quad.frag gpu_show.vert gpu_show.frag gpu_over.frag gpu_mark.frag gpu_gauge.frag
-            gpu_crt.frag gpu_xbr.frag)
+            gpu_panel.frag gpu_xbr.frag gpu_hyllian.frag)
         add_custom_command(
             OUTPUT ${lvr_shader_dir}/${shader}.inc
             COMMAND ${LVR_GLSLC} -O -mfmt=c -o ${lvr_shader_dir}/${shader}.inc
@@ -219,6 +220,7 @@ if(LVR_BUILD_TESTS)
     lvr/tests/test_places.cpp
     lvr/tests/test_vikings.cpp
         lvr/tests/test_level.cpp
+        lvr/tests/test_menu.cpp
         lvr/tests/test_minimap.cpp
         lvr/tests/test_movement.cpp
         lvr/tests/test_profile.cpp

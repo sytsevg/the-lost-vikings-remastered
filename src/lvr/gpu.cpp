@@ -42,11 +42,14 @@ constexpr std::uint32_t kMarkFragmentShader[] =
 constexpr std::uint32_t kGaugeFragmentShader[] =
 #include "gpu_gauge.frag.inc"
     ;
-constexpr std::uint32_t kCrtFragmentShader[] =
-#include "gpu_crt.frag.inc"
+constexpr std::uint32_t kPanelFragmentShader[] =
+#include "gpu_panel.frag.inc"
     ;
 constexpr std::uint32_t kXbrFragmentShader[] =
 #include "gpu_xbr.frag.inc"
+    ;
+constexpr std::uint32_t kHyllianFragmentShader[] =
+#include "gpu_hyllian.frag.inc"
     ;
 
 // How many pictures are kept for showing: more than two steps make (a change of scene is some 150), since the
@@ -213,13 +216,22 @@ struct GpuRenderer::State {
     // The rewind's bar.
     SDL_GPUGraphicsPipeline* gauge_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* gauge_pipeline_own = nullptr;
+    // A picture laid over the screen (the menu, set_overlay): its pixels, whether the texture has them yet, and the
+    // texture.
+    SDL_GPUGraphicsPipeline* panel_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* panel_pipeline_own = nullptr;
+    std::vector<std::uint8_t> overlay;
+    bool overlay_sent = false;
+    SDL_GPUTexture* overlay_texture = nullptr;
+    SDL_GPUTransferBuffer* overlay_upload = nullptr;
+    bool upload_overlay(SDL_GPUCommandBuffer* commands);
     // The screen's look (Look): what is shown is drawn into `crt_source` (the target's size), and from there onto
     // the target as the tube would show it.
     Look look = Look::kNone;
-    SDL_GPUGraphicsPipeline* crt_pipeline = nullptr;
-    SDL_GPUGraphicsPipeline* crt_pipeline_own = nullptr;
     SDL_GPUGraphicsPipeline* xbr_pipeline = nullptr;  // the xbr look's last pass
     SDL_GPUGraphicsPipeline* xbr_pipeline_own = nullptr;
+    SDL_GPUGraphicsPipeline* hyllian_pipeline = nullptr;  // the crt look's
+    SDL_GPUGraphicsPipeline* hyllian_pipeline_own = nullptr;
     SDL_GPUTexture* crt_source = nullptr;
     int crt_width = 0;
     int crt_height = 0;
@@ -315,10 +327,14 @@ struct GpuRenderer::State {
             SDL_ReleaseGPUGraphicsPipeline(device, mark_pipeline);
             SDL_ReleaseGPUGraphicsPipeline(device, gauge_pipeline_own);
             SDL_ReleaseGPUGraphicsPipeline(device, gauge_pipeline);
-            SDL_ReleaseGPUGraphicsPipeline(device, crt_pipeline_own);
-            SDL_ReleaseGPUGraphicsPipeline(device, crt_pipeline);
+            SDL_ReleaseGPUGraphicsPipeline(device, panel_pipeline_own);
+            SDL_ReleaseGPUGraphicsPipeline(device, panel_pipeline);
+            SDL_ReleaseGPUTransferBuffer(device, overlay_upload);
+            SDL_ReleaseGPUTexture(device, overlay_texture);
             SDL_ReleaseGPUGraphicsPipeline(device, xbr_pipeline_own);
             SDL_ReleaseGPUGraphicsPipeline(device, xbr_pipeline);
+            SDL_ReleaseGPUGraphicsPipeline(device, hyllian_pipeline_own);
+            SDL_ReleaseGPUGraphicsPipeline(device, hyllian_pipeline);
             SDL_ReleaseGPUTexture(device, crt_source);
             SDL_ReleaseGPUGraphicsPipeline(device, over_pipeline);
             SDL_ReleaseGPUTexture(device, palette_texture);
@@ -344,10 +360,9 @@ struct GpuRenderer::State {
     }
 
     std::expected<void, std::string> set_up();
-    void show_look(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* onto, int width, int height, float lines,
-                   const std::array<float, 4>& screen, bool own);
+    // xbr's and crt's last pass (`which`): from the picture's pixels on its grid.
     void show_xbr(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* onto, int width, int height,
-                  const std::array<float, 4>& screen, const std::array<float, 4>& grid, bool own);
+                  const std::array<float, 4>& screen, const std::array<float, 4>& grid, bool own, Look which);
     SDL_GPUTexture* texture(SDL_GPUTextureFormat format, SDL_GPUTextureUsageFlags usage, int width, int height);
     SDL_GPUTexture* picture_texture(int width, int height);
     std::expected<Picture, std::string> make(SDL_GPUCommandBuffer* commands, const View& view,
@@ -461,12 +476,14 @@ std::expected<void, std::string> GpuRenderer::State::set_up() {
         shader(kMarkFragmentShader, sizeof(kMarkFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
     SDL_GPUShader* gauge_fragment =
         shader(kGaugeFragmentShader, sizeof(kGaugeFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
-    SDL_GPUShader* crt_fragment =
-        shader(kCrtFragmentShader, sizeof(kCrtFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+    SDL_GPUShader* panel_fragment =
+        shader(kPanelFragmentShader, sizeof(kPanelFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
     SDL_GPUShader* xbr_fragment =
         shader(kXbrFragmentShader, sizeof(kXbrFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
-    if (over_fragment == nullptr || mark_fragment == nullptr || gauge_fragment == nullptr || crt_fragment == nullptr ||
-        xbr_fragment == nullptr) {
+    SDL_GPUShader* hyllian_fragment =
+        shader(kHyllianFragmentShader, sizeof(kHyllianFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+    if (over_fragment == nullptr || mark_fragment == nullptr || gauge_fragment == nullptr || xbr_fragment == nullptr ||
+        panel_fragment == nullptr || hyllian_fragment == nullptr) {
         return sdl_error("the shaders");
     }
     const auto show_onto = [this, show_vertex](SDL_GPUTextureFormat format, SDL_GPUShader* fragment, bool blended) {
@@ -496,27 +513,32 @@ std::expected<void, std::string> GpuRenderer::State::set_up() {
     over_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, over_fragment, true);
     mark_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, mark_fragment, true);
     gauge_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, gauge_fragment, true);
-    crt_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, crt_fragment, false);
+    panel_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, panel_fragment, true);
     xbr_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, xbr_fragment, false);
+    hyllian_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, hyllian_fragment, false);
     if (window != nullptr) {
         show_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), show_fragment, false);
         over_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), over_fragment, true);
         mark_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), mark_fragment, true);
         gauge_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), gauge_fragment, true);
-        crt_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), crt_fragment, false);
+        panel_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), panel_fragment, true);
         xbr_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), xbr_fragment, false);
+        hyllian_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), hyllian_fragment, false);
     }
     SDL_ReleaseGPUShader(device, show_vertex);
     SDL_ReleaseGPUShader(device, show_fragment);
     SDL_ReleaseGPUShader(device, over_fragment);
     SDL_ReleaseGPUShader(device, mark_fragment);
     SDL_ReleaseGPUShader(device, gauge_fragment);
-    SDL_ReleaseGPUShader(device, crt_fragment);
+    SDL_ReleaseGPUShader(device, panel_fragment);
     SDL_ReleaseGPUShader(device, xbr_fragment);
+    SDL_ReleaseGPUShader(device, hyllian_fragment);
     if (show_pipeline_own == nullptr || over_pipeline_own == nullptr || mark_pipeline_own == nullptr ||
-        gauge_pipeline_own == nullptr || crt_pipeline_own == nullptr || xbr_pipeline_own == nullptr ||
+        gauge_pipeline_own == nullptr || xbr_pipeline_own == nullptr || panel_pipeline_own == nullptr ||
+        hyllian_pipeline_own == nullptr ||
         (window != nullptr && (show_pipeline == nullptr || over_pipeline == nullptr || mark_pipeline == nullptr ||
-                               gauge_pipeline == nullptr || crt_pipeline == nullptr || xbr_pipeline == nullptr))) {
+                               gauge_pipeline == nullptr || xbr_pipeline == nullptr || panel_pipeline == nullptr ||
+                               hyllian_pipeline == nullptr))) {
         return sdl_error("the pipeline that shows");
     }
     return {};
@@ -1129,6 +1151,48 @@ bool GpuRenderer::State::upload_over(SDL_GPUCommandBuffer* commands, const Minim
     return true;
 }
 
+// The overlay's pixels into its texture (made the first time), if it doesn't have them yet. False if that failed.
+bool GpuRenderer::State::upload_overlay(SDL_GPUCommandBuffer* commands) {
+    constexpr std::size_t kBytes = std::size_t{kScreenWidth} * kScreenHeight * 4;
+    if (overlay.size() != kBytes) {
+        return false;
+    }
+    if (overlay_sent) {
+        return true;
+    }
+    if (overlay_texture == nullptr) {
+        overlay_texture =
+            texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, kScreenWidth, kScreenHeight);
+        const SDL_GPUTransferBufferCreateInfo made{
+            .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = static_cast<Uint32>(kBytes), .props = 0};
+        overlay_upload = SDL_CreateGPUTransferBuffer(device, &made);
+    }
+    void* mapped = overlay_texture != nullptr && overlay_upload != nullptr
+                       ? SDL_MapGPUTransferBuffer(device, overlay_upload, true)
+                       : nullptr;
+    if (mapped == nullptr) {
+        return false;
+    }
+    std::memcpy(mapped, overlay.data(), kBytes);
+    SDL_UnmapGPUTransferBuffer(device, overlay_upload);
+    SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
+    const SDL_GPUTextureTransferInfo from{
+        .transfer_buffer = overlay_upload, .offset = 0, .pixels_per_row = kScreenWidth, .rows_per_layer = 0};
+    const SDL_GPUTextureRegion to{.texture = overlay_texture,
+                                  .mip_level = 0,
+                                  .layer = 0,
+                                  .x = 0,
+                                  .y = 0,
+                                  .z = 0,
+                                  .w = kScreenWidth,
+                                  .h = kScreenHeight,
+                                  .d = 1};
+    SDL_UploadToGPUTexture(copy, &from, &to, true);
+    SDL_EndGPUCopyPass(copy);
+    overlay_sent = true;
+    return true;
+}
+
 // What stops light into its texture, made anew when the size is another. False if that failed.
 bool GpuRenderer::State::upload_ground(SDL_GPUCommandBuffer* commands, const Ground& ground) {
     const std::size_t bytes = static_cast<std::size_t>(ground.width) * static_cast<std::size_t>(ground.height);
@@ -1204,13 +1268,12 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         }
         shown_kept = screen.kept;
     }
-    // The screen's look (never in a picture of a whole level). The television and xbr draw all of it into a texture
-    // of our own first (onto which the pipelines for our own format draw), and from there onto the target in a last
-    // pass; xbr draws it in the game's whole pixels (nothing moved between ticks), on the grid the last pass
-    // rounds.
+    // The screen's look (never in a picture of a whole level). crt and xbr draw all of it into a texture of our own
+    // first (onto which the pipelines for our own format draw), in the game's whole pixels (nothing moved between
+    // ticks), and from there onto the target in a last pass that finds the picture's pixels on that grid.
     const Look shown_look = whole == 0 ? look : Look::kNone;
-    const bool crt = shown_look == Look::kTv || shown_look == Look::kXbr;
-    const bool whole_pixels = shown_look == Look::kXbr;
+    const bool crt = shown_look == Look::kCrt || shown_look == Look::kXbr;
+    const bool whole_pixels = shown_look == Look::kCrt || shown_look == Look::kXbr;
     const bool own_format = own || crt;
     SDL_GPUGraphicsPipeline* with = own_format ? show_pipeline_own : show_pipeline;
     // The HUD slides aside first, and the minimap fades in when it is there; taken away, the minimap fades out and
@@ -1227,6 +1290,7 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         made_room = faded_in <= 0.0F ? std::max(made_room - (1.0F / kSlidePictures), 0.0F) : made_room;
     }
     const bool with_minimap = faded_in > 0.0F && over_width != 0;
+    const bool with_overlay = whole == 0 && upload_overlay(commands);
     void* mapped = SDL_MapGPUTransferBuffer(device, palette_upload, true);
     if (mapped == nullptr) {
         return sdl_error("the palette");
@@ -1552,30 +1616,58 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         mark(1, {0, 0, 0, 0.7F});
         mark(0, {1, 1, 1, 0.95F});
     }
+    if (with_overlay) {
+        // The menu, over all of it, in the game's pixels as large as they are shown (smaller zoomed out, as the HUD
+        // is), but never smaller than at the zoom's middle step, 480 pixels across (the user: at twice the view it is
+        // too small); in the middle of the screen, on the picture's grid where its pixels are the picture's.
+        constexpr std::uint32_t kCorners = 6;
+        struct Placed {  // gpu_show.vert
+            std::array<float, 4> dest;
+            std::array<float, 4> source;
+            std::array<float, 2> size;
+            std::array<float, 2> unused;
+        };
+        constexpr float kSmallestAcross = 480;
+        const float pixel = std::max(fit, screen_width / kSmallestAcross);
+        const float panel_width = kScreenWidth * pixel;
+        const float panel_height = kScreenHeight * pixel;
+        const auto on_grid = [pixel](float at, float first) {
+            return first + (std::round((at - first) / pixel) * pixel);
+        };
+        const Placed placed{.dest = {on_grid(static_cast<float>(left) + ((screen_width - panel_width) / 2), grid[0]),
+                                     on_grid(static_cast<float>(top) + ((screen_height - panel_height) / 2), grid[1]),
+                                     panel_width, panel_height},
+                            .source = {0, 0, kScreenWidth, kScreenHeight},
+                            .size = {static_cast<float>(width), static_cast<float>(height)},
+                            .unused = {}};
+        SDL_BindGPUGraphicsPipeline(pass, own_format ? panel_pipeline_own : panel_pipeline);
+        SDL_PushGPUVertexUniformData(commands, 0, &placed, sizeof(placed));
+        const SDL_GPUTextureSamplerBinding laid{.texture = overlay_texture, .sampler = sampler};
+        SDL_BindGPUFragmentSamplers(pass, 0, &laid, 1);
+        SDL_DrawGPUPrimitives(pass, kCorners, 1, 0, 0);
+    }
     SDL_EndGPURenderPass(pass);
     const std::array<float, 4> screen_part{static_cast<float>(left), static_cast<float>(top),
                                            static_cast<float>(kScreenWidth * scale),
                                            static_cast<float>(kScreenHeight * scale)};
-    if (shown_look == Look::kTv) {
-        // A line of the tube for each of the picture's rows as shown: the original's 240 at its view, more zoomed out.
-        show_look(commands, onto, width, height, static_cast<float>(kScreenHeight * scale) / fit, screen_part, own);
-    } else if (shown_look == Look::kXbr) {
-        show_xbr(commands, onto, width, height, screen_part, {grid[0], grid[1], fit, 0}, own);
+    if (shown_look == Look::kXbr || shown_look == Look::kCrt) {
+        show_xbr(commands, onto, width, height, screen_part, {grid[0], grid[1], fit, 0}, own, shown_look);
     }
     return {};
 }
 
-// The xbr look's last pass: `crt_source` onto `onto` (of the same size), the picture's pixels (`grid`: where the
-// first starts, how wide each is) rounded off and blended; black around the screen's part `screen`.
+// The xbr look's last pass, or the crt look's (`which`): `crt_source` onto `onto` (of the same size), from the
+// picture's pixels (`grid`: where the first starts, how wide each is); black around the screen's part `screen`.
 void GpuRenderer::State::show_xbr(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* onto, int width, int height,
-                                  const std::array<float, 4>& screen, const std::array<float, 4>& grid, bool own) {
+                                  const std::array<float, 4>& screen, const std::array<float, 4>& grid, bool own,
+                                  Look which) {
     struct Placed {  // gpu_show.vert
         std::array<float, 4> dest;
         std::array<float, 4> source;
         std::array<float, 2> size;
         std::array<float, 2> unused;
     };
-    struct Grid {  // gpu_xbr.frag
+    struct Grid {  // gpu_xbr.frag, gpu_hyllian.frag
         std::array<float, 4> screen;
         std::array<float, 4> grid;
     };
@@ -1589,53 +1681,14 @@ void GpuRenderer::State::show_xbr(SDL_GPUCommandBuffer* commands, SDL_GPUTexture
     colour.load_op = SDL_GPU_LOADOP_CLEAR;
     colour.store_op = SDL_GPU_STOREOP_STORE;
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &colour, 1, nullptr);
-    SDL_BindGPUGraphicsPipeline(pass, own ? xbr_pipeline_own : xbr_pipeline);
+    if (which == Look::kCrt) {
+        SDL_BindGPUGraphicsPipeline(pass, own ? hyllian_pipeline_own : hyllian_pipeline);
+    } else {
+        SDL_BindGPUGraphicsPipeline(pass, own ? xbr_pipeline_own : xbr_pipeline);
+    }
     SDL_PushGPUVertexUniformData(commands, 0, &placed, sizeof(placed));
     SDL_PushGPUFragmentUniformData(commands, 0, &on, sizeof(on));
     const SDL_GPUTextureSamplerBinding picture{.texture = crt_source, .sampler = sampler};
-    SDL_BindGPUFragmentSamplers(pass, 0, &picture, 1);
-    constexpr std::uint32_t kCorners = 6;
-    SDL_DrawGPUPrimitives(pass, kCorners, 1, 0, 0);
-    SDL_EndGPURenderPass(pass);
-}
-
-// The screen's look: `crt_source`'s part `screen` (the original's screen, as large as it was shown) onto `onto`,
-// as a tube shows it with `lines` lines, as large as 4:3 fits in the middle.
-void GpuRenderer::State::show_look(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* onto, int width, int height,
-                                   float lines, const std::array<float, 4>& screen, bool own) {
-    struct Placed {  // gpu_show.vert
-        std::array<float, 4> dest;
-        std::array<float, 4> source;
-        std::array<float, 2> size;
-        std::array<float, 2> unused;
-    };
-    struct Tube {  // gpu_crt.frag
-        std::array<float, 4> screen;
-        std::array<float, 4> beam;
-        std::array<float, 4> tube;
-    };
-    // The television (the user's to judge; made gentler and sharper after a first look on the host): the beam on a
-    // line at its darkest and brightest, its softness along it, the light spread; the lines, the mask, the
-    // brightness made up for them, the corners' darkening.
-    const Tube tube{.screen = screen, .beam = {0.24F, 0.38F, 0.4F, 0.06F}, .tube = {lines, 0.2F, 1.4F, 0.25F}};
-    const auto wide = static_cast<float>(width);
-    const auto high = static_cast<float>(height);
-    const float glass_width = std::min(wide, high * 4 / 3);
-    const float glass_height = glass_width * 3 / 4;
-    const Placed placed{.dest = {(wide - glass_width) / 2, (high - glass_height) / 2, glass_width, glass_height},
-                        .source = screen,
-                        .size = {wide, high},
-                        .unused = {}};
-    SDL_GPUColorTargetInfo colour{};
-    colour.texture = onto;
-    colour.clear_color = {.r = 0, .g = 0, .b = 0, .a = 1};
-    colour.load_op = SDL_GPU_LOADOP_CLEAR;
-    colour.store_op = SDL_GPU_STOREOP_STORE;
-    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &colour, 1, nullptr);
-    SDL_BindGPUGraphicsPipeline(pass, own ? crt_pipeline_own : crt_pipeline);
-    SDL_PushGPUVertexUniformData(commands, 0, &placed, sizeof(placed));
-    SDL_PushGPUFragmentUniformData(commands, 0, &tube, sizeof(tube));
-    const SDL_GPUTextureSamplerBinding picture{.texture = crt_source, .sampler = smooth};
     SDL_BindGPUFragmentSamplers(pass, 0, &picture, 1);
     constexpr std::uint32_t kCorners = 6;
     SDL_DrawGPUPrimitives(pass, kCorners, 1, 0, 0);
@@ -1846,6 +1899,11 @@ std::expected<std::vector<std::uint8_t>, std::string> GpuRenderer::shown(const S
 
 void GpuRenderer::set_look(Look look) noexcept {
     state_->look = look;
+}
+
+void GpuRenderer::set_overlay(std::vector<std::uint8_t> pixels) {
+    state_->overlay = std::move(pixels);
+    state_->overlay_sent = false;
 }
 
 GpuRenderer::Look GpuRenderer::look() const noexcept {

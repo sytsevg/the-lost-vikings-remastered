@@ -50,6 +50,10 @@ class Sequencer {
     int status(int handle) const noexcept;  // fn 174: 0 stopped, 1 playing, 2 done; -1 no such handle
     // fn 177: the volume (percent) towards `target` over `milliseconds` (0: at once).
     void set_volume(int handle, int target, int milliseconds);
+    // Ours, not the driver's (Remaster rules' volume): how loud the sequence is heard (percent), on top of the
+    // volume the game gives it. At 100 the driver's own; at 0 its notes aren't played at all (a chip's quietest
+    // level can still be heard). Kept until the handle is registered again; the volume is sent again at once.
+    void set_loudness(int handle, int percent);
 
   private:
     struct NoteSlot {
@@ -79,6 +83,7 @@ class Sequencer {
         int volume_target = 100;
         std::int32_t volume_time = 0;
         std::int32_t volume_period = 1;
+        int loudness = 100;  // set_loudness()'s
         std::array<Loop, 4> loops{};
         std::array<std::uint8_t, 16> map{};
         std::array<std::uint8_t, 16> program{};
@@ -102,6 +107,8 @@ class Sequencer {
     void release_channel_notes(std::uint8_t channel, const Sequence* only = nullptr);
     void end_sequence(Sequence& s);
     void apply_volume(Sequence& s);
+    // The volume the channels are given: the game's, as loud as set_loudness() has it.
+    static int heard_volume(const Sequence& s) noexcept { return (s.volume * s.loudness) / 100; }
     int lock_channel();
     // `later`: what the channel is set back to is sent when it is next taken, not now. The driver sends it at
     // once, the volume among it, while the effect's last notes are still dying away: they end on a louder

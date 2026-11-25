@@ -1,5 +1,7 @@
-// Tests for src/lvr/profile.*: what the minimap has seen, as text and as a file in the profile's folder.
+// Tests for src/lvr/profile.*: what the minimap has seen, the quicksave and the settings, as text and as files in the
+// profile's folder.
 #include <catch2/catch_test_macros.hpp>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -116,21 +118,79 @@ TEST_CASE("profile: the quicksave's file is written and read back; another kind 
     std::filesystem::remove_all(folder);
 }
 
-TEST_CASE("profile: the screen's look is kept by its name; another kind of file is refused") {
-    const std::filesystem::path folder = folder_for("screen");
-    const auto nothing = load_screen_look(folder);
-    REQUIRE(nothing);
-    CHECK_FALSE(*nothing);  // nothing kept yet
-    REQUIRE(save_screen_look(folder, "tv"));
-    const auto kept = load_screen_look(folder);
-    REQUIRE(kept);
-    REQUIRE(*kept);
-    CHECK(**kept == "tv");
-    REQUIRE(save_screen_look(folder, "none"));  // written again over it
-    CHECK(load_screen_look(folder)->value() == "none");
-    for (const std::string bad : {"lvr-screen 2\nlook tv\n", "lvr-screen 1\nshade tv\n", "", "lvr-screen 1"}) {
-        std::ofstream{folder / "screen.txt", std::ios::binary | std::ios::trunc} << bad;
-        CHECK_FALSE(load_screen_look(folder));
-    }
+TEST_CASE("profile: the settings are written as lines and read back the same") {
+    Settings settings;
+    std::vector<std::string> problems;
+    CHECK(parse_settings(format_settings(settings), problems) == settings);
+    settings.modern_sound = true;
+    settings.music = 3;
+    settings.sound_fx = 0;
+    settings.screen = "crt";
+    settings.zoom = 2;
+    settings.minimap = false;
+    settings.visual_fx = false;
+    REQUIRE(input::bind_key(settings.controls, input::Action::kZoomIn, "Keypad -"));  // a name with spaces and -
+    REQUIRE(input::bind_pad(settings.controls, input::Action::kRewind, "righttrigger"));
+    settings.controls.keys.at(static_cast<std::size_t>(input::Action::kQuicksave)).clear();  // none
+    const std::string text = format_settings(settings);
+    CHECK(text.starts_with(
+        "lvr-settings 1\nsound modern\nmusic 3\nsound-fx 0\nscreen crt\nzoom 2\nminimap off\nvisual-fx off\n"));
+    CHECK(text.find("\nkey zoom-in Keypad -\n") != std::string::npos);
+    CHECK(text.find("\nkey quicksave\n") != std::string::npos);
+    CHECK(parse_settings(text, problems) == settings);
+    CHECK(problems.empty());
+}
+
+TEST_CASE("profile: settings are read leniently, a line at a time") {
+    std::vector<std::string> problems;
+    // Not a settings file: the defaults, and it is said.
+    CHECK(parse_settings("lvr-minimap 1\nsound modern\n", problems) == Settings{});
+    CHECK(problems.size() == 1);
+    problems.clear();
+    // What isn't understood is said and skipped; what isn't named stays as it is by default.
+    const Settings read = parse_settings(
+        "lvr-settings 1\r\n"
+        "# mine\n"
+        "music 11\n"
+        "sound-fx 4\n"
+        "zoom -1\n"
+        "volume 3\n"
+        "minimap maybe\n"
+        "key jump Space\n"
+        "key pause Escape\n"
+        "pad pause start\n"
+        "pad rewind jump\n"
+        "key left A\n"
+        "key left Left\n"
+        "pad zoom-out\n",
+        problems);
+    CHECK(problems == std::vector<std::string>{"line 3: not understood", "line 5: not understood",
+                                               "line 6: not understood", "line 7: not understood",
+                                               "line 8: no such action", "line 9: a key that can't be bound",
+                                               "line 10: not a gamepad's input that can be bound",
+                                               "line 11: not a gamepad's input that can be bound"});
+    Settings expected;
+    expected.sound_fx = 4;
+    expected.controls.keys.at(static_cast<std::size_t>(input::Action::kLeft)) = {"A", "Left"};
+    expected.controls.keys.at(static_cast<std::size_t>(input::Action::kPause)).clear();  // named: only what it gives
+    expected.controls.pad.at(static_cast<std::size_t>(input::Action::kPause)).clear();
+    expected.controls.pad.at(static_cast<std::size_t>(input::Action::kRewind)).clear();
+    expected.controls.pad.at(static_cast<std::size_t>(input::Action::kZoomOut)).clear();
+    CHECK(read == expected);
+}
+
+TEST_CASE("profile: the settings are kept in the profile's folder") {
+    const std::filesystem::path folder = folder_for("settings");
+    std::vector<std::string> problems;
+    CHECK(load_settings(folder, problems) == Settings{});  // nothing kept yet
+    CHECK(problems.empty());
+    Settings settings;
+    settings.screen = "xbr";
+    REQUIRE(save_settings(folder, settings));
+    CHECK(load_settings(folder, problems) == settings);
+    std::ofstream{folder / "settings.txt", std::ios::binary | std::ios::trunc} << "lvr-settings 1\nzoom x\n";
+    CHECK(load_settings(folder, problems) == Settings{});
+    REQUIRE(problems.size() == 1);
+    CHECK(problems.front().ends_with("settings.txt: line 2: not understood"));
     std::filesystem::remove_all(folder);
 }

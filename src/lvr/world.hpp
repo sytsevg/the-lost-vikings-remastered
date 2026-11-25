@@ -203,12 +203,14 @@ struct WorldState {
     bool has_vikings = true;          // a level, not a cutscene
     std::uint16_t held = 0;           // this tick's input: the keys held, and of them the ones newly pressed
     std::uint16_t pressed = 0;        // (docs/original/input.md)
-    int current_viking = 0;           // the slot of the Viking being played; kNobody when all are dead
-    int shown_viking = kNobody;       // the one that last blinked as it was chosen
-    int blink = 0;                    // ticks of that blinking left
-    bool game_over = false;           // the last Viking died: the scene ends
-    bool level_done = false;          // the Vikings have all reached the exit: the scene ends
-    std::uint16_t typed = 0;          // the last character typed (Y and N answer the scene's question)
+    // Remaster rules: how fast the Vikings walk this tick (a gamepad's stick pushed part way), 1 to kFullPace.
+    std::uint8_t pace = kFullPace;
+    int current_viking = 0;      // the slot of the Viking being played; kNobody when all are dead
+    int shown_viking = kNobody;  // the one that last blinked as it was chosen
+    int blink = 0;               // ticks of that blinking left
+    bool game_over = false;      // the last Viking died: the scene ends
+    bool level_done = false;     // the Vikings have all reached the exit: the scene ends
+    std::uint16_t typed = 0;     // the last character typed (Y and N answer the scene's question)
     // The screen's shake, per axis: the view is off by `offset`, which flips between 0 and `amount` every tick
     // while `ticks` last.
     struct Shake {

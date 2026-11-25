@@ -111,6 +111,10 @@ class Pieces {
     std::vector<Piece> all_;
 };
 
+// A pace, in 16ths of the original's: how fast an animation goes on (Sprite::pace), or a Viking walks (World::pace).
+// Remaster rules' only (a gamepad's stick pushed part way); the original's is always all of it.
+inline constexpr std::uint8_t kFullPace = 16;
+
 // An entity's pieces and the animation it is playing.
 struct Sprite {
     int first = 0;  // its pieces in the layer: [first, first + count)
@@ -123,6 +127,10 @@ struct Sprite {
     // Where the animation it was last started on begins (kNoAnimation: none yet). The game never reads it: it is
     // what the Modern visuals' effects answer to (effects.hpp).
     std::uint16_t started = kNoAnimation;
+    // Remaster rules: how fast the animation goes on, a step every tick at kFullPace; slower, `paced` adds up
+    // the pace each tick and it goes on when that reaches a whole step. Starting an animation sets it back to full.
+    std::uint8_t pace = kFullPace;
+    std::uint8_t paced = 0;
 
     bool animating() const noexcept { return program != kNoAnimation; }
     bool operator==(const Sprite&) const = default;

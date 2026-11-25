@@ -14,7 +14,8 @@ The whole game under Vanilla rules, with Classic visuals and both sounds.
   picture and sound requests at every refresh of every replay ([`../replays/README.md`](../replays/README.md)).
 - **Sound:** Classic (OPL3 as the original's driver played it, matching its register writes) and Modern (General
   MIDI through a SoundFont), swappable while playing.
-- **`vikings-remaster`:** the game in a window, keyboard and gamepad, rebindable keys.
+- **`vikings-remaster`:** the game in a window, keyboard and gamepad, rebindable keys; under Remaster rules a menu
+  for the settings and the controls (keyboard and gamepad), kept in the profile.
 - **Remaster rules, so far** (`--rules remaster`; M7 below): the window on the GPU renderer, zoom-out in three
   steps with the HUD laid over the view, text boxes that follow the view, no limit on entities or sprite pieces,
   a minimap with fog of war, ten seconds of rewind a level (a bar in the minimap), and a quicksave with the cheat
@@ -32,8 +33,8 @@ rewind, a quicksave, and the player's profile on disk that keeps the last two ar
   the Modern visuals, ADR-0005)
 - Parallax: the SNES backdrops behind the levels and the village's scenes, from the user's own ROM image (built,
   2026-11-24; HANDOVER.md, "Parallax")
-- **Screen look** (built, 2026-11-25; HANDOVER.md, "Screen look"): a television's, flat, F11; and the pixels
-  rounded off by xBR
+- **Screen look** (built, 2026-11-25; HANDOVER.md, "Screen look"): Hyllian's CRT, and the pixels rounded off by
+  xBR; F11 or the menu
 - Modern sound: the effects placed by position, and extra effects (notes below)
 - Dropped (the user, 2026-11-25): art packs (sprites replaced one for one) and the SNES version's sound
 

@@ -19,6 +19,10 @@ Adapted into this repository (not downloaded):
   `src/lvr/gpu_xbr.frag`, adapted from `xbr-lv2.glsl` (which incorporates ideas from Joshua Street's SABR
   shader), the screen's xbr look. MIT; its copyright and permission notice is kept at the top of the file and is
   part of the game's binary.
+- **Hyllian's CRT shader** (Hyllian, from libretro's [slang-shaders](https://github.com/libretro/slang-shaders),
+  `crt/shaders/hyllian/`): `src/lvr/gpu_hyllian.frag`, adapted from `crt-hyllian-base.slang` and the mask of
+  `support/glow/blur-glow-mask-geom.slang`, the screen's crt look. MIT; its copyright and permission notice is kept
+  at the top of the file and is part of the game's binary.
 
 Not part of the build or of any binary, and not in this repository:
 

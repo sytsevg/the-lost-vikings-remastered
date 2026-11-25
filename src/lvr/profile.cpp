@@ -9,6 +9,7 @@
 #include <span>
 #include <sstream>
 #include <system_error>
+#include <utility>
 
 #include "lvr/archive.hpp"
 
@@ -212,33 +213,144 @@ std::expected<void, std::string> save_quicksave(const std::filesystem::path& fol
 
 namespace {
 
-constexpr std::string_view kScreenKind = "lvr-screen 1";
-constexpr std::string_view kScreenFile = "screen.txt";
-constexpr std::string_view kLookWord = "look ";
+constexpr std::string_view kSettingsKind = "lvr-settings 1";
+constexpr std::string_view kSettingsFile = "settings.txt";
+
+std::string_view trimmed(std::string_view text) {
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t')) {
+        text.remove_prefix(1);
+    }
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '\r')) {
+        text.remove_suffix(1);
+    }
+    return text;
+}
+
+// The first word of `text`, taken off it (and the spaces after it).
+std::string_view word_of(std::string_view& text) {
+    const std::size_t end = text.find(' ');
+    const std::string_view word = text.substr(0, end);
+    text = trimmed(end == std::string_view::npos ? std::string_view{} : text.substr(end + 1));
+    return word;
+}
+
+std::optional<int> whole_number(std::string_view text) {
+    int value = 0;
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (error != std::errc{} || end != text.data() + text.size() || value < 0) {
+        return std::nullopt;
+    }
+    return value;
+}
+
+std::optional<bool> on_or_off(std::string_view text) {
+    if (text == "on" || text == "off") {
+        return text == "on";
+    }
+    return std::nullopt;
+}
 
 }  // namespace
 
-std::expected<std::optional<std::string>, std::string> load_screen_look(const std::filesystem::path& folder) {
-    const std::filesystem::path path = folder / kScreenFile;
+std::string format_settings(const Settings& settings) {
+    std::string text = std::format("{}\n", kSettingsKind);
+    const auto on = [](bool b) { return b ? "on" : "off"; };
+    text += std::format("sound {}\nmusic {}\nsound-fx {}\nscreen {}\nzoom {}\nminimap {}\nvisual-fx {}\n",
+                        settings.modern_sound ? "modern" : "classic", settings.music, settings.sound_fx,
+                        settings.screen, settings.zoom, on(settings.minimap), on(settings.visual_fx));
+    const auto table = [&text](std::string_view word, const auto& bound) {
+        for (std::size_t action = 0; action < input::kActionCount; ++action) {
+            const std::string_view name = input::name_of(static_cast<input::Action>(action));
+            if (bound.at(action).empty()) {
+                text += std::format("{} {}\n", word, name);
+            }
+            for (const std::string& input : bound.at(action)) {
+                text += std::format("{} {} {}\n", word, name, input);
+            }
+        }
+    };
+    table("key", settings.controls.keys);
+    table("pad", settings.controls.pad);
+    return text;
+}
+
+Settings parse_settings(std::string_view text, std::vector<std::string>& problems) {
+    Settings settings;
+    if (trimmed(line_of(text)) != kSettingsKind) {
+        problems.emplace_back("not a settings file of this kind: nothing of it is used");
+        return settings;
+    }
+    // An action the file names gets the keys (or inputs) it gives, and none else; the rest keep their defaults.
+    std::array<bool, input::kActionCount> keys_named{};
+    std::array<bool, input::kActionCount> pad_named{};
+    for (int number = 2; !text.empty(); ++number) {
+        std::string_view line = trimmed(line_of(text));
+        if (line.empty() || line.front() == '#') {
+            continue;
+        }
+        const std::string_view name = word_of(line);
+        const auto said = [&](std::string_view what) { problems.push_back(std::format("line {}: {}", number, what)); };
+        if (name == "key" || name == "pad") {
+            const bool pad = name == "pad";
+            const auto action = input::action_named(word_of(line));
+            if (!action) {
+                said("no such action");
+                continue;
+            }
+            const auto index = static_cast<std::size_t>(*action);
+            auto& bound = pad ? settings.controls.pad : settings.controls.keys;
+            bool& named = pad ? pad_named.at(index) : keys_named.at(index);
+            if (!std::exchange(named, true)) {
+                bound.at(index).clear();
+            }
+            if (line.empty()) {
+                continue;  // (none)
+            }
+            if (pad ? input::fixed_pad_input(line) || !input::pad_input_index(line) : input::fixed_key(line)) {
+                said(pad ? "not a gamepad's input that can be bound" : "a key that can't be bound");
+                continue;
+            }
+            bound.at(index).emplace_back(line);
+        } else if (name == "sound" && (line == "classic" || line == "modern")) {
+            settings.modern_sound = line == "modern";
+        } else if (const auto volume = whole_number(line); volume && *volume <= kLoudest && name == "music") {
+            settings.music = *volume;
+        } else if (volume && *volume <= kLoudest && name == "sound-fx") {
+            settings.sound_fx = *volume;
+        } else if (volume && name == "zoom") {
+            settings.zoom = *volume;
+        } else if (name == "screen" && !line.empty()) {
+            settings.screen = line;
+        } else if (const auto flag = on_or_off(line); flag && name == "minimap") {
+            settings.minimap = *flag;
+        } else if (flag && name == "visual-fx") {
+            settings.visual_fx = *flag;
+        } else {
+            said("not understood");
+        }
+    }
+    return settings;
+}
+
+Settings load_settings(const std::filesystem::path& folder, std::vector<std::string>& problems) {
+    const std::filesystem::path path = folder / kSettingsFile;
     std::ifstream file{path, std::ios::binary};
     if (!file) {
-        return std::optional<std::string>{};
+        return Settings{};
     }
     std::stringstream read;
     read << file.rdbuf();
     const std::string contents = read.str();
-    std::string_view text{contents};
-    const std::string_view kind = line_of(text);
-    std::string_view look = line_of(text);
-    if (kind != kScreenKind || !look.starts_with(kLookWord)) {
-        return std::unexpected{std::format("{}: not a screen file of this kind", path.string())};
+    std::vector<std::string> found;
+    Settings settings = parse_settings(contents, found);
+    for (const std::string& problem : found) {
+        problems.push_back(std::format("{}: {}", path.string(), problem));
     }
-    look.remove_prefix(kLookWord.size());
-    return std::optional<std::string>{std::string{look}};
+    return settings;
 }
 
-std::expected<void, std::string> save_screen_look(const std::filesystem::path& folder, std::string_view look) {
-    return write_file(folder, kScreenFile, std::format("{}\n{}{}\n", kScreenKind, kLookWord, look));
+std::expected<void, std::string> save_settings(const std::filesystem::path& folder, const Settings& settings) {
+    return write_file(folder, kSettingsFile, format_settings(settings));
 }
 
 }  // namespace lvr

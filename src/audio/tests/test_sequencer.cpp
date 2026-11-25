@@ -88,6 +88,50 @@ TEST_CASE("audio: the start volume scales a sequence's volume controller (463 st
     }
 }
 
+TEST_CASE("audio: the loudness scales what the game's volume gives, and at 0 no note is played") {
+    const auto t = tables();
+    // The volume controller, a note, then the volume controller again a tick later.
+    const auto stream = bytes({0xB2, 7, 100, 0x92, 60, 90, 0x01, 0x01, 0xB2, 7, 120, 0x01, 0xFF, 0x2F, 0});
+    Recorder r;
+    Sequencer sequencer{t, r, 90};
+    r.messages.clear();
+    const int h = sequencer.register_sequence(stream);
+    sequencer.set_loudness(h, 50);
+    CHECK(r.messages.empty());  // nothing to send before it plays
+    sequencer.start(h);
+    sequencer.service();
+    REQUIRE(r.messages.size() >= 2);
+    CHECK(r.messages[0] == Message{0xB2, 7, 45});  // 100 at 90% at half the loudness
+    CHECK(r.messages[1] == Message{0x92, 60, 90});
+    r.messages.clear();
+    sequencer.set_loudness(h, 100);  // sent again at once, from what the sequence last asked for
+    CHECK(r.messages == std::vector<Message>{{0xB2, 7, 90}});
+    r.messages.clear();
+    sequencer.set_loudness(h, 0);
+    CHECK(r.messages == std::vector<Message>{{0xB2, 7, 0}});
+
+    Recorder silent;
+    Sequencer quiet{t, silent, 100};
+    silent.messages.clear();
+    const int q = quiet.register_sequence(stream);
+    quiet.set_loudness(q, 0);
+    quiet.start(q);
+    quiet.service();
+    for (const Message& m : silent.messages) {
+        CHECK((m.status & 0xF0U) != 0x90U);  // no note on
+    }
+    // A sequence registered again in that handle is heard as the driver has it.
+    quiet.stop(q);
+    quiet.release(q);
+    const int again = quiet.register_sequence(stream);
+    CHECK(again == q);
+    silent.messages.clear();
+    quiet.start(again);
+    quiet.service();
+    REQUIRE_FALSE(silent.messages.empty());
+    CHECK(silent.messages[0] == Message{0xB2, 7, 100});
+}
+
 TEST_CASE("audio: with ring-out, a dying-away instrument's last note is let go only when the sequence ends") {
     const auto t = tables();
     // Channel 3: a program, a note of 2 ticks, then 10 ticks of nothing, the end.

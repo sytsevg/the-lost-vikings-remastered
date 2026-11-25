@@ -4,6 +4,7 @@
 // A Viking's turn ends where he waits for the next tick (`At`). What stops him after the tick's move, and who
 // touches him, is tested later in the tick (`Test`) and acted on when his next turn starts.
 
+#include <algorithm>
 #include <memory>
 
 #include "lvr/viking.hpp"
@@ -407,11 +408,30 @@ void Viking::walk(World& world, bool left) {
         s.shield_away = false;
         world.play(*this, s.shield_up ? anim::kOlafWalksShieldUp : looks().walks);
     }
-    const int top_speed = s.who == kind::kErik ? kErikTopSpeed : kTopSpeed;
+    int top_speed = s.who == kind::kErik ? kErikTopSpeed : kTopSpeed;
+    // Remaster rules: a gamepad's stick pushed part way walks him slower (and Erik pushed too little to run can't
+    // charge), and his walk's animation slower too, but less: at the square root of his pace (a quarter of his speed,
+    // half of his steps), so his legs keep up with the floor (the user: at the same pace he slid ahead of them).
+    constexpr int kFull = kFullPace;
+    const int pace = std::clamp(int{world.pace}, 1, kFull);
+    const bool paced = world.rules == Rules::kRemaster && pace < kFull;
+    if (world.rules == Rules::kRemaster) {
+        int steps = 1;  // in 16ths too: the smallest whose square is at least the pace's 16ths of 16
+        while (steps * steps < pace * kFull) {
+            ++steps;
+        }
+        sprite.pace = static_cast<std::uint8_t>(steps);
+    }
+    if (paced) {
+        top_speed = (top_speed * pace) / kFull;
+    }
     if (speed_x >= top_speed) {
         speed_x = static_cast<std::int16_t>(top_speed);
     } else if (speed_x >= 0) {
         speed_x += px(0.75);
+        if (paced) {
+            speed_x = static_cast<std::int16_t>(std::min(int{speed_x}, top_speed));
+        }
     } else {  // still going the other way: Erik slows, the others stop at once
         speed_x = static_cast<std::int16_t>(s.who == kind::kErik ? speed_x + px(1.5) : 0);
     }

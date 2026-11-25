@@ -5,36 +5,44 @@
 //
 //   vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] [--soundfont FILE]
 //                    [--rules vanilla|remaster] [--cheat] [--slow-frames]
-//       --profile DIR: where Remaster rules keep the player's profile (what the minimap has seen); by default
-//       the folder `profiles` beside this program.
+//       --profile DIR: where Remaster rules keep the player's profile (what the minimap has seen, the settings); by
+//       default the folder `profiles` beside this program.
 //       --slow-frames: a step or a picture's showing that takes long is reported on the error output
 //       --showcase N: under Remaster rules, the places where the Modern visuals' effects are seen (showcase.hpp),
 //       from the Nth on: each with the view held on it; PgDn or ] and PgUp or [ go to the next and the one before (with
 //       --dump: the Nth, as --whole writes it); the last ones put a Viking where he dies, starting the level again
-//       --no-effects: under Remaster rules, the pictures without the Modern visuals' effects (effects.hpp)
-//       --shader none|tv|xbr: under Remaster rules, the screen's look (gpu.hpp): as it is, a television's, or the
-//       pixels' stair-steps rounded off (xBR, in whole pixels); F11 goes from one to the next. The profile keeps
-//       the one the window ended with.
+//       --sound: the Classic or the Modern sound to start with (Vanilla rules, and a dump); F12 switches.
 //       --cheat: the game's cheat on from the start, as if its password had been typed at the title: F5 and F6
 //       change the level, and under Remaster rules F7 and F8 are a quicksave and its load.
 //       play, from scene N (default 39, the first logo; 0-36 are the levels); FILE: other keys, lines
-//       "KEY NAME = action" (input/input.hpp). F12 switches between the Classic and the Modern sound; under
-//       Remaster rules F11 the screen's look.
+//       "KEY NAME = action" (input/input.hpp). F12 switches between the Classic and the Modern sound.
+//       Under Remaster rules the sound, the screen's look (F11) and the visual effects are the menu's (Escape in a
+//       level), kept in the profile (settings.txt, profile.hpp), not start-up options.
 //   vikings-remaster [--data DIR] [--slot N] --dump STEPS FILE.png [--wav FILE.wav] [--zoom BY AT_STEP]
 //                    [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] [--whole AT_STEP] [--moments N]
+//                    [--sound classic|modern] [--shader none|crt|xbr] [--no-effects] [--menu KEYS]
 //       run STEPS steps without a window and without a key (or with KEY held, a name as in a keys file; and the
 //       key of --tap alone at step AT_STEP, for what waits for a key to be pressed: a level's password), write
 //       the last picture (and the sound). Under Remaster rules, --rewind: the rewind held from step FROM until
 //       step UNTIL; --whole: the view is the whole level from step AT_STEP on, and the picture written is all of
 //       it (twice the size, without the HUD); --moments: the last step's pictures each at N moments of its refresh
-//       as well, FILE-P-M.png, for what moves between ticks
+//       as well, FILE-P-M.png, for what moves between ticks; --menu: the menu over the last picture, with its keys
+//       KEYS pressed (u, d, l, r: up, down, left, right; c choose, b back, x clear), as a still of it. A dump has no
+//       menu or profile: --sound the version of the sound written; under Remaster rules --shader the screen's look
+//       (as it is, Hyllian's CRT, or xBR's rounding, gpu.hpp), --no-effects the pictures without the Modern
+//       visuals' effects (effects.hpp).
 //
-// Keys: arrows, Ctrl/Home and Ins/PgUp (switch Viking), E, S, D, F/Space/Enter, Esc/P (pause; Y, N), Tab
-// (inventory), Alt+X, Alt+Q, F10 (quit) as in the original; a gamepad as the original's joystick (A/B/X/Y: F, D, E,
-// S), the d-pad or left stick, shoulders to switch Vikings, Start to pause, Back for the inventory.
+// Keys under Vanilla rules: arrows, Ctrl/Home and Ins/PgUp (switch Viking), E, S, D, F/Space/Enter, Esc/P (pause;
+// Y, N), Tab (inventory), Alt+X, Alt+Q, F10 (quit) as in the original; a gamepad as the original's joystick
+// (A/B/X/Y: F, D, E, S), the d-pad or left stick, shoulders to switch Vikings, Start to pause, Back for the
+// inventory. Under Remaster rules the player's (input.hpp, remaster_controls(), changed in the menu): Escape or
+// Start opens the menu in a level being played; a stick pushed part way walks slower.
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -55,6 +63,7 @@
 #include "image/png.hpp"
 #include "input/input.hpp"
 #include "lvr/gpu.hpp"
+#include "lvr/menu.hpp"
 #include "lvr/profile.hpp"
 #include "lvr/render.hpp"
 #include "lvr/session.hpp"
@@ -98,6 +107,44 @@ bool write_wav(const std::filesystem::path& path, const std::vector<std::int16_t
     return static_cast<bool>(out);
 }
 
+// Remaster rules' settings as the game has them now: its keys change some of them too (the zoom, the minimap, the
+// sound, the screen).
+Settings settings_now(const Session& session, const GpuRenderer* gpu, Settings settings) {
+    if (session.has_modern()) {  // (without a SoundFont the player's choice is kept for when there is one)
+        settings.modern_sound = session.modern();
+    }
+    settings.zoom = session.zoom_level();
+    settings.minimap = session.minimap_wanted();
+    if (gpu != nullptr) {
+        settings.visual_fx = session.effects();
+        settings.screen = std::string{GpuRenderer::name_of(gpu->look())};
+    }
+    return settings;
+}
+
+// And the game set as they say.
+void use_settings(Session& session, GpuRenderer* gpu, const Settings& settings) {
+    session.set_modern(settings.modern_sound);
+    session.set_volume(settings.music, settings.sound_fx);
+    session.set_effects(settings.visual_fx && gpu != nullptr);
+    session.set_minimap(settings.minimap);
+    if (settings.zoom != session.zoom_level()) {
+        session.set_zoom_level(settings.zoom);
+    }
+    if (gpu != nullptr) {
+        gpu->set_look(GpuRenderer::look_named(settings.screen).value_or(GpuRenderer::Look::kNone));
+    }
+}
+
+// What the menu has to choose from: the Modern sound if there is one, and the screen's looks.
+Menu::Choices menu_choices(const Session& session) {
+    Menu::Choices choices{.has_modern = session.has_modern(), .screens = {}};
+    for (const GpuRenderer::Look look : GpuRenderer::kLooks) {
+        choices.screens.emplace_back(GpuRenderer::name_of(look));
+    }
+    return choices;
+}
+
 // What the GPU renderer shows of `screen`, three times the original's size, as a PNG.
 bool save_shown(GpuRenderer& gpu, const Screen& screen, const Minimap* minimap, const std::filesystem::path& out,
                 float between = 0) {
@@ -130,6 +177,9 @@ struct DumpOptions {
     int whole_at = -1;             // the view the whole level from this step on
     Showcase* showcase = nullptr;  // its place, written as --whole writes the whole level
     int moments = 0;
+    // The menu over the last picture (Remaster rules), with these of its keys pressed: u, d, l, r (up, down, left,
+    // right), c (choose), b (back), x (clear); none: as it opens.
+    std::optional<std::string> menu;
 };
 
 int dump(Session& session, int steps, const std::filesystem::path& out, const std::filesystem::path& wav,
@@ -175,6 +225,22 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
             return EXIT_FAILURE;
         }
     } else if (gpu != nullptr) {
+        if (options.menu) {
+            Menu menu{settings_now(session, gpu, Settings{}), menu_choices(session)};
+            for (const char key : *options.menu) {
+                constexpr std::string_view kKeys = "udlrcbx";
+                if (const auto at = kKeys.find(key); at != std::string_view::npos) {
+                    (void)menu.press(static_cast<Menu::Key>(at));
+                }
+            }
+            // What it changed, as the game holds (a zoom's change of view all the way, a third of a second).
+            use_settings(session, gpu, menu.settings());
+            constexpr int kHeldSteps = 10;
+            for (int step = 0; step < kHeldSteps; ++step) {
+                last = session.held().back();
+            }
+            gpu->set_overlay(menu_picture(menu, session.font()));
+        }
         if (!save_shown(*gpu, last, session.minimap(), out)) {
             return EXIT_FAILURE;
         }
@@ -203,30 +269,56 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
     return EXIT_SUCCESS;
 }
 
-// The gamepads' input bits (the original or-s the joystick's into the keyboard's): every open gamepad's, the left
-// stick past half way as the d-pad.
-std::uint16_t gamepad_bits(const std::vector<SDL_Gamepad*>& pads) {
-    constexpr int kHalfway = 16384;
-    std::uint16_t bits = 0;
+// The gamepads as input.hpp reads them: each of SDL's buttons, the sticks' four directions and the triggers, 0 to 1;
+// with several, the furthest any is pushed (the original or-s the joystick's input into the keyboard's).
+input::PadReading pads_reading(const std::vector<SDL_Gamepad*>& pads) {
+    static const std::array<std::optional<std::size_t>, SDL_GAMEPAD_BUTTON_COUNT> buttons = [] {
+        std::array<std::optional<std::size_t>, SDL_GAMEPAD_BUTTON_COUNT> found{};
+        for (std::size_t b = 0; b < found.size(); ++b) {
+            const char* name = SDL_GetGamepadStringForButton(static_cast<SDL_GamepadButton>(b));
+            found.at(b) = name != nullptr ? input::pad_input_index(name) : std::nullopt;
+        }
+        return found;
+    }();
+    input::PadReading reading{};
+    const auto put = [&reading](std::string_view input, float pushed) {
+        if (const auto index = input::pad_input_index(input)) {
+            reading.at(*index) = std::max(reading.at(*index), pushed);
+        }
+    };
     for (SDL_Gamepad* pad : pads) {
-        const auto button = [pad](SDL_GamepadButton b) { return SDL_GetGamepadButton(pad, b); };
-        const int x = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
-        const int y = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY);
-        bits = static_cast<std::uint16_t>(
-            bits | input::pad_bits(input::Pad{.left = button(SDL_GAMEPAD_BUTTON_DPAD_LEFT) || x < -kHalfway,
-                                              .right = button(SDL_GAMEPAD_BUTTON_DPAD_RIGHT) || x > kHalfway,
-                                              .up = button(SDL_GAMEPAD_BUTTON_DPAD_UP) || y < -kHalfway,
-                                              .down = button(SDL_GAMEPAD_BUTTON_DPAD_DOWN) || y > kHalfway,
-                                              .south = button(SDL_GAMEPAD_BUTTON_SOUTH),
-                                              .east = button(SDL_GAMEPAD_BUTTON_EAST),
-                                              .west = button(SDL_GAMEPAD_BUTTON_WEST),
-                                              .north = button(SDL_GAMEPAD_BUTTON_NORTH),
-                                              .left_shoulder = button(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER),
-                                              .right_shoulder = button(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER),
-                                              .start = button(SDL_GAMEPAD_BUTTON_START),
-                                              .back = button(SDL_GAMEPAD_BUTTON_BACK)}));
+        for (std::size_t b = 0; b < buttons.size(); ++b) {
+            const std::optional<std::size_t> index = buttons.at(b);
+            if (index && SDL_GetGamepadButton(pad, static_cast<SDL_GamepadButton>(b))) {
+                reading.at(*index) = 1;
+            }
+        }
+        // (A stick half way is 16384 of its 32768 each way, as the original's joystick reading is cut.)
+        const auto axis = [&](SDL_GamepadAxis axis, std::string_view less, std::string_view more) {
+            const float value = static_cast<float>(SDL_GetGamepadAxis(pad, axis)) / 32768.0F;
+            put(less, std::max(-value, 0.0F));
+            put(more, std::max(value, 0.0F));
+        };
+        axis(SDL_GAMEPAD_AXIS_LEFTX, "leftx-", "leftx+");
+        axis(SDL_GAMEPAD_AXIS_LEFTY, "lefty-", "lefty+");
+        axis(SDL_GAMEPAD_AXIS_RIGHTX, "rightx-", "rightx+");
+        axis(SDL_GAMEPAD_AXIS_RIGHTY, "righty-", "righty+");
+        axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER, "", "lefttrigger");
+        axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, "", "righttrigger");
     }
-    return bits;
+    return reading;
+}
+
+// Whether any key `controls` has for `action` is held.
+bool keys_held(const input::Controls& controls, input::Action action) {
+    const bool* held = SDL_GetKeyboardState(nullptr);
+    for (const std::string& name : controls.keys.at(static_cast<std::size_t>(action))) {
+        const SDL_Scancode key = SDL_GetScancodeFromName(name.c_str());
+        if (key != SDL_SCANCODE_UNKNOWN && held[key]) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // The sound card wants more sound: `additional` bytes of it, made now.
@@ -241,10 +333,20 @@ void sound_wanted(void* userdata, SDL_AudioStream* stream, int additional, int /
     SDL_PutAudioStreamData(stream, made.data(), static_cast<int>(made.size() * sizeof(std::int16_t)));
 }
 
+// Remaster rules' part of the window's loop: the player's settings, as the menu leaves them, and where the profile
+// keeps them (empty: nowhere).
+struct Remastered {
+    Settings settings;
+    std::filesystem::path profile;
+};
+
 // The game in a window. With `gpu` (and its window), the pictures are the ones it kept and it shows them;
-// without, they are the Classic renderer's and a window is made here.
-int play(Session& session, const input::Bindings& bindings, SDL_Window* window, GpuRenderer* gpu, bool report_slow,
-         Showcase* showcase) {
+// without, they are the Classic renderer's and a window is made here. With `remastered` (Remaster rules): the
+// player's controls and settings, the menu, Remaster's own keys and buttons, walking as fast as a stick is pushed.
+int play(Session& session, input::Controls controls, SDL_Window* window, GpuRenderer* gpu, bool report_slow,
+         Showcase* showcase, Remastered* remastered) {
+    using input::Action;
+    using input::bit;
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
         std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
         return EXIT_FAILURE;
@@ -279,6 +381,7 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
     std::vector<Screen> frames = std::move(session.start_frames);
     std::vector<std::vector<SoundCue>> cues = std::move(session.cues);
     std::size_t next_frame = 0;
+    Screen last_shown;  // what the GPU renderer shows again until there is a next one
     const std::uint64_t frequency = SDL_GetPerformanceFrequency();
     const std::uint64_t start = SDL_GetPerformanceCounter();
     std::uint64_t refreshes = 0;
@@ -286,30 +389,190 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
     int status = EXIT_SUCCESS;
     bool running = true;
     std::vector<SDL_Gamepad*> pads;
-    Play::MenuKeys sound_keys;  // Alt+S and Alt+M, until a tick acts on them
+    input::PadReading pads_before{};  // as the last pass of the loop read them
+    input::PadReading quiet{};        // held as the menu closed: not the game's until let go
+    bool hush = false;                // the menu was closed: what the gamepads hold now is quiet
+    Play::MenuKeys sound_keys;        // Alt+S and Alt+M, until a tick acts on them
+    const bool remaster = remastered != nullptr;
+    // The menu (Remaster rules), while it is open; the game holds meanwhile (Session::held). A note in it flashes.
+    std::optional<Menu> menu;
+    bool flash_shown = true;
+    bool give_up = false;         // the menu asked for the original's pause box (where the level is given up) ...
+    bool quit_box = false;        // ... or its quit box: with the next step
+    std::uint64_t repeat_at = 0;  // a gamepad's direction held in the menu: when it counts again
     const auto alt_held = [] {
         const bool* held = SDL_GetKeyboardState(nullptr);
         return held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT];
     };
-    const auto key_bit = [&bindings](SDL_Scancode key) { return input::key_bits(bindings, SDL_GetScancodeName(key)); };
-    // Remaster rules' own keys, taken where they act (Session::takes_play_keys): - and = zoom out and in; with the
-    // cheat on, F7 keeps the play as it is and F8 brings it back. Elsewhere they are the game's like any other
-    // (and M, below, is its key too): nothing pressed in a scene or a menu is kept for later.
-    const auto remaster_key = [&session](const SDL_Event& event) {
-        if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) {
-            return false;
+    const auto key_name = [](SDL_Scancode key) { return std::string_view{SDL_GetScancodeName(key)}; };
+    // The keys of a key pressed or let go: under Remaster rules Escape opens the menu in a level being played, and is
+    // the original's pause key elsewhere, as it was.
+    const auto key_actions = [&](SDL_Scancode key) {
+        input::Actions actions = input::key_actions(controls, key_name(key));
+        if (remaster && key == SDL_SCANCODE_ESCAPE) {
+            actions |= bit(Action::kPause);
         }
-        switch (event.key.scancode) {
-            case SDL_SCANCODE_MINUS:
-                return session.zoom(1);
-            case SDL_SCANCODE_EQUALS:
-                return session.zoom(-1);
-            case SDL_SCANCODE_F7:
-                return session.quicksave();
-            case SDL_SCANCODE_F8:
-                return session.quickload();
+        return actions;
+    };
+    const auto show_sound = [&session] {
+        std::println(stderr, "{}",
+                     !session.has_modern() ? "no Modern sound (no SoundFont)"
+                     : session.modern()    ? "sound: Modern (General MIDI)"
+                                           : "sound: Classic (OPL3)");
+    };
+    // Remaster rules' own actions of a key or button pressed, taken where they act (Session::takes_play_keys): the
+    // zoom, the minimap, the quicksave. The sound and the screen are switched anywhere. Elsewhere a key is the
+    // game's like any other: nothing pressed in a scene or a menu is kept for later. True if one took it.
+    const auto act = [&](input::Actions actions) {
+        bool taken = false;
+        const auto has = [actions](Action action) { return (actions & bit(action)) != 0; };
+        taken = (has(Action::kZoomOut) && session.zoom(1)) || taken;
+        taken = (has(Action::kZoomIn) && session.zoom(-1)) || taken;
+        taken = (has(Action::kMinimap) && session.toggle_minimap()) || taken;
+        taken = (has(Action::kQuicksave) && session.quicksave()) || taken;
+        taken = (has(Action::kQuickload) && session.quickload()) || taken;
+        if (has(Action::kSound)) {
+            session.set_modern(!session.modern());  // the Classic / Modern switch (ADR-0015)
+            show_sound();
+            taken = true;
+        }
+        if (has(Action::kScreen) && gpu != nullptr) {
+            gpu->set_look(GpuRenderer::after(gpu->look()));
+            std::println(stderr, "screen: {}", GpuRenderer::name_of(gpu->look()));
+            taken = true;
+        }
+        return taken;
+    };
+    // What the menu changed is used at once, and its picture drawn again.
+    const auto draw_menu = [&] { gpu->set_overlay(menu_picture(*menu, session.font(), flash_shown)); };
+    const auto menu_changed = [&] {
+        use_settings(session, gpu, menu->settings());
+        controls = menu->settings().controls;
+        draw_menu();
+    };
+    const auto open_menu = [&] {
+        menu.emplace(settings_now(session, gpu, remastered->settings), menu_choices(session));
+        menu->set_has_pad(!pads.empty());
+        keyboard = 0;  // what is held now is let go in the menu
+        session.rewind(false);
+        menu_changed();
+    };
+    const auto close_menu = [&] {
+        remastered->settings = settings_now(session, gpu, menu->settings());
+        if (!remastered->profile.empty()) {
+            if (const auto saved = save_settings(remastered->profile, remastered->settings); !saved) {
+                std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
+            }
+        }
+        menu.reset();
+        gpu->set_overlay({});
+        hush = true;
+    };
+    const auto menu_press = [&](Menu::Key key) {
+        const Menu::Asked asked = menu->press(key);
+        menu_changed();
+        if (asked != Menu::Asked::kNothing) {
+            give_up = asked == Menu::Asked::kGiveUp;
+            quit_box = asked == Menu::Asked::kQuit;
+            close_menu();
+        }
+    };
+    // A key in the menu: its own (the arrows, Enter, Escape, Delete), or the one to bind.
+    const auto menu_key = [&](const SDL_Event& event) {
+        if (event.type != SDL_EVENT_KEY_DOWN) {
+            return;
+        }
+        const SDL_Scancode key = event.key.scancode;
+        if (menu->waiting() != Menu::Waiting::kNothing) {
+            if (key == SDL_SCANCODE_ESCAPE) {
+                menu->stop_waiting();
+            } else if (!event.key.repeat) {
+                menu->take_key(key_name(key));
+            }
+            menu_changed();
+            return;
+        }
+        switch (key) {
+            case SDL_SCANCODE_UP:
+            case SDL_SCANCODE_KP_8:
+                return menu_press(Menu::Key::kUp);
+            case SDL_SCANCODE_DOWN:
+            case SDL_SCANCODE_KP_2:
+                return menu_press(Menu::Key::kDown);
+            case SDL_SCANCODE_LEFT:
+            case SDL_SCANCODE_KP_4:
+                return menu_press(Menu::Key::kLeft);
+            case SDL_SCANCODE_RIGHT:
+            case SDL_SCANCODE_KP_6:
+                return menu_press(Menu::Key::kRight);
+            case SDL_SCANCODE_RETURN:
+            case SDL_SCANCODE_KP_ENTER:
+            case SDL_SCANCODE_SPACE:
+                return event.key.repeat ? void() : menu_press(Menu::Key::kChoose);
+            case SDL_SCANCODE_ESCAPE:
+                return event.key.repeat ? void() : menu_press(Menu::Key::kBack);
+            case SDL_SCANCODE_DELETE:
+            case SDL_SCANCODE_BACKSPACE:
+                return menu_press(Menu::Key::kClear);
             default:
-                return false;
+                return;
+        }
+    };
+    // The gamepads in the menu, as the loop's pass reads them: the d-pad or the left stick choose (held, again and
+    // again), A chooses, B goes back, Y clears, Start closes it; or the input to bind.
+    const auto menu_pads = [&](const input::PadReading& reading) {
+        const auto index = [](std::string_view input) { return input::pad_input_index(input).value_or(0); };
+        const auto held = [&](std::string_view input) { return reading.at(index(input)) > 0.5F; };
+        const auto pushed = [&](std::string_view input) { return held(input) && pads_before.at(index(input)) <= 0.5F; };
+        if (pushed("start")) {
+            if (menu->waiting() != Menu::Waiting::kNothing) {
+                menu->stop_waiting();
+                return menu_changed();
+            }
+            return close_menu();
+        }
+        if (menu->waiting() == Menu::Waiting::kPad) {
+            for (const std::string_view input : input::pad_inputs()) {
+                if (pushed(input)) {
+                    menu->take_pad(input);
+                    return menu_changed();
+                }
+            }
+            return;
+        }
+        if (menu->waiting() != Menu::Waiting::kNothing) {
+            return;
+        }
+        constexpr double kFirstRepeat = 0.4;  // seconds
+        constexpr double kRepeat = 0.12;
+        const std::uint64_t now = SDL_GetPerformanceCounter();
+        const auto seconds = [frequency](double s) {
+            return static_cast<std::uint64_t>(s * static_cast<double>(frequency));
+        };
+        const std::array<std::pair<Menu::Key, std::array<std::string_view, 2>>, 4> directions{{
+            {Menu::Key::kUp, {"dpup", "lefty-"}},
+            {Menu::Key::kDown, {"dpdown", "lefty+"}},
+            {Menu::Key::kLeft, {"dpleft", "leftx-"}},
+            {Menu::Key::kRight, {"dpright", "leftx+"}},
+        }};
+        for (const auto& [key, inputs] : directions) {
+            if (pushed(inputs[0]) || pushed(inputs[1])) {
+                repeat_at = now + seconds(kFirstRepeat);
+                return menu_press(key);
+            }
+            if ((held(inputs[0]) || held(inputs[1])) && now >= repeat_at) {
+                repeat_at = now + seconds(kRepeat);
+                return menu_press(key);
+            }
+        }
+        if (pushed("a")) {
+            return menu_press(Menu::Key::kChoose);
+        }
+        if (pushed("b")) {
+            return menu_press(Menu::Key::kBack);
+        }
+        if (pushed("y")) {
+            return menu_press(Menu::Key::kClear);
         }
     };
     while (running) {
@@ -317,6 +580,24 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
                 running = false;
+            } else if (event.type == SDL_EVENT_GAMEPAD_ADDED || event.type == SDL_EVENT_GAMEPAD_REMOVED) {
+                if (event.type == SDL_EVENT_GAMEPAD_REMOVED) {
+                    std::erase_if(pads, [&event](SDL_Gamepad* pad) {
+                        if (SDL_GetGamepadID(pad) != event.gdevice.which) {
+                            return false;
+                        }
+                        SDL_CloseGamepad(pad);
+                        return true;
+                    });
+                } else if (SDL_Gamepad* pad = SDL_OpenGamepad(event.gdevice.which)) {
+                    pads.push_back(pad);
+                }
+                if (menu) {  // the gamepad's page says so at once
+                    menu->set_has_pad(!pads.empty());
+                    draw_menu();
+                }
+            } else if (menu) {
+                menu_key(event);
             } else if (showcase != nullptr && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                        (event.key.scancode == SDL_SCANCODE_PAGEDOWN || event.key.scancode == SDL_SCANCODE_PAGEUP ||
                         event.key.scancode == SDL_SCANCODE_RIGHTBRACKET ||
@@ -331,52 +612,65 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
                 // the original's handler, S with Alt held isn't a typed character.
                 (event.key.scancode == SDL_SCANCODE_S ? sound_keys.effects : sound_keys.music) = true;
                 if (event.key.scancode == SDL_SCANCODE_M) {
-                    session.key_pressed(input::typed_character(SDL_GetScancodeName(event.key.scancode)));
+                    session.key_pressed(input::typed_character(key_name(event.key.scancode)));
                 }
-            } else if (remaster_key(event)) {
-                // (taken: see remaster_key)
+            } else if (remaster && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                       event.key.scancode == SDL_SCANCODE_ESCAPE && session.takes_play_keys()) {
+                open_menu();
             } else if (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y != 0) {
                 (void)session.zoom(event.wheel.y < 0 ? 1 : -1);
-            } else if (gpu != nullptr && event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F11 &&
-                       !event.key.repeat) {
-                gpu->set_look(GpuRenderer::after(gpu->look()));  // the screen's look (Remaster rules)
-                std::println(stderr, "screen: {}", GpuRenderer::name_of(gpu->look()));
-            } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F12 &&
+            } else if (!remaster && event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F12 &&
                        !event.key.repeat) {
                 session.set_modern(!session.modern());  // the Classic / Modern switch (ADR-0015)
-                std::println(stderr, "{}",
-                             !session.has_modern() ? "no Modern sound (no SoundFont)"
-                             : session.modern()    ? "sound: Modern (General MIDI)"
-                                                   : "sound: Classic (OPL3)");
+                show_sound();
             } else if (event.type == SDL_EVENT_KEY_DOWN) {
                 // A press, or the keyboard's own repeat of a held key, which reaches the original's handler as
                 // a press too: it types the character again, and sets the key's bit again if a scene's load
-                // cleared it.
-                session.key_pressed(input::typed_character(SDL_GetScancodeName(event.key.scancode)));
-                keyboard |= key_bit(event.key.scancode);
-                if (event.key.scancode == SDL_SCANCODE_M && !event.key.repeat) {
-                    (void)session.toggle_minimap();  // Remaster rules, in a level: the minimap, shown or not
+                // cleared it. Remaster's own (not repeated) go first; one they take isn't the game's.
+                const input::Actions actions = key_actions(event.key.scancode);
+                session.key_pressed(input::typed_character(key_name(event.key.scancode)));
+                if (!(remaster && !event.key.repeat && act(actions))) {
+                    keyboard |= input::game_bits(actions);
                 }
                 if (session.demo()) {  // the keyboard handler: any key during a demo
                     keyboard = 0xFFFF;
                 }
             } else if (event.type == SDL_EVENT_KEY_UP) {
                 // As the original's handler: a release clears the bit even if another key with it is held.
-                keyboard &= ~unsigned{key_bit(event.key.scancode)};
-            } else if (event.type == SDL_EVENT_GAMEPAD_ADDED) {
-                if (SDL_Gamepad* pad = SDL_OpenGamepad(event.gdevice.which)) {
-                    pads.push_back(pad);
-                }
-            } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED) {
-                std::erase_if(pads, [&event](SDL_Gamepad* pad) {
-                    if (SDL_GetGamepadID(pad) != event.gdevice.which) {
-                        return false;
-                    }
-                    SDL_CloseGamepad(pad);
-                    return true;
-                });
+                keyboard &= ~unsigned{input::game_bits(key_actions(event.key.scancode))};
             }
         }
+        // The gamepads, once a pass: what is held as the menu closes isn't the game's until it is let go.
+        input::PadReading reading = pads_reading(pads);
+        if (std::exchange(hush, false)) {
+            quiet = reading;
+        }
+        for (std::size_t i = 0; i < reading.size(); ++i) {
+            quiet.at(i) = reading.at(i) > 0.5F ? quiet.at(i) : 0;
+            reading.at(i) = quiet.at(i) > 0.5F ? 0 : reading.at(i);
+        }
+        if (menu) {
+            menu_pads(reading);
+        }
+        if (menu) {
+            constexpr std::uint64_t kFlashMilliseconds = 400;
+            if (const bool flash = (SDL_GetTicks() / kFlashMilliseconds) % 2 == 0; flash != flash_shown) {
+                flash_shown = flash;
+                draw_menu();
+            }
+        } else if (remaster) {
+            // Start opens the menu in a level being played (elsewhere it is the original's pause, below); Remaster's
+            // own actions act as their buttons are pushed.
+            const std::size_t start_button = input::pad_input_index("start").value_or(0);
+            if (reading.at(start_button) > 0.5F && pads_before.at(start_button) <= 0.5F && session.takes_play_keys()) {
+                open_menu();
+            } else {
+                const input::Actions pushed =
+                    input::read_pad(controls, reading, true).held & ~input::read_pad(controls, pads_before, true).held;
+                (void)act(pushed & ~input::kGameActions);
+            }
+        }
+        pads_before = reading;
         // Every refresh that is due shows the next picture; a step runs when the last one is used up.
         const double elapsed =
             static_cast<double>(SDL_GetPerformanceCounter() - start) / static_cast<double>(frequency);
@@ -385,28 +679,51 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
             refreshes = due;  // far behind (a breakpoint, a slow load): don't race to catch up
         }
         const Screen* shown = nullptr;
-        static Screen last_shown;  // what the GPU renderer shows again until there is a next one
         for (; refreshes < due && running; ++refreshes) {
             while (running && next_frame >= frames.size()) {
+                if (menu) {  // the game holds: its pictures as it is, a zoom asked for in the menu shown at once
+                    frames = session.held();
+                    cues = std::move(session.cues);
+                    next_frame = 0;
+                    continue;
+                }
                 const bool* held = SDL_GetKeyboardState(nullptr);
-                std::uint16_t pad = gamepad_bits(pads);
+                const input::PadActions from_pads = input::read_pad(controls, reading, remaster);
+                std::uint16_t pad = input::game_bits(from_pads.held);
+                const std::size_t start_button = input::pad_input_index("start").value_or(0);
+                if (remaster && reading.at(start_button) > 0.5F && !session.takes_play_keys()) {
+                    pad |= input::game_bits(bit(Action::kPause));  // Start: the original's pause, as it was
+                }
                 if (pad != 0 && session.demo()) {  // any joystick input during a demo
                     pad = 0xFFFF;
                 }
                 const bool alt = held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT];
-                session.rewind(held[SDL_SCANCODE_BACKSPACE]);  // Remaster rules: back in time while it is held
+                // Remaster rules: back in time while it is held; walking as fast as a stick is pushed (a key: all
+                // the way).
+                session.rewind(remaster &&
+                               (keys_held(controls, Action::kRewind) || (from_pads.held & bit(Action::kRewind)) != 0));
+                const std::uint16_t walking = input::game_bits(bit(Action::kLeft) | bit(Action::kRight));
+                const auto pace = static_cast<std::uint8_t>(
+                    (keyboard & walking) != 0
+                        ? kFullPace
+                        : std::clamp(static_cast<int>(std::ceil(from_pads.walk * kFullPace)), 1, int{kFullPace}));
+                std::uint16_t given = keyboard | pad;
+                if (std::exchange(give_up, false)) {
+                    given |= input::game_bits(bit(Action::kPause));  // the menu's: the original's pause box
+                }
                 const std::uint64_t step_began = SDL_GetPerformanceCounter();
                 const std::size_t pages_before = gpu != nullptr ? gpu->pages_set_up() : 0;
-                const auto given = static_cast<std::uint16_t>(keyboard | pad);
                 frames = session.step(showcase != nullptr ? showcase->before_step(session, given) : given,
                                       Play::MenuKeys{.yes = held[SDL_SCANCODE_Y],
                                                      .no = held[SDL_SCANCODE_N],
                                                      .quit = held[SDL_SCANCODE_F10] ||
-                                                             (alt && (held[SDL_SCANCODE_X] || held[SDL_SCANCODE_Q])),
+                                                             (alt && (held[SDL_SCANCODE_X] || held[SDL_SCANCODE_Q])) ||
+                                                             std::exchange(quit_box, false),
                                                      .effects = sound_keys.effects,
                                                      .music = sound_keys.music,
                                                      .previous_level = held[SDL_SCANCODE_F5],
-                                                     .next_level = held[SDL_SCANCODE_F6]});
+                                                     .next_level = held[SDL_SCANCODE_F6]},
+                                      pace);
                 if (report_slow) {
                     const double took = static_cast<double>(SDL_GetPerformanceCounter() - step_began) * 1000.0 /
                                         static_cast<double>(frequency);
@@ -488,6 +805,11 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
         SDL_RenderTexture(renderer, texture, nullptr, nullptr);
         SDL_RenderPresent(renderer);
     }
+    if (menu) {
+        close_menu();
+    } else if (remaster) {
+        remastered->settings = settings_now(session, gpu, remastered->settings);
+    }
     for (SDL_Gamepad* pad : pads) {
         SDL_CloseGamepad(pad);
     }
@@ -531,8 +853,9 @@ int main(int argc, char* argv[]) try {
     std::optional<GpuRenderer::Look> look;  // --shader
     std::filesystem::path profile;          // Remaster rules: where the player's profile is kept
     DumpOptions dumping;
-    std::string held;    // a dump: the key held
-    std::string tapped;  // and the one pressed once
+    std::string held;          // a dump: the key held
+    std::string tapped;        // and the one pressed once
+    bool sound_asked = false;  // --sound (Vanilla rules, or a dump: under Remaster rules the menu's)
     const std::vector<std::string_view> args(argv + 1, argv + argc);
     for (std::size_t i = 0; i < args.size(); ++i) {
         const auto value = [&](std::size_t ahead) { return i + ahead < args.size() ? args[i + ahead] : ""; };
@@ -541,6 +864,7 @@ int main(int argc, char* argv[]) try {
             ++i;
         } else if (args[i] == "--sound" && (value(1) == "classic" || value(1) == "modern")) {
             sound.modern = value(1) == "modern";
+            sound_asked = true;
             ++i;
         } else if (args[i] == "--rules" && (value(1) == "vanilla" || value(1) == "remaster")) {
             rules = value(1) == "remaster" ? Rules::kRemaster : Rules::kVanilla;
@@ -590,6 +914,9 @@ int main(int argc, char* argv[]) try {
             tapped = args[i + 1];
             dumping.tap_at = *step;
             i += 2;
+        } else if (args[i] == "--menu" && i + 1 < args.size()) {
+            dumping.menu = std::string{args[i + 1]};
+            ++i;
         } else if (args[i] == "--hold" && i + 1 < args.size()) {
             held = args[i + 1];
             ++i;
@@ -601,16 +928,25 @@ int main(int argc, char* argv[]) try {
             std::println(
                 stderr,
                 "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] "
-                "[--soundfont FILE] [--rules vanilla|remaster] [--no-effects] [--shader none|tv|xbr] "
+                "[--soundfont FILE] [--rules vanilla|remaster] [--no-effects] [--shader none|crt|xbr] "
                 "[--showcase N] "
                 "[--cheat] "
                 "[--slow-frames] "
                 "[--profile DIR] "
                 "[--dump STEPS "
                 "FILE.png [--wav FILE.wav] [--zoom BY AT_STEP] [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] "
-                "[--whole AT_STEP] [--moments N]]");
+                "[--whole AT_STEP] [--moments N] [--menu KEYS]]");
             return EXIT_FAILURE;
         }
+    }
+    if (rules == Rules::kRemaster && dump_to.empty() && (sound_asked || look || !effects)) {
+        // (The user, 2026-11-25: what the menu sets and the profile keeps isn't a start-up option as well.)
+        std::println(
+            stderr,
+            "vikings-remaster: under Remaster rules the sound, the screen's look and the visual effects are set in "
+            "the menu (Escape in a level) and kept in the profile; --sound, --shader and --no-effects are "
+            "for --dump");
+        return EXIT_FAILURE;
     }
     if (!std::filesystem::exists(sound.soundfont) || (!dump_to.empty() && !sound.modern)) {
         sound.soundfont.clear();  // no Modern sound; a dump renders only the version it is asked for
@@ -670,56 +1006,65 @@ int main(int argc, char* argv[]) try {
         (*session)->cheat();
     }
     (*session)->set_effects(effects && gpu != nullptr);  // (the Modern visuals: what the GPU renderer shows)
+    if (gpu != nullptr && look) {
+        gpu->set_look(*look);
+    }
     // The player's profile (Remaster rules, in a window): in the folder asked for, or `profiles` beside the game's
-    // own program, where it is found without knowing where to look.
+    // own program, where it is found without knowing where to look; and its settings.
+    std::optional<Remastered> remastered;
     if (rules == Rules::kRemaster && dump_to.empty()) {
         if (profile.empty()) {
             if (const char* beside = SDL_GetBasePath()) {
                 profile = std::filesystem::path{beside} / "profiles";
             }
         }
+        remastered.emplace();
+        remastered->profile = profile;
         if (!profile.empty()) {
             if (const auto used = (*session)->use_profile(profile); !used) {
                 std::println(stderr, "vikings-remaster: the profile: {}", used.error());
             }
-            // The screen's look: the one asked for, or the one the profile kept.
-            if (const auto kept = load_screen_look(profile); !kept) {
-                std::println(stderr, "vikings-remaster: the profile: {}", kept.error());
-            } else if (!look && *kept) {
-                look = GpuRenderer::look_named(**kept);
+            std::vector<std::string> problems;
+            remastered->settings = load_settings(profile, problems);
+            for (const std::string& problem : problems) {
+                std::println(stderr, "vikings-remaster: the profile: {}", problem);
             }
         }
-    }
-    if (gpu != nullptr && look) {
-        gpu->set_look(*look);
+        use_settings(**session, gpu.get(), remastered->settings);
     }
     if (!dump_to.empty()) {
-        dumping.held = input::key_bits(input::default_bindings(), held);
-        dumping.tapped = input::key_bits(input::default_bindings(), tapped);
+        const input::Controls original = input::original_controls();
+        dumping.held = input::game_bits(input::key_actions(original, held));
+        dumping.tapped = input::game_bits(input::key_actions(original, tapped));
         dumping.showcase = showcase ? &*showcase : nullptr;
         return dump(**session, steps, dump_to, wav, gpu.get(), dumping);
     }
-    input::Bindings bindings = input::default_bindings();
+    // The controls: the original's under Vanilla rules, the player's under Remaster's; a keys file over them.
+    input::Controls controls = remastered ? remastered->settings.controls : input::original_controls();
     if (!keys.empty()) {
         std::ifstream file(keys);
         std::stringstream text;
         text << file.rdbuf();
-        auto parsed = input::parse_bindings(text.str(), std::move(bindings));
+        auto parsed = input::parse_bindings(text.str(), std::move(controls));
         if (!file || !parsed) {
             std::println(stderr, "vikings-remaster: {}: {}", keys.string(), parsed ? "can't read" : parsed.error());
             return EXIT_FAILURE;
         }
-        bindings = std::move(*parsed);
+        controls = std::move(*parsed);
+        if (remastered) {
+            remastered->settings.controls = controls;
+        }
     }
     if (showcase && window != nullptr) {
         SDL_SetWindowTitle(window, showcase->title().c_str());
     }
-    const int status = play(**session, bindings, window, gpu.get(), report_slow, showcase ? &*showcase : nullptr);
+    const int status = play(**session, controls, window, gpu.get(), report_slow, showcase ? &*showcase : nullptr,
+                            remastered ? &*remastered : nullptr);
     if (const auto saved = (*session)->save_profile(); !saved) {
         std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
     }
-    if (gpu != nullptr && !profile.empty()) {
-        if (const auto saved = save_screen_look(profile, GpuRenderer::name_of(gpu->look())); !saved) {
+    if (remastered && !profile.empty()) {
+        if (const auto saved = save_settings(profile, remastered->settings); !saved) {
             std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
         }
     }

@@ -57,7 +57,8 @@ the code is put together, start with [`docs/architecture.md`](docs/architecture.
 By default it plays the game as it was. Started with `--rules remaster` it plays by its own rules on top, drawn
 on the graphics card: so far that is zooming out (`-` and `=`, or the mouse wheel), a minimap of what you have
 seen of the level (M), ten seconds of rewind (hold Backspace), no limit on how many creatures a level can
-have going at once, and, with your own copy of the SNES version beside the game's files, its backdrops behind the
+have going at once, a menu (Escape, or Start on a gamepad) for the sound, its volumes and the keys and buttons,
+walking as slowly as a gamepad's stick is pushed, and, with your own copy of the SNES version beside the game's files, its backdrops behind the
 levels, scrolling slower than them. What comes next is all optional too: smoother and prettier visuals, and co-op for three, one
 Viking each. The plan is
 in [`docs/ROADMAP.md`](docs/ROADMAP.md).
@@ -88,7 +89,8 @@ Then run it on your own desktop, since the container has no screen or sound:
 ```sh
 ./build/release/bin/vikings-remaster                  # from the first logo
 ./build/release/bin/vikings-remaster --slot 0         # straight into level 1
-./build/release/bin/vikings-remaster --sound modern   # start with General MIDI
+./build/release/bin/vikings-remaster --sound modern   # start with General MIDI (F12 switches; under Remaster
+                                                      # rules the menu chooses it, Escape in a level)
 ```
 
 The keys are the original's. Arrows to move, Ctrl to switch Viking, E, S, D and F for what each of them can do,

@@ -163,6 +163,7 @@ Player::Player(const SoundData& data, MidiOut& out, OplSynth* timbres, bool musi
 void Player::play(int slot, const assets::XmidiSequence& sequence) {  // 76BD
     const auto index = static_cast<std::size_t>(slot);
     handles_.at(index) = sequencer_.register_sequence(sequence.stream);
+    sequencer_.set_loudness(handles_.at(index), slot == 0 ? music_loudness_ : effects_loudness_);
     // 7512: each instrument the driver still lacks, from the bank (0CAB, 0CB1). A General MIDI module has its own.
     if (timbres_ != nullptr) {
         install_timbres(sequence);
@@ -283,6 +284,14 @@ void Player::set_effects(bool on) {
                 free_slot(slot);
             }
         }
+    }
+}
+
+void Player::set_loudness(int music, int effects) {
+    music_loudness_ = music;
+    effects_loudness_ = effects;
+    for (std::size_t slot = 0; slot < handles_.size(); ++slot) {
+        sequencer_.set_loudness(handles_.at(slot), slot == 0 ? music : effects);  // (none there: nothing)
     }
 }
 

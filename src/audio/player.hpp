@@ -61,6 +61,9 @@ class Player {
     void stop_all(bool keep_music);  // 7912
     void set_music(bool on);         // 08C8, Alt+M
     void set_effects(bool on);       // 08C8, Alt+S
+    // Ours (Remaster rules' volume): how loud the music and the effects are heard, in percent of what the game asks
+    // for (Sequencer::set_loudness), from now on.
+    void set_loudness(int music, int effects);
 
   private:
     void play(int slot, const assets::XmidiSequence& sequence);  // 76BD
@@ -74,6 +77,8 @@ class Player {
     bool effects_on_;
     int loaded_tune_ = -1;  // ds:25AF
     int effect_slots_ = kOriginalEffects;
+    int music_loudness_ = 100;
+    int effects_loudness_ = 100;
     std::array<int, kMostEffects + 1> handles_ = none();  // ds:990C, by slot / 2: the music's, then the effects'
     std::array<int, kMostEffects + 1> playing_ = none();  // ds:9916: the effect in each slot
     static constexpr std::array<int, kMostEffects + 1> none() {

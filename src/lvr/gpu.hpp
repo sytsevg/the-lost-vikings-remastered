@@ -27,18 +27,20 @@ class GpuRenderer {
   public:
     // How the window shows what it shows (Remaster rules' screen look, the user's to choose: F11), one at a time:
     // - as it is;
-    // - a television's tube: 240 lines with dark gaps between them (more zoomed out: a line a row), soft along them,
-    //   a mask of red, green and blue, flat glass a little darker at the corners, filling the window at 4:3;
+    // - crt: the picture in the game's whole pixels (nothing moved between ticks), as Hyllian's CRT shader shows
+    //   it: a scanline a row, its beam wider where it is brighter, and an aperture grille's mask (the user's choice
+    //   over crt-royale, which is GPL, 2026-11-25);
     // - xbr: the picture in the game's whole pixels (nothing moved between ticks), its stair-steps rounded off and
     //   their edges blended (Hyllian's xBR).
-    // (Tried and dropped, the user: a VGA monitor's look, its 480 fine lines, only blurry; xBR without blending,
-    // each tile and sprite's piece rounded by itself.)
-    enum class Look : std::uint8_t { kNone, kTv, kXbr };
-    static constexpr std::array kLooks{Look::kNone, Look::kTv, Look::kXbr};
+    // (Tried and dropped, the user: a VGA monitor's look, its 480 fine lines, only blurry; a television of our own,
+    // its lines, mask and flat glass, "not great" beside crt; xBR without blending, each tile and sprite's piece
+    // rounded by itself.)
+    enum class Look : std::uint8_t { kNone, kCrt, kXbr };
+    static constexpr std::array kLooks{Look::kNone, Look::kCrt, Look::kXbr};
     static constexpr std::string_view name_of(Look look) noexcept {
         switch (look) {
-            case Look::kTv:
-                return "tv";
+            case Look::kCrt:
+                return "crt";
             case Look::kXbr:
                 return "xbr";
             case Look::kNone:
@@ -54,12 +56,12 @@ class GpuRenderer {
         }
         return std::nullopt;
     }
-    // The next one, as F11 goes: none, tv, xbr, none.
+    // The next one, as F11 goes: none, crt, xbr, none.
     static constexpr Look after(Look look) noexcept {
         switch (look) {
             case Look::kNone:
-                return Look::kTv;
-            case Look::kTv:
+                return Look::kCrt;
+            case Look::kCrt:
                 return Look::kXbr;
             case Look::kXbr:
                 break;
@@ -104,6 +106,10 @@ class GpuRenderer {
     // The look from the next picture shown on (show(), shown(); never shown_whole()).
     void set_look(Look look) noexcept;
     Look look() const noexcept;
+    // A picture laid over every picture shown from the next on (show(), shown(); never shown_whole()), the
+    // original's screen's size and in its pixels, with the screen: red, green, blue and alpha a pixel
+    // (kScreenWidth x kScreenHeight; Remaster rules' menu, menu_picture). Empty: none.
+    void set_overlay(std::vector<std::uint8_t> pixels);
 
     // How many times a page of the atlas was set up (a scene's pictures put in anew): for finding what is slow.
     std::size_t pages_set_up() const noexcept;

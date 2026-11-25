@@ -379,7 +379,7 @@ void Play::open_menu(bool quit_box) {
     // The picture a little darker, unless something darkens it already; then the text is black, else white.
     menu_tinted_ = world.tint == std::array<std::uint8_t, 3>{};
     if (menu_tinted_) {
-        world.tint = {8, 8, 8};
+        world.tint = kMenuTint;
     }
     world.text.colour3 = menu_tinted_ ? assets::Rgb{} : assets::Rgb{.r = 255, .g = 255, .b = 255};
     world.sound(effect::kMenuOpens);

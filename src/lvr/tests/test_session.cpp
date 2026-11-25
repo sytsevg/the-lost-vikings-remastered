@@ -175,6 +175,45 @@ TEST_CASE("real data: Remaster rules' zoom widens the view over a moment and clo
     CHECK(part_after(session, 30) == original);
 }
 
+TEST_CASE("real data: held by the menu, the play shows itself a little darker, moves on not at all, and zooms",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    auto played = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+    auto held = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+    REQUIRE(played);
+    REQUIRE(held);
+    constexpr std::uint16_t kF = 0x8000;  // past the level's password box
+    for (Session* session : {played->get(), held->get()}) {
+        (void)session->step(0);
+        (void)session->step(kF);
+        (void)session->step(0);
+    }
+    const Screen last = (*held)->step(0x0100).back();  // walking right
+    (void)(*played)->step(0x0100);
+    const std::vector<Screen> menu = (*held)->held();
+    REQUIRE(menu.size() == 3);
+    CHECK(menu.back().pixels == last.pixels);  // as it is
+    CHECK(menu.back().palette != last.palette);
+    // Darker by the original's menus' tint, but for the HUD's and the text's colours (1-15).
+    CHECK(menu.back().palette == darkened(last.palette, kMenuTint, false));
+    CHECK(menu.back().palette.at(1) == last.palette.at(1));
+    for (int step = 0; step < 5; ++step) {
+        (void)(*held)->held();
+    }
+    // Nothing moved meanwhile: the play goes on as if it never held.
+    CHECK((*held)->step(0x0100).back().pixels == (*played)->step(0x0100).back().pixels);
+    // A zoom asked for while it holds is shown at once.
+    (*held)->set_zoom_level(2);
+    Screen::Part part;
+    for (int step = 0; step < 10; ++step) {
+        part = (*held)->held().back().part;
+    }
+    CHECK(part == Screen::Part{.x = 0, .y = 0, .width = 640, .height = 480});
+    CHECK((*held)->zoom_level() == 2);
+}
+
 TEST_CASE("real data: Remaster rules' pictures say what moves between ticks; Vanilla's don't", "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");

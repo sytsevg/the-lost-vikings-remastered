@@ -56,8 +56,14 @@ class Session {
 
     // One step of input: the pictures of the refreshes it takes (three for a tick or a wait's pass, one in the
     // inventory, 145 more for a change of scene; none when a menu only opens). Their sound is added to `samples`;
-    // live, what each picture asks of the sound is in `cues` instead, one entry a picture.
-    std::vector<Screen> step(std::uint16_t keyboard, Play::MenuKeys keys = {});
+    // live, what each picture asks of the sound is in `cues` instead, one entry a picture. `pace`: under Remaster
+    // rules, how fast the Vikings walk (World::pace: a gamepad's stick pushed part way), 1 to kFullPace.
+    std::vector<Screen> step(std::uint16_t keyboard, Play::MenuKeys keys = {}, std::uint8_t pace = kFullPace);
+    // Instead of a step, while the play is held (Remaster rules' menu is open): a tick's three pictures of the world
+    // as it is, a little darker as under the original's menus. Nothing of the play moves and nothing is kept for the
+    // rewind; only a change of view the zoom asks for goes on, as while the world holds for a key (what it brings into
+    // view is created at the next step). No sound.
+    std::vector<Screen> held();
 
     // Live sound. Safe to call from two threads: the front end's (hear_now, set_modern) and the sound card's
     // (render_live); nothing else here touches the players then.
@@ -87,6 +93,11 @@ class Session {
     // Remaster rules' zoom (ADR-0011): a step out (`by` > 0) or back in, between the original's view and twice
     // it. The next step's world has the view; the pictures go from the one to the other over a moment.
     bool zoom(int by) noexcept;
+    // The zoom's step (0 the original's view, up to kZoomSteps - 1: twice it), and it set to one from anywhere (the
+    // profile's, at the start): a level played from then on is shown so.
+    int zoom_level() const noexcept { return zoom_; }
+    void set_zoom_level(int level) noexcept;
+    static constexpr int kZoomSteps = 3;
     // A development tool's (vikings-remaster --dump --whole): the view becomes the whole level at once, with the
     // HUD's rows under it, and stays so; what is in it is created at the next tick's start. Remaster rules, in a
     // level being played.
@@ -112,6 +123,9 @@ class Session {
     // The quicksave as the profile's file: written when one is made, read when the profile is taken into use.
     std::expected<void, std::string> write_quicksave() const;
     std::expected<void, std::string> read_quicksave();
+    // Whether the minimap is shown in a level, set from anywhere (the menu's, the profile's).
+    bool minimap_wanted() const noexcept { return minimap_on_; }
+    void set_minimap(bool on) noexcept { minimap_on_ = on; }
     bool toggle_minimap() noexcept {
         if (!takes_play_keys() || minimap_.pixels.empty()) {  // only where there is one: in a level
             return false;
@@ -149,6 +163,10 @@ class Session {
     // Remaster rules' Modern visuals: the effects (effects.hpp) in the pictures from here on. Off by default: for what
     // shows the pictures on the GPU renderer.
     void set_effects(bool on) noexcept { effects_on_ = on && play_.world.rules == Rules::kRemaster; }
+    bool effects() const noexcept { return effects_on_; }
+
+    // The game's font (SharedGraphics::font): for what the front end draws in the game's own letters (the menu).
+    const std::vector<assets::IndexedImage>& font() const noexcept { return shared_.font; }
 
     static std::uint32_t sample_rate() noexcept { return audio::Opl3::kSampleRate; }
     bool has_modern() const noexcept { return modern_ != nullptr; }
@@ -157,6 +175,9 @@ class Session {
         const std::scoped_lock lock{sound_mutex_};
         modern_on_ = on && has_modern();
     }
+    // Remaster rules' volume, the player's: how loud the music and the effects are, each 0 (not heard) to
+    // kLoudest (as the game asks for them; profile.hpp), in both versions of the sound (audio::Player::set_loudness).
+    void set_volume(int music, int effects);
 
     std::vector<Screen> start_frames;   // the start's pictures, shown first
     std::vector<std::int16_t> samples;  // rendered sound not yet played: left, right in turn
@@ -166,7 +187,8 @@ class Session {
   private:
     Session(assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, SharedGraphics shared, int slot, Rules rules,
             audio::SoundData sound, std::optional<audio::SoundData> modern, std::unique_ptr<audio::GmSynth> gm);
-    Screen picture();
+    // `dimmed`: as the original's menus show the picture (kMenuTint), unless it is darkened already.
+    Screen picture(bool dimmed = false);
     void hear(const std::vector<SoundCue>& asked);
     void refresh_sound();
     void half_refresh_sound(std::vector<std::int16_t>& out);
@@ -252,6 +274,7 @@ class Session {
         Play::Snapshot before;
         std::uint16_t keyboard = 0;
         Play::MenuKeys keys;
+        std::uint8_t pace = kFullPace;
     };
     // The play back at `step`'s start, and the pictures the step showed, made again; none if it was more than a
     // plain tick.

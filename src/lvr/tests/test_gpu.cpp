@@ -636,7 +636,7 @@ TEST_CASE("gpu: a kept picture is shown with the scene's backdrop where the map 
     CHECK(index_at(*none, 0, 0) == 0x20);
 }
 
-TEST_CASE("gpu: the screen's look shows the picture as a television would; without one it is as it was") {
+TEST_CASE("gpu: the screen's look shows the picture as Hyllian's CRT shader would; without one it is as it was") {
     auto opened = GpuRenderer::open_headless();
     if (!opened) {
         SKIP("no graphics device: " << opened.error());
@@ -648,8 +648,9 @@ TEST_CASE("gpu: the screen's look shows the picture as a television would; witho
         CHECK(GpuRenderer::look_named(GpuRenderer::name_of(look)) == look);
     }
     CHECK_FALSE(GpuRenderer::look_named("vga"));  // tried and dropped
-    CHECK(GpuRenderer::after(Look::kNone) == Look::kTv);
-    CHECK(GpuRenderer::after(Look::kTv) == Look::kXbr);
+    CHECK_FALSE(GpuRenderer::look_named("tv"));   // so was our own television
+    CHECK(GpuRenderer::after(Look::kNone) == Look::kCrt);
+    CHECK(GpuRenderer::after(Look::kCrt) == Look::kXbr);
     CHECK(GpuRenderer::after(Look::kXbr) == Look::kNone);
     CHECK_FALSE(GpuRenderer::look_named("xbr-noblend"));  // tried and dropped
     // A screen all of one grey.
@@ -669,11 +670,11 @@ TEST_CASE("gpu: the screen's look shows the picture as a television would; witho
     constexpr std::size_t kHigh = std::size_t{kScreenHeight} * kScale;
     CHECK(gpu.look() == Look::kNone);
     const auto plain = gpu.shown(screen, kScale);
-    gpu.set_look(Look::kTv);
-    const auto tv = gpu.shown(screen, kScale);
-    CHECK(gpu.look() == Look::kTv);
+    gpu.set_look(Look::kCrt);
+    const auto crt = gpu.shown(screen, kScale);
+    CHECK(gpu.look() == Look::kCrt);
     REQUIRE(plain);
-    REQUIRE(tv);
+    REQUIRE(crt);
     const auto red = [](const std::vector<std::uint8_t>& pixels, std::size_t x, std::size_t y) {
         return int{pixels.at(((y * kWide) + x) * 4)};
     };
@@ -698,15 +699,54 @@ TEST_CASE("gpu: the screen's look shows the picture as a television would; witho
         not_grey += plain->at(at) != 128 || plain->at(at + 1) != 128 || plain->at(at + 2) != 128 ? 1 : 0;
     }
     CHECK(not_grey == 0);
-    // The television: about as bright in the middle, but in lines and through a mask, not one grey; flat glass
-    // (its corners shown, not black), a little darker there.
-    const auto [middle, lowest, highest] = block(*tv, kWide / 2, kHigh / 2);
-    CHECK(middle > 0.85 * 128);
-    CHECK(middle < 1.15 * 128);
-    CHECK(highest - lowest > 10);
-    const int corner = block(*tv, 0, 0)[0];
-    CHECK(corner > 0);
-    CHECK(corner < middle);
+    // In scanlines, a row of the picture each, and the grille's columns, but the grey's own colour when averaged
+    // (no tint), a little darker.
+    const auto [crt_middle, crt_lowest, crt_highest] = block(*crt, kWide / 2, kHigh / 2);
+    CHECK(crt_middle > 0.6 * 128);
+    CHECK(crt_middle < 1.1 * 128);
+    CHECK(crt_highest - crt_lowest > 10);
+    std::array<int, 3> sums{};
+    for (std::size_t y = kHigh / 2; y < (kHigh / 2) + 8; ++y) {
+        for (std::size_t x = kWide / 2; x < (kWide / 2) + 8; ++x) {
+            for (std::size_t c = 0; c < 3; ++c) {
+                sums.at(c) += crt->at((((y * kWide) + x) * 4) + c);
+            }
+        }
+    }
+    CHECK(std::abs(sums[0] - sums[1]) < 64 * 4);  // within a few steps a pixel
+    CHECK(std::abs(sums[0] - sums[2]) < 64 * 4);
+    // Three of the window's rows a row of the picture: the beam's middle brighter than its edges, which are alike
+    // (at two they are both as far from the middle, and alike too: no lines to see).
+    constexpr int kThree = 3;
+    constexpr std::size_t kWide3 = std::size_t{kScreenWidth} * kThree;
+    const auto crt3 = gpu.shown(screen, kThree);
+    REQUIRE(crt3);
+    const auto row_sum = [&](std::size_t y) {  // its red across 8 pixels in the middle
+        int sum = 0;
+        for (std::size_t x = kWide3 / 2; x < (kWide3 / 2) + 8; ++x) {
+            sum += int{crt3->at(((y * kWide3) + x) * 4)};
+        }
+        return sum;
+    };
+    const std::size_t row = std::size_t{kScreenHeight} / 2 * kThree;  // a row's first: its middle is the next
+    CHECK(row_sum(row + 1) > row_sum(row));
+    CHECK(row_sum(row) == row_sum(row + 2));
+    // At two the beam is taken over each of the window's rows whole: as bright on the whole as at three (zoomed
+    // out, as at the original's view), and the same row after row.
+    const auto mean = [](const std::vector<std::uint8_t>& pixels, std::size_t wide, std::size_t y, std::size_t rows) {
+        int sum = 0;
+        for (std::size_t down = y; down < y + rows; ++down) {
+            for (std::size_t x = wide / 2; x < (wide / 2) + 8; ++x) {
+                sum += int{pixels.at(((down * wide) + x) * 4)};
+            }
+        }
+        return static_cast<double>(sum) / static_cast<double>(rows * 8);
+    };
+    const double at_two = mean(*crt, kWide, kHigh / 2, 12);
+    const double at_three = mean(*crt3, kWide3, row, 12);
+    CHECK(at_two > 0.9 * at_three);
+    CHECK(at_two < 1.1 * at_three);
+    CHECK(row_sum(row + 1) == row_sum(row + 1 + kThree));
     // A picture of the whole view (a development tool's) never has it.
     const auto whole = gpu.shown_whole(screen, 1);
     gpu.set_look(Look::kNone);

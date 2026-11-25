@@ -556,12 +556,21 @@ void start_animation(Sprite& sprite, std::uint16_t program) noexcept {
     sprite.program = program;
     sprite.started = program;
     sprite.delay = 1;
+    sprite.pace = kFullPace;
+    sprite.paced = 0;
 }
 
 bool step_animation(Pieces& pieces, Sprite& sprite, Body& body, const AnimationContext& context,
                     std::vector<std::uint8_t>& sounds) {
     if (!sprite.animating()) {
         return true;
+    }
+    if (sprite.pace < kFullPace) {  // slower (Remaster rules): on some ticks it holds as it is
+        sprite.paced = static_cast<std::uint8_t>(sprite.paced + sprite.pace);
+        if (sprite.paced < kFullPace) {
+            return true;
+        }
+        sprite.paced = static_cast<std::uint8_t>(sprite.paced - kFullPace);
     }
     if (sprite.delay != 0) {
         --sprite.delay;

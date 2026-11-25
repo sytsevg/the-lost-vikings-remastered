@@ -162,6 +162,31 @@ TEST_CASE("erik: he runs up to his top speed, skids to a stop, and is stopped by
     CHECK(room.world.entities[1]->x == 400);
 }
 
+TEST_CASE("vikings: under Remaster rules a stick pushed part way walks him slower, his walk's animation too") {
+    for (const Rules rules : {Rules::kVanilla, Rules::kRemaster}) {
+        Room room;
+        room.world.rules = rules;
+        Entity* erik = room.vikings();
+        room.ticks(2);
+        room.world.pace = kFullPace / 2;  // (Vanilla rules don't have it)
+        room.ticks(20, kRight);
+        const bool paced = rules == Rules::kRemaster;
+        CHECK(erik->speed_x == (paced ? px(4) : px(8)));
+        CHECK(erik->sprite.pace == (paced ? 12 : kFullPace));  // his legs at the root of it: 16 x 0.71, rounded up
+        // Pushed all the way, he speeds up as from a walk.
+        room.world.pace = kFullPace;
+        room.tick(kRight);
+        CHECK(erik->speed_x == (paced ? px(4.75) : px(8)));
+        CHECK(erik->sprite.pace == kFullPace);
+        // Pushed a little, from standing: never faster than that.
+        room.ticks(6);
+        room.world.pace = 1;
+        room.tick(kRight);
+        CHECK(erik->speed_x == (paced ? px(0.5) : px(0.75)));
+        CHECK(erik->sprite.pace == (paced ? 4 : kFullPace));  // a sixteenth of his speed, a quarter of his steps
+    }
+}
+
 TEST_CASE("erik: he jumps, higher while the key is held, and lands on his feet") {
     Room room;
     Entity* erik = room.vikings();

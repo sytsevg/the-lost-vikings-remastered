@@ -79,6 +79,26 @@ TEST_CASE("animation: frames, waits, the end") {
     CHECK(stage.pieces.at(32) == Piece{});
 }
 
+TEST_CASE("animation: slower (Remaster rules), it holds on some ticks; started again, it is at full pace") {
+    // The program above at half its pace: each of its ticks takes two.
+    Stage stage{0x01, 2, 5, 0x0F, 3, 0x00, 2, 0x0E, 0x1A};
+    stage.sprite.pace = kFullPace / 2;
+    REQUIRE(stage.step());  // held
+    CHECK(stage.sprite.program == 0);
+    REQUIRE(stage.step());  // on
+    CHECK(stage.piece(0).frame == 1 + (2 * 72));
+    CHECK(stage.sprite.delay == 3);
+    for (int tick = 0; tick < 5; ++tick) {  // its wait of three ticks takes six
+        REQUIRE(stage.step());
+        CHECK(stage.piece(0).frame == 1 + (2 * 72));
+    }
+    REQUIRE(stage.step());
+    CHECK(stage.piece(0).frame == 1 + (4 * 72));
+    start_animation(stage.sprite, 0);
+    CHECK(stage.sprite.pace == kFullPace);
+    CHECK(stage.sprite.paced == 0);
+}
+
 TEST_CASE("animation: jumps, a call and its return, sounds, the instructions that do nothing") {
     //  0: call 14;  3: sound 7;  6, 8, 10: nothing (04 x, 16 x, 0B);  11: go to 18
     // 14: sound 3;  17: return

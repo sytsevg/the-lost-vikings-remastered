@@ -21,10 +21,11 @@ comments and other docs points here). A decision that was later replaced is not 
   start of M8 (2026-11-24): the visuals go with the rules, chosen at launch, nothing switched while playing.
   Vanilla rules show the Classic picture (the CPU renderer); Remaster rules the Modern one (the GPU renderer, with
   smooth movement and what M8 adds after it). Presentation only all the same: the simulation doesn't know.
-- **The screen's look** (2026-11-25): how the window shows the finished picture: as it is, as a television
-  would, or with its stair-steps rounded off (Hyllian's xBR). A display setting of the Modern visuals, not part
-  of the rules: F11 changes it at any moment, anywhere in the game, `--shader` at the start, and the profile
-  keeps it (ADR-0011). Remaster rules only (the user): Vanilla's window stays the CPU renderer's.
+- **The screen's look** (2026-11-25): how the window shows the finished picture: as it is, as a CRT would
+  (Hyllian's CRT shader), or with its stair-steps rounded off (Hyllian's xBR). Shaders taken from
+  others only under a licence that fits the project's MIT (crt-royale, GPL, was turned down for that). A display setting of the Modern visuals, not part
+  of the rules: F11 changes it at any moment, anywhere in the game, or the menu (ADR-0011), and the profile keeps
+  it (ADR-0011); `--shader` only for a dump. Remaster rules only (the user): Vanilla's window stays the CPU renderer's.
 - **The Modern visuals' effects** (2026-11-25): light, glow and particles drawn in the game's own pixels (every
   light worked out per pixel of the picture, in steps of brightness; particles a pixel each in the game's fixed
   colours), not smoothed over it. A light is cast: it brightens what it falls on and the map's ground stops it.
@@ -215,21 +216,24 @@ publishing: its author asks not to link his download files directly.
   them. The pieces an animation moves itself, the HUD, and pictures that aren't a tick's (a scene's start, the
   inventory, a menu, rewind) aren't moved.
 - **The screen's look** (built, 2026-11-25; ADR-0005): with it, everything shown (the picture, the HUD, the
-  minimap and the rewind's bar and mark) is drawn into a texture the window's size, and a last pass
-  (`gpu_crt.frag`) shows it as a television's tube would, as large as 4:3 fits in the window: a line for each of
-  the picture's rows as shown (240 at the original's view, 480 zoomed out all the way), each taking the rows it
-  covers, its beam as tall as it is bright and soft along the line (in the picture's pixels); the gaps between
-  the lines close where a line is less than four of the window's pixels high; a slot mask of red, green and blue
-  at the window's pixels, light spread around what is bright, flat glass a little darker at the corners, in
-  linear light. (First it had 240 lines whatever the zoom: zoomed out each line took one of two rows and dropped
-  the other, and the text could not be read.) Never in a picture of a whole level (a development tool's) or the
-  checks. Tried and dropped (the user, 2026-11-25): a VGA monitor's look (480 fine lines, as the DOS game was
-  seen; only blurry) and curved glass.
+  minimap and the rewind's bar and mark, the menu) is drawn into a texture the window's size in the game's whole
+  pixels, and a last pass makes the look from those pixels, found on the grid they were drawn on. Never in a
+  picture of a whole level (a development tool's) or the checks.
+- **The crt look** (built 2026-11-25, the user: "looks great"; Hyllian's CRT shader, MIT, adapted:
+  THIRD-PARTY-NOTICES.md; `gpu_hyllian.frag`): its main pass and its last pass's mask in one, with its preset's
+  settings: each of the picture's rows a scanline, its beam wider where it is brighter, softened along the row,
+  in linear light; an aperture grille's mask in the window's pixels. Not its colour grading (the game keeps its
+  colours), glow or curvature. Zoomed out the scanlines stay a row of the game's pixels each (Hyllian's cut
+  them off past 400 rows, which made twice the view brighter: the user); where a row is less than three of the
+  window's pixels high a window's pixel takes the beam over the whole of it. Chosen over crt-royale (GPL v2+,
+  which doesn't fit the project's MIT) and crt-lottes. Tried and dropped (the user, 2026-11-25): a VGA monitor's
+  look (480 fine lines; only blurry), a television of our own (240 lines and a slot mask, flat glass; "not great"
+  beside this one), and curved glass.
 - **The xbr look** (built and approved by the user, 2026-11-25; Hyllian's xBR-lv2, MIT, adapted: THIRD-PARTY-NOTICES.md). xBR
   rounds a picture's stair-steps off from each pixel's neighbours and blends their edges. The blending makes new
   colours, which can't be palette indices, so it is a last pass over the finished picture (`gpu_xbr.frag`),
   which is then drawn in the game's whole pixels: what moves between ticks isn't moved (no smooth movement), and
-  the tiles join up. One look at a time: this or the television's. Tried and dropped (the user, 2026-11-25:
+  the tiles join up. One look at a time: this or crt. Tried and dropped (the user, 2026-11-25:
   "doesn't work"): xBR without blending (Hyllian's noblend rules) on each tile and sprite's piece by itself as it
   is drawn, which kept palette indices and smooth movement.
 
@@ -304,8 +308,53 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   run to the next; Vanilla rules keep none. By default the folder `profiles` beside the game's program, where it is found without knowing
   where to look (not a folder somewhere in the user's home); or `--profile DIR`. In it so far `minimap.txt`: what the minimap has seen of each level, as text (runs of seen
   and unseen pixels). It is read at the start and written when a scene is loaded and when the game is closed; a
-  file that can't be read is said and written over. And `screen.txt`: the screen's look (ADR-0005), the one the
-  window ended with, written when the game is closed.
+  file that can't be read is said and written over. And `settings.txt`: the player's settings (below), written
+  when the menu is closed and when the game is; a line in it a player may edit by hand that can't be understood
+  is said and skipped, the rest is kept. (It took the place of `screen.txt`, which kept the screen's look alone.)
+- **The menu** (built, 2026-11-25; the user: "a simple overlay with some options", in a level): Escape, or a
+  gamepad's Start, in a level being played; elsewhere they stay the original's pause key (P pauses in a level).
+  While it is open the game holds: no step runs, so the game never knows (replays, rewind, quicksave untouched);
+  the music plays on, so the volumes can be heard as they change, and the world is shown as it is, a little darker
+  as under the original's pause menu and quit box (the user), with what the menu changes on it at once, the zoom too (as while the world holds for a key: what a larger view brings in is
+  created when the play goes on). Its pages: the options, the keyboard, the gamepad, giving up the level (it opens
+  the original's pause box, where that is, by giving the game its pause key) and quitting (the original's quit
+  box); no line to resume (the user: Escape does that). The options: the sound (Classic or Modern), a volume from 0
+  to 10 each for the music and the effects (the user: sliders rather than on and off), the screen's look, the
+  zoom, the minimap, the visual effects (the Modern visuals' light, glow and particles). Named SOUND FX and VISUAL
+  FX in the menu (the user: "lights" undersold the second). Drawn on the CPU in the original's pixels, in the
+  game's own font, in a box with the rewind bar's frame (white, its corners cut off) but black and hardly
+  see-through (the user), and laid over the screen as it is shown (through the screen's look like the rest), its
+  pixels as large as the game's: smaller zoomed out, as the HUD and the text boxes are, but never smaller than at
+  the zoom's middle step, 480 across (the user: at twice the view it was too small).
+- **The volumes** go through the sequencer's own volume of a tune or an effect (the driver's, which the game uses
+  for its fades): the same for both sounds, and at 10 the Classic sound's chip gets what it always did. At 0 no
+  note is played (the chip's quietest level can still be heard). The Classic sound is one chip for the music and
+  the effects together, so a gain on what it makes couldn't tell them apart.
+- **Controls** (built, 2026-11-25): what does each action, on the keyboard and on a gamepad, is the player's,
+  set in the menu and kept in `settings.txt`; Remaster rules' own actions (rewind, zoom, minimap, the sound, the
+  screen, the quicksave) are among them. On the keyboard a key an action (the user: not the original's several,
+  the keypad's too): choosing a key puts it in place of the one the action had. On a gamepad any number (the
+  d-pad and the stick both walk): choosing a button adds it. Either is taken from the action that had it. The
+  gamepad's page binds only with a gamepad there, and says whether one is (found, or flashing that none is) as
+  pads are plugged in and out. Fixed: Escape and Start (the menu), the pad's guide
+  button, and the original's own menu keys (F10, the Alts; Y and N and F5 and F6 stay as they were). The keys by
+  default (the user): the arrows, Space and D the abilities (named 1 and 2 in the menu), E, S, Left Ctrl and
+  Right Ctrl the Viking before and after, Tab the inventory, P the pause; the gamepad the original's joystick.
+  Remaster's own on what was free: Backspace or the left
+  trigger rewinds, - and = or the right stick up and down zoom out and in, M or the right stick's press the
+  minimap, F12 the sound, F11 the screen, F7 and F8 the quicksave. Nothing pauses on the pad (the left stick's
+  press did, but it is pressed by accident while walking: the user; the menu's "give up level" opens the
+  original's pause box). Gamepads through
+  SDL's gamepad API, which maps every pad it knows (XInput, PlayStation, Switch, ...) onto one layout; several
+  are read as one, as the original or-s its joystick into the keyboard. Vanilla rules don't change: the
+  original's keys and joystick, and a keys file (`--keys`) if the player wants others.
+- **Walking as fast as a stick is pushed** (built, 2026-11-25; the user's): a stick bound to left or right walks
+  the Viking from a little past its middle, as fast as it is pushed: his top speed and his walk's animation in
+  16ths (`World::pace`, part of the step's input like the keys), his walk's animation at the square root of
+  that (`Sprite::pace`: a quarter of the speed, half the steps; the user: at the same pace he slid ahead of his
+  legs). A key, a button or the
+  d-pad walks at full speed, as before. Erik pushed too little to reach a run can't charge, and jumps lower. Only
+  walking so far: not climbing, nor steering in the air.
 - **The quicksave is a file in the profile too** (`quicksave.bin`, ADR-0020): written when F7 keeps the play,
   read when the game starts. It begins with the state's version (ADR-0020) and ends with a sum over the world's
   bytes: a file of another version, or a damaged one, is said and left alone.

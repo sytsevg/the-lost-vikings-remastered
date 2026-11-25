@@ -55,6 +55,9 @@ std::expected<LoadedLevel, std::string> load_game_over(const assets::GameFiles& 
 // the ship. With the user's SNES image (`snes`; Remaster rules only), a scene that has a backdrop there has it in
 // its graphics (backdrop.hpp).
 inline constexpr int kSceneSlots = 48;
+// The original's pause menu and quit box show the picture this much darker (World::tint, of the VGA's 64 levels
+// a colour); Remaster rules' menu (menu.hpp) does it too.
+inline constexpr std::array<std::uint8_t, 3> kMenuTint{8, 8, 8};
 std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files, int slot, int database_entry,
                                                   const assets::SnesRom* snes = nullptr);
 

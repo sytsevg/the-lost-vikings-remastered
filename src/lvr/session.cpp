@@ -104,7 +104,7 @@ namespace {
 // The views the zoom steps through: the original's, with the HUD under it; then one and a half times and twice the
 // original's whole screen (320 x 240), with the HUD laid over the view's bottom. And how many pictures a change
 // takes (a third of a second).
-constexpr std::array<std::array<int, 2>, 3> kZoomViews{{{320, 176}, {480, 360}, {640, 480}}};
+constexpr std::array<std::array<int, 2>, Session::kZoomSteps> kZoomViews{{{320, 176}, {480, 360}, {640, 480}}};
 constexpr int kZoomPictures = 20;
 // The rewind reaches this far back, in seconds (Session::kRewindSteps: a step is a tick, three refreshes of the
 // display, which shows 59.7 a second).
@@ -130,6 +130,20 @@ bool Session::zoom(int by) noexcept {
     zoom_ = std::clamp(zoom_ + by, 0, static_cast<int>(kZoomViews.size()) - 1);
     play_.view = kZoomViews[static_cast<std::size_t>(zoom_)];  // (clamped above)
     return true;
+}
+
+void Session::set_zoom_level(int level) noexcept {
+    if (play_.world.rules != Rules::kRemaster) {
+        return;
+    }
+    zoom_ = std::clamp(level, 0, static_cast<int>(kZoomViews.size()) - 1);
+    play_.view = kZoomViews[static_cast<std::size_t>(zoom_)];  // (clamped above)
+}
+
+void Session::set_volume(int music, int effects) {
+    const std::scoped_lock lock{sound_mutex_};
+    const auto percent = [](int volume) { return std::clamp(volume, 0, kLoudest) * 100 / kLoudest; };
+    players([&](audio::Player& p) { p.set_loudness(percent(music), percent(effects)); });
 }
 
 // The view the zoom asks for here.
@@ -340,12 +354,15 @@ std::vector<Screen> Session::numbered(std::vector<Screen> shown) {
     return shown;
 }
 
-Screen Session::picture() {
+Screen Session::picture(bool dimmed) {
     const LoadedLevel& loaded = play_.loaded();
     // (The painter is the same from scene to scene: the original never clears the buffer its packed frames are
     // unpacked into, so a piece that hasn't had a frame of its own yet shows what the last one left there.)
     const World& world = play_.shown();
     View view = view_of(world, loaded, painter_, pictures_);
+    if (dimmed && view.darken == std::array<std::uint8_t, 3>{}) {
+        view.darken = kMenuTint;
+    }
     if (play_.fade) {  // between scenes every colour is darkened
         view.darken = {*play_.fade, *play_.fade, *play_.fade};
         view.darken_all = true;
@@ -484,6 +501,7 @@ std::vector<Screen> Session::back_to(const Kept& step) {
     const bool ended = play_.ended;
     std::vector<Screen> shown;
     play_.menu_keys = step.keys;
+    play_.world.pace = step.pace;
     const int refreshes = play_.step(step.keyboard, [&] { shown.push_back(picture()); });
     const bool plain = refreshes == 3 && shown.size() == 3 && !play_.scene_loaded && !play_.in_menu();
     (void)play_.restore(step.before);  // (the same scene as a moment ago)
@@ -558,10 +576,25 @@ void Session::half_refresh_sound(std::vector<std::int16_t>& out) {
     unheard_.clear();
 }
 
+std::vector<Screen> Session::held() {
+    constexpr int kTick = 3;
+    scrolled_.reset();  // (the next step's pictures aren't moved from where the camera was before)
+    change_view();
+    cues.clear();
+    std::vector<Screen> shown;
+    for (int refresh = 0; refresh < kTick; ++refresh) {
+        shown.push_back(picture(true));
+        cues.emplace_back();
+    }
+    last_ = shown.back();
+    update_minimap();
+    return numbered(std::move(shown));
+}
+
 // A step that shows fewer pictures than refreshes starts with the last picture shown before it; one that shows
 // more keeps its last ones (what the pictures that aren't shown asked of the sound is heard with the first that
 // is). The same rule as the pixel-match harness's player (src/replay/player.cpp).
-std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
+std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys, std::uint8_t pace) {
     struct Frame {
         Screen screen;
         std::vector<SoundCue> cues;
@@ -575,6 +608,7 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
     play_.scene_loaded = false;
     // The quicksave, with the cheat on only: kept in a level, brought back from anywhere.
     const bool remaster = play_.world.rules == Rules::kRemaster;
+    pace = remaster ? std::clamp(pace, std::uint8_t{1}, kFullPace) : kFullPace;
     if (std::exchange(save_wanted_, false) && remaster && play_.world.title.cheat && level_played()) {
         quick_ = play_.snapshot();
         (void)write_quicksave();  // (a profile that can't be written is said when the game is closed)
@@ -611,13 +645,14 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys) {
         return numbered(step_back());
     }
     if (remaster && level_played() && rewind_left_ > 0) {
-        rewind_.push_back({.before = play_.snapshot(), .keyboard = keyboard, .keys = keys});
+        rewind_.push_back({.before = play_.snapshot(), .keyboard = keyboard, .keys = keys, .pace = pace});
         if (std::cmp_greater(rewind_.size(), rewind_left_)) {
             rewind_.pop_front();
         }
     }
     cues.clear();
     play_.menu_keys = keys;
+    play_.world.pace = pace;
     change_view();
     moving_ = true;
     const int refreshes = play_.step(keyboard, [&] { frames.push_back({.screen = picture(), .cues = take_cues()}); });

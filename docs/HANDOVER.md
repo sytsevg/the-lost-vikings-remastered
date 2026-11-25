@@ -70,10 +70,25 @@ only under Remaster rules; Vanilla rules must stay exactly what they are, and th
   the rewind (since 2026-11-25: no longer from the game-over scene back into the level just lost); F8 brings the
   quicksave back from anywhere but a menu. A key that doesn't act is passed to the game like any other (any key ends a demo), so nothing
   pressed in a scene is kept for the next level. The Classic/Modern sound switch (F12) works everywhere, and so
-  does the screen's look (F11).
+  does the screen's look (F11). These are the defaults: the keys are the player's since 2026-11-25 ("The menu,
+  the settings and the controls" below).
 - **The profile** (`profile.*`): the folder `profiles` beside the game's program, or `--profile DIR`. In it
-  `minimap.txt`, `quicksave.bin` and `screen.txt` (the screen's look). What the game writes goes there, not into
-  the user's home.
+  `minimap.txt`, `quicksave.bin` and `settings.txt` (the player's settings and controls, which took the place of
+  `screen.txt`). What the game writes goes there, not into the user's home.
+- **The menu, the settings and the controls** (built 2026-11-25, to be tried on the host; ADR-0011): Escape or a
+  gamepad's Start in a level being played opens the menu (`menu.*`, drawn on the CPU by `menu_picture` in the
+  game's font; `GpuRenderer::set_overlay` lays it over the screen, `gpu_panel.frag`). While it is open the
+  window's loop (`main.cpp`) runs no step: `Session::held` makes a tick's pictures of the world as it is, darkened
+  by the original's menus' tint (`kMenuTint`), with a zoom asked for in the menu going on. The GPU renderer draws
+  the menu's picture at the game's pixel size (`fit`), mixing a window's pixel only where two of the menu's meet
+  (`gpu_panel.frag`), so it is sharp at whole sizes and even at the zoom's others. Its options are a `Settings`
+  (`profile.hpp`, `settings.txt`): the sound, the music's and the effects' volumes (`Session::set_volume`, through
+  `audio::Sequencer::set_loudness`), the screen's look, the zoom, the minimap, the visual effects, and the controls
+  (`input::Controls`: keys and gamepad inputs by action, `input.hpp`). `main.cpp` reads each gamepad as a
+  `PadReading` (every button, stick direction and trigger, 0 to 1) and `input::read_pad` turns it into actions,
+  for both rules: Vanilla's are `original_controls()`, the joystick's mapping as it always was. A stick that walks
+  gives the step a pace (`Session::step`'s, kept for the rewind; `World::pace`, `Sprite::pace`: kStateVersion 4).
+  Stills: `gamedata/previews/menu/` (`vikings-remaster --rules remaster --dump STEPS FILE --menu KEYS`).
 
 ## M8: the visuals
 
@@ -86,12 +101,17 @@ were dropped by the user, 2026-11-25). The screen's look is built ("Screen look"
 ### Next
 - **The Vikings' deaths by electricity and fire (built, 2026-11-25; approved by the user on the host):** showcase
   spots 17-21 ("Effects" below).
-- **The screen's look (built and approved by the user on the host, 2026-11-25, after it was made flat, gentler
-  and sharper, and the VGA look dropped):** a television, F11 ("Screen look" below). Its numbers (beam, mask,
-  glow, lines, corners) are in `GpuRenderer::State::show_look`; a test card of stripes, greys and colours is in
-  `gamedata/previews/shaders/` (not in the repository).
-- **The xbr look (built and approved by the user on the host, 2026-11-25):** after the television on F11
-  ("Screen look" below). The unblended one, each tile and piece rounded by itself, was dropped by the user.
+- **The screen's look (built and approved by the user on the host, 2026-11-25):** F11 goes none, crt, xbr
+  ("Screen look" below). Our own television was dropped for Hyllian's CRT ("looks great", the user).
+- **The xbr look (built and approved by the user on the host, 2026-11-25):** after crt on F11 ("Screen look"
+  below). The unblended one, each tile and piece rounded by itself, was dropped by the user.
+- **The menu, the settings and the controls (built 2026-11-25; first round of the user's changes made: black box,
+  no resume line, the zoom shown at once, a key an action with new defaults, the gamepad's page live):** what to
+  try: the menu's look and its keys (keyboard and a pad), the volume sliders by ear (the steps are percent of the
+  game's volume; the Classic chip's are steeper than the General MIDI ones), rebinding, and walking with a
+  stick pushed part way (at the slowest a Viking moves a whole pixel every few ticks: if that looks jerky,
+  smooth movement could use the position's leftover fraction). Open questions for the user: whether the
+  stick's pace should go on to climbing and steering in the air.
 - **After that the user picks the next M8 item.** Left on the roadmap's list: sound placed by position. More
   effects can be added to the table any time (water and lava cross-fading between their colour steps was talked
   about, not tried).
@@ -194,28 +214,32 @@ pixel and in steps of brightness), subtle.
 ### Screen look (built, 2026-11-25)
 
 How the window shows the finished picture, under Remaster rules (ADR-0005, ADR-0006), decided with the user: as
-it is, or as a television would (lines with dark gaps, soft along them, a slot mask, flat glass a little darker
-at the corners). A line for each of the picture's rows as shown: 240 at the original's view, 360 and 480 zoomed
-out, so zoomed out nothing is dropped (with a fixed 240 every other row of the text was, the user found it
-unreadable); its softness is in the picture's pixels, and where a line is less than four of the window's pixels
-high the gaps close. F11 goes none, tv, xbr; `--shader NAME` at the start; the profile keeps the one
-the window ended with (`screen.txt`, `load_screen_look`). Everything on the screen goes through it, the minimap and the
-rewind's bar too (the user). Tried and dropped after the user saw them on the host: a VGA monitor's look (480 fine
-lines, a fine mask; "just blurry") and the television's curved glass with rounded corners.
+it is, as Hyllian's CRT shader shows it, or with its stair-steps rounded off by Hyllian's xBR. F11 goes none,
+crt, xbr, and the menu chooses it (`--shader NAME` only in a dump); the profile keeps the one the window ended
+with (`settings.txt`). Everything on the screen goes through it, the minimap, the rewind's bar and the menu too
+(the user). Tried and dropped after the user saw them on the host: a VGA monitor's look (480 fine lines, a fine
+mask; "just blurry"), a television of our own (240 lines with dark gaps, a slot mask, flat glass: "not great"
+beside crt), and curved glass with rounded corners.
 - **How:** `GpuRenderer::set_look`. With a look, `State::show` draws what it always draws into `crt_source` (a
-  texture the target's size, with the pipelines for our own format) and `show_look` puts it onto the target
-  through `gpu_crt.frag`, as large as 4:3 fits. A dump (`--dump`, `--shader`) shows it too; `shown_whole` and
-  the checks never do.
-- **Tuned on a test card**, not on the game's pictures (and one of small shapes a pixel wide, zoomed out, for
-  the text): white 254, the greys within a few steps of the picture's. Made gentler and sharper after the user's
-  first look (a weaker mask and glow, shallower gaps, softness 0.4 of a pixel).
+  texture the target's size, with the pipelines for our own format) in the game's whole pixels (no smooth
+  movement), and `show_xbr` puts it onto the target through the look's pass, which finds the picture's pixels on
+  the grid where it was drawn, `fit` wide (the minimap and a sliding HUD lie off that grid; the menu is put on
+  it). A dump (`--dump`, `--shader`) shows it too; `shown_whole` and the checks never do.
+- **crt** (approved, 2026-11-25; Hyllian's CRT shader, MIT, THIRD-PARTY-NOTICES.md, `gpu_hyllian.frag`): chosen
+  by the user over crt-royale (GPL v2+, 12 passes and 6 mask pictures) and crt-lottes. Its main pass and its last
+  pass's mask in one: a scanline a row, its beam wider where it is brighter, a Catmull-Rom along the row kept
+  from ringing, in linear light (2.4 in, 2.2 out); then the aperture grille (a window's column magenta, the next
+  green), lit parts brightened. No cutoff: zoomed out the scanlines stay (Hyllian's dropped them past 400 rows,
+  and twice the view was brighter, the user); a row less than three of the window's pixels high is taken over
+  each window's pixel whole (at two, the beam's samples would both be as far from its middle: no lines and a
+  different brightness). Left out: its colour grading (a Sony television's colours, on in its preset; the game
+  keeps its own), glow and curvature (off in its preset). Averaged, it shifts no colour (a grey stays grey); seen
+  small, the grille looks pink. Stills: `gamedata/previews/shaders/hyllian/`.
 - **xbr** (approved; ADR-0006, "The xbr look"; Hyllian's xBR-lv2, MIT, THIRD-PARTY-NOTICES.md): the
-  stair-steps of the pixels rounded off and their edges blended, a last pass (`show_xbr`, `gpu_xbr.frag`) over
-  the finished picture drawn in the game's whole pixels into `crt_source` (no smooth movement; the pass finds
-  the picture's pixels on the grid where it was drawn, `fit` wide; the minimap and a sliding HUD lie off that
-  grid); the tiles join up. Checked on a card of lines, circles, steps, small shapes and a round sprite of our
-  own (`gamedata/previews/shaders/xbr-card-*`). The unblended one (each tile and piece rounded by itself, so
-  smooth movement stayed) was tried and dropped by the user.
+  stair-steps of the pixels rounded off and their edges blended (`gpu_xbr.frag`); the tiles join up. Checked on a
+  card of lines, circles, steps, small shapes and a round sprite of our own
+  (`gamedata/previews/shaders/xbr-card-*`). The unblended one (each tile and piece rounded by itself, so smooth
+  movement stayed) was tried and dropped by the user.
 
 ### Parallax (built, 2026-11-24)
 
@@ -307,7 +331,9 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   new request comes while finished work is still uncommitted, say "let's commit this first" before starting it;
   what is in the tree goes in as one commit, never rebuilt into several (the user, 2026-11-25).
 - **The game itself runs on the host**, not in the container (no display or sound there):
-  `./build/release/bin/vikings-remaster --slot 0 --sound modern`, with `--rules remaster` for the Remaster rules.
+  `./build/release/bin/vikings-remaster --slot 0 --sound modern`, or `--rules remaster` for the Remaster rules
+  (whose sound, screen's look and lights are the menu's and the profile's, not start-up options: the user,
+  2026-11-25).
   What a Remaster window would show can be written as a picture in the container (`--dump`, with `--zoom`).
   Rebuild the release preset before asking the user to try something: `goldens.sh` only builds the replay tool.
 - **A golden is never recorded again to make a difference go away.** There is no oracle left to record from: a

@@ -130,6 +130,17 @@ void Sequencer::set_volume(int handle, int target, int milliseconds) {  // 3CF1
     s.volume_time = 0;
 }
 
+void Sequencer::set_loudness(int handle, int percent) {
+    if (status(handle) < 0) {
+        return;
+    }
+    Sequence& s = sequences_.at(static_cast<std::size_t>(handle));
+    s.loudness = std::clamp(percent, 0, 100);
+    if (s.started) {  // (before, it has no channels' volumes yet: its own come as it plays)
+        apply_volume(s);
+    }
+}
+
 void Sequencer::reset(Sequence& s) {  // 2B67
     s.loops.fill(Loop{});
     for (std::uint8_t ch = 0; ch < 16; ++ch) {
@@ -338,7 +349,7 @@ std::size_t Sequencer::note_on_event(Sequence& s, std::uint8_t status) {  // 30C
         }
     }
     const std::size_t length = at - s.position;
-    if ((channel_lock_.at(channel) & 0x80U) != 0) {
+    if ((channel_lock_.at(channel) & 0x80U) != 0 || s.loudness == 0) {
         return length;
     }
     // The first free note slot; with none, slot 0 is taken over (its note never gets its note off).
@@ -391,8 +402,8 @@ void Sequencer::controller_event(Sequence& s, std::uint8_t channel, std::uint8_t
     }
     switch (controller) {
         case 7:
-            if (s.volume != 100) {
-                value = u8(std::min((unsigned{value} * static_cast<unsigned>(s.volume)) / 100U, 127U));
+            if (const int volume = heard_volume(s); volume != 100) {
+                value = u8(std::min((unsigned{value} * static_cast<unsigned>(volume)) / 100U, 127U));
                 shadow_controllers_.at(channel) = value;
             }
             break;
@@ -586,7 +597,7 @@ void Sequencer::apply_volume(Sequence& s) {  // 2E8A
         if (value == kFree) {
             continue;
         }
-        const auto scaled = u8(std::min((unsigned{value} * static_cast<unsigned>(s.volume)) / 100U, 127U));
+        const auto scaled = u8(std::min((unsigned{value} * static_cast<unsigned>(heard_volume(s))) / 100U, 127U));
         shadow_controllers_.at(ch) = scaled;
         if ((channel_lock_.at(ch) & 0x80U) == 0) {
             send(u8(0xB0U | s.map.at(ch)), 7, scaled);
