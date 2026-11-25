@@ -38,11 +38,11 @@ rewind, a quicksave, and the player's profile on disk that keeps the last two ar
   and climbing as fast as it is pushed (ADR-0011)
 - Dropped (the user, 2026-11-25): art packs (sprites replaced one for one) and the SNES version's sound
 
-## M9: Co-op
-[`decisions.md`](decisions.md), ADR-0012.
-- Local, 2–3 players, a split screen that merges when everyone fits; an active area per player's view, or
-  everything running (to be decided: ADR-0011)
-- Online (lockstep or rollback), a full screen each
+## M9: Co-op online
+[`decisions.md`](decisions.md), ADR-0012. Online only (the user, 2026-11-25: no local co-op).
+- Two or three players, each on a machine of their own with a full screen and the view of their own Viking;
+  lockstep or rollback
+- The active area: every player's view together, or everything running (to be decided: ADR-0011)
 
 ## M10: Extra sound effects (Modern sound)
 - **What:** new effects on top of the original's: an electric buzz near the electric traps, the bow drawn and

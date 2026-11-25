@@ -59,9 +59,9 @@ on the graphics card: so far that is zooming out (`-` and `=`, or the mouse whee
 seen of the level (M), ten seconds of rewind (hold Backspace), no limit on how many creatures a level can
 have going at once, a menu (Escape, or Start on a gamepad) for the sound, its volumes and the keys and buttons,
 walking as slowly as a gamepad's stick is pushed, and, with your own copy of the SNES version beside the game's files, its backdrops behind the
-levels, scrolling slower than them. What comes next is all optional too: smoother and prettier visuals, and co-op for three, one
-Viking each. The plan is
-in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+levels, scrolling slower than them, light and sparks from fire and electricity, and a CRT look for the screen. What
+comes next is optional too: co-op online for up to three players, one Viking each. The plan is in
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Building it
 

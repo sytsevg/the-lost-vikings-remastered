@@ -376,9 +376,10 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   read when the game starts. It begins with the state's version (ADR-0020) and ends with a sum over the world's
   bytes: a file of another version, or a damaged one, is said and left alone.
 - **An unlimited active area** is not built: one player doesn't need it. It comes back with co-op (ADR-0012),
-  where several views share one world: either the active area is every view's together, or everything runs.
+  where the players' views (each on their own machine) share one world: either the active area is every view's
+  together, or everything runs.
 
-### ADR-0012: Co-op for up to three
+### ADR-0012: Co-op online, for up to three
 - One to three players; with fewer players than Vikings, a player can switch to a Viking nobody plays.
-- Local: a split screen that merges when everyone fits in one view, an active area per view. Online: a full screen
-  each, lockstep or rollback (ADR-0003).
+- Online only (the user, 2026-11-25: no local co-op, no split screen): each player on a machine of their own, with
+  a full screen and the view of their own Viking; lockstep or rollback (ADR-0003).

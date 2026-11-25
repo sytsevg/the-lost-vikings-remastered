@@ -17,7 +17,7 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
   is and where it lives is in the next section.
 - **M8, Modern visuals and sound, is done** (2026-11-25, the user): smooth movement, parallax, the effects (light,
   glow, particles), the screen's looks (Hyllian's CRT and xBR) and the Modern sound's effects placed by position
-  (below, "M8"). The extra sound effects are a milestone of their own, M10, after co-op (M9).
+  (below, "M8"). The extra sound effects are a milestone of their own, M10, after co-op online (M9).
 - **Remaster rules have a menu** (Escape or a gamepad's Start in a level): the sound and its volumes, the screen's
   look, zoom, minimap, visual effects, and the keyboard's and gamepad's controls, kept in the profile; a gamepad's
   stick walks and climbs as fast as it is pushed (next section, "The menu, the settings and the controls").
@@ -108,8 +108,8 @@ were dropped by the user, 2026-11-25). The screen's look is built ("Screen look"
 The state at the end of 2026-11-25: M8 is done (the user). What is next, what the user still has to judge on the
 host, and what is open:
 
-- **Next: M9, co-op** (ROADMAP.md): its first decision is the active area with several views, every view's
-  together or everything running (ADR-0011, ADR-0012). The extra sound effects (footsteps by surface, the bow,
+- **Next: M9, co-op online** (ROADMAP.md; online only, the user): its first decision is the active area with the
+  players' several views, every view's together or everything running (ADR-0011, ADR-0012). The extra sound effects (footsteps by surface, the bow,
   Olaf's shield, an electric buzz) are M10, after it.
 - **The Modern sound's effects placed by position (built and checked 2026-11-25; being heard on the host):**
   ADR-0015. To judge by ear: how far to the sides the view's edges are (`kEdge`, 48 of 63, in `Session::placed`)
@@ -298,8 +298,8 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   compositor holding frames), not in the game's step, its drawing, or its uploads; it was there before smooth
   movement too, and mailbox presenting or a third frame in flight didn't change it. Likely the system (the
   GPU's power management); not confirmed (vkcube, a fixed clock).
-- **Co-op and the active area:** with several views of one world, either the active area is all the views
-  together or everything runs (ADR-0011). Not decided.
+- **Co-op and the active area:** with the players' views of one world (each on their own machine), either the
+  active area is all the views together or everything runs (ADR-0011). Not decided.
 - **Co-op's snapshots.** What is written of a world (ADR-0020) is all of it, 25 to 90 KB. Sent over a network
   many times a second it wants trimming: the sprite layer's free pieces (most of a Remaster world's size), the
   level's own data that both sides have, and only what changed since the last one.
