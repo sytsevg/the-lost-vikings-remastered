@@ -51,7 +51,8 @@ class Session {
     static std::expected<std::unique_ptr<Session>, std::string> open(const std::filesystem::path& dir, int slot,
                                                                      const SessionSound& sound = {},
                                                                      Rules rules = Rules::kVanilla,
-                                                                     Draw draw_with = draw);
+                                                                     Draw draw_with = draw, const Online& online = {},
+                                                                     int player = 0);
     Rules rules() const noexcept { return play_.world.rules; }
 
     // One step of input: the pictures of the refreshes it takes (three for a tick or a wait's pass, one in the
@@ -59,6 +60,28 @@ class Session {
     // live, what each picture asks of the sound is in `cues` instead, one entry a picture. `pace`: under Remaster
     // rules, how fast the Vikings walk and climb (World::pace: a gamepad's stick pushed part way).
     std::vector<Screen> step(std::uint16_t keyboard, Play::MenuKeys keys = {}, Pace pace = {});
+
+    // --- Online (ADR-0012): what rollback drives (lvr/coop.hpp) ---
+
+    // This machine's player's part of the next step's input: his keys, stick and zoom, the character typed, the
+    // menu keys (step() takes it this way too).
+    StepInput take_input(std::uint16_t keyboard, Play::MenuKeys keys, Pace pace);
+    // One step with every player's input, shown: its pictures, with its sounds. `step`: its number online, for the
+    // cue ledger.
+    std::vector<Screen> run(const StepInput& input, std::optional<std::uint32_t> step = std::nullopt);
+    // The same step again, after a rollback went back before it: nothing shown, and of its sounds only what it
+    // hadn't asked for before is heard (with the next picture), what it no longer asks for stopped.
+    void run_again(const StepInput& input, std::uint32_t step);
+    // The steps before `step` won't run again: the ledger lets go of them.
+    void confirmed(std::uint32_t step) { ledger_.confirm(step); }
+    Play::Snapshot snapshot() const { return play_.snapshot(); }
+    // Back to a snapshot exactly (rollback: the views too).
+    void restore(const Play::Snapshot& from) { (void)play_.restore(from); }
+    std::uint64_t state_hash() { return play_.state_hash(hashed_); }
+    bool changing_scene() const noexcept { return play_.changing_scene(); }
+    bool online() const noexcept { return play_.world.online; }
+    int player() const noexcept { return player_; }
+    const World& world() const noexcept { return play_.world; }
     // Instead of a step, while the play is held (Remaster rules' menu is open): a tick's three pictures of the world
     // as it is, a little darker as under the original's menus. Nothing of the play moves and nothing is kept for the
     // rewind; only a change of view the zoom asks for goes on, as while the world holds for a key (what it brings into
@@ -141,20 +164,21 @@ class Session {
     // back to, or none of them, the rewind is over and the play goes on, until it is let go and held again. Live,
     // the sound of those seconds is heard backwards meanwhile, twice as fast. What the minimap has seen is not
     // taken back.
-    void rewind(bool held) noexcept { rewind_held_ = held; }
+    void rewind(bool held) noexcept { rewind_held_ = held && !play_.world.online; }  // (none online: ADR-0012)
     bool rewinding() const noexcept { return rewinding_; }
     static constexpr int kRewindSteps = 199;  // a level's ten seconds, in steps (ticks: three refreshes each)
     int rewind_left() const noexcept { return rewind_left_; }  // of the level's steps of rewind
     // The quicksave, only with the game's cheat on (the title was given its password, or `cheat` below): the play
     // as it is now is kept, in a level; and brought back, from wherever the game is by then but a menu (the
     // game-over scene, for one). One is kept, until the game is closed. Acted on at the next step.
+    // None online (ADR-0012).
     bool quicksave() noexcept {
-        save_wanted_ = takes_play_keys() && play_.world.title.cheat;
+        save_wanted_ = takes_play_keys() && play_.world.title.cheat && !play_.world.online;
         return save_wanted_;
     }
     bool quickload() noexcept {
-        load_wanted_ =
-            play_.world.rules == Rules::kRemaster && play_.world.title.cheat && quick_.has_value() && !play_.in_menu();
+        load_wanted_ = play_.world.rules == Rules::kRemaster && play_.world.title.cheat && quick_.has_value() &&
+                       !play_.in_menu() && !play_.world.online;
         return load_wanted_;
     }
     bool has_quicksave() const noexcept { return quick_.has_value(); }
@@ -186,7 +210,8 @@ class Session {
 
   private:
     Session(assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, SharedGraphics shared, int slot, Rules rules,
-            audio::SoundData sound, std::optional<audio::SoundData> modern, std::unique_ptr<audio::GmSynth> gm);
+            audio::SoundData sound, std::optional<audio::SoundData> modern, std::unique_ptr<audio::GmSynth> gm,
+            const Online& online);
     // `dimmed`: as the original's menus show the picture (kMenuTint), unless it is darkened already.
     Screen picture(bool dimmed = false);
     void hear(const std::vector<SoundCue>& asked);
@@ -259,10 +284,12 @@ class Session {
     void set_view(int width, int height, bool at_once);
     // The step's input from this machine's player: his keys, stick and zoom, the character typed, the menu keys.
     StepInput input_of(std::uint16_t keyboard, const Play::MenuKeys& keys, Pace pace);
+    CueLedger ledger_;  // online: what the steps run again asked of the sound, heard once
     // After a rewind's or a quicksave's snapshot is brought back: the view the zoom has now.
     void zoom_back();
     std::optional<std::array<int, 2>> view_now_;  // the view change_view gives the next step
     std::uint16_t typed_ = 0;                     // the character typed since the last step
+    std::vector<std::uint8_t> hashed_;            // (the state hash's buffer, kept)
     Screen::Part part_shown(const View& view);
     int zoom_ = 0;
     std::uint32_t refreshes_ = 0;  // the refreshes the pictures handed out so far are for (Screen::refresh)

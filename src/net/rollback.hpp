@@ -48,6 +48,9 @@ class Game {
     // The input a player is taken to give when his hasn't come yet, from his last one: by default the same
     // (holding a direction is the common case). A game clears what is pressed once (a character typed).
     virtual Input predict(const Input& last) { return last; }
+    // Whether the next step may only run on every player's input, never on a prediction (it changes the scene:
+    // what is never to be run again).
+    virtual bool waits_for_inputs() { return false; }
 };
 
 struct Settings {
@@ -88,7 +91,11 @@ class Rollback {
     std::uint32_t known(int player) const;
     std::uint32_t local_known() const { return known(settings_.local); }
     // The local inputs from step `from` on, as they are to be sent (all the others haven't acknowledged).
-    std::vector<std::pair<std::uint32_t, Input>> local_from(std::uint32_t from) const;
+    std::vector<std::pair<std::uint32_t, Input>> local_from(std::uint32_t from) const {
+        return known_from(settings_.local, from);
+    }
+    // Any player's inputs known without a gap from step `from` on: what the host passes on to the others.
+    std::vector<std::pair<std::uint32_t, Input>> known_from(int player, std::uint32_t from) const;
     // How many steps were run again, all told.
     std::uint32_t steps_run_again() const noexcept { return run_again_; }
 

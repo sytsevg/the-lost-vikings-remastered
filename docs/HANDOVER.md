@@ -338,11 +338,24 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   and join, a TCP connection and UDP to each client (introduced by a token over TCP), reliable and fast messages,
   the fast ones over TCP while no UDP gets through, pings for the round trip. Tests over 127.0.0.1
   (`src/net/tests/test_transport.cpp`).
-- **M9's state on 2026-11-25:** parts 1 to 6 of nine built and checked (373 tests, all 119 goldens, `saves.sh
-  --all`, `--copies`, `--rollback 8`, `check.sh` at 84.5%), uncommitted on the branch `m9-coop-online` (the user:
-  one changeset for a review, committed when he says). Next: part 7, the front end (the protocol's messages,
-  `Session` as `net::Game`, the main loop, the lobby, the names under the Vikings, the waiting mark, the players'
-  latency in the menu; stills first).
+- **M9's state on 2026-11-25:** parts 1 to 6 of nine committed on the branch `m9-coop-online` (7654737, one
+  commit for a review: the user); part 7 built on top, uncommitted.
+- **The front end** (M9's sixth part, built 2026-11-25): `src/net/protocol.*` (the messages: Hello, Welcome,
+  Refused, Lobby, Start, Inputs, Status, Hash, Leave, Quit; the host in the middle passing each player's inputs on),
+  `src/lvr/coop.*` (a step's input as 16 bytes a player; `CoopGame`: the session as `net::Game`, its snapshots,
+  `Session::run` shown and `Session::run_again` not, the cue ledger), `src/lvr/online.*` (`NetGame`: host, join,
+  the lobby with its checks of protocol, state version, build and game files, the delay from the round trips,
+  rollback a refresh at a time). `vikings-remaster --host PORT [--players N] [--delay N]` and `--join
+  ADDRESS[:PORT]`, `--name NAME`: the lobby in the terminal for now; the game in the window with every player's
+  name under the Viking he plays or watches, a box at the top while it waits for someone's input, the Escape menu
+  over the running game with a page of the players and their latency. A step that changes the scene waits for every
+  input (`net::Game::waits_for_inputs`). Tested: a real-data test of two sessions under rollback over a lossy
+  simulated network against one with every input (`test_coop.cpp`), a host and a client in one process through the
+  real transport (`test_online.cpp`), and two `--dump` processes over 127.0.0.1 (stills in
+  `gamedata/previews/coop/`). The bug they found: `Session::input_of` put this machine's keys in the first player's
+  place. Not yet: a player who leaves leaves his Viking standing (his inputs nothing; nobody takes him over), the
+  out-of-step logs and `lv-replay --coop`, a client's QUIT leaving cleanly (it closes the connection), the lobby in
+  the window.
 - **Not checked by anything but the eye:** whatever the GPU renderer shows beyond the original's view, and
   whether a level still plays well zoomed out (enemies run for longer and further; nothing resets as often).
 - **The GPU renderer has run on one graphics card** (the user's) and the container's software driver. Vulkan

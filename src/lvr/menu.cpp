@@ -88,6 +88,14 @@ Menu::Menu(Settings settings, Choices choices) : settings_{std::move(settings)},
     }
 }
 
+std::vector<std::string_view> Menu::first_lines() const {
+    std::vector<std::string_view> lines{kFirstLines.begin(), kFirstLines.end()};
+    if (choices_.online) {
+        lines.insert(lines.begin() + 3, "PLAYERS");  // (after the controls)
+    }
+    return lines;
+}
+
 std::size_t Menu::line_count() const {
     switch (page_) {
         case Page::kOptions:
@@ -95,10 +103,12 @@ std::size_t Menu::line_count() const {
         case Page::kKeyboard:
         case Page::kGamepad:
             return input::kActionCount + kControlsAfter;
+        case Page::kPlayers:
+            return players_.size() + 1;  // and back
         case Page::kFirst:
             break;
     }
-    return kFirstLines.size();
+    return first_lines().size();
 }
 
 std::string_view Menu::title() const noexcept {
@@ -109,6 +119,8 @@ std::string_view Menu::title() const noexcept {
             return "KEYBOARD";
         case Page::kGamepad:
             return "GAMEPAD";
+        case Page::kPlayers:
+            return "PLAYERS";
         case Page::kFirst:
             break;
     }
@@ -126,9 +138,15 @@ std::vector<Menu::Line> Menu::lines() const {
     };
     switch (page_) {
         case Page::kFirst:
-            for (const std::string_view label : kFirstLines) {
+            for (const std::string_view label : first_lines()) {
                 line(label);
             }
+            break;
+        case Page::kPlayers:
+            for (const PlayerLine& player : players_) {
+                line(player.name, std::format("{:<7} {}", player.viking, player.latency));
+            }
+            line("BACK");
             break;
         case Page::kOptions: {
             const auto screen = settings_.screen == "none" ? std::string{"OFF"} : upper(settings_.screen);
@@ -190,6 +208,9 @@ std::vector<std::string> Menu::note() const {
         case Page::kGamepad:
             note.emplace_back("ENTER/A ADD, DEL/Y CLEAR, ESC/B BACK");
             break;
+        case Page::kPlayers:
+            note.emplace_back("ESC/B BACK");
+            break;
     }
     return note;
 }
@@ -245,15 +266,23 @@ Menu::Asked Menu::press(Key key) {
 Menu::Asked Menu::choose() {
     const std::size_t chosen = this->chosen();
     switch (page_) {
-        case Page::kFirst:
-            switch (chosen) {
-                case 3:
-                    return Asked::kGiveUp;
-                case 4:
-                    return Asked::kQuit;
-                default:
-                    page_ = chosen == 0 ? Page::kOptions : chosen == 1 ? Page::kKeyboard : Page::kGamepad;
-                    break;
+        case Page::kFirst: {
+            const std::string_view label = first_lines().at(chosen);
+            if (label == "GIVE UP LEVEL") {
+                return Asked::kGiveUp;
+            }
+            if (label == "QUIT GAME") {
+                return Asked::kQuit;
+            }
+            page_ = label == "OPTIONS"    ? Page::kOptions
+                    : label == "KEYBOARD" ? Page::kKeyboard
+                    : label == "GAMEPAD"  ? Page::kGamepad
+                                          : Page::kPlayers;
+            break;
+        }
+        case Page::kPlayers:
+            if (chosen == players_.size()) {
+                page_ = Page::kFirst;
             }
             break;
         case Page::kOptions:
@@ -458,6 +487,29 @@ class Canvas {
 };
 
 }  // namespace
+
+std::vector<std::uint8_t> coop_picture(const CoopOverlay& overlay, const std::vector<assets::IndexedImage>& font) {
+    constexpr int kNameLine = 9;
+    Canvas canvas;
+    for (const CoopOverlay::Label& label : overlay.labels) {
+        for (std::size_t i = 0; i < label.names.size(); ++i) {
+            const std::string& name = label.names.at(i);
+            const int width = static_cast<int>(name.size()) * kCharacter;
+            canvas.text(label.x - (width / 2), label.y + (static_cast<int>(i) * kNameLine), name,
+                        i == 0 ? kWhite : kGrey, font);
+        }
+    }
+    if (!overlay.waiting.empty()) {
+        constexpr int kPadding = 6;
+        const int width = (static_cast<int>(overlay.waiting.size()) * kCharacter) + (2 * kPadding);
+        const int height = kCharacter + (2 * kPadding) - 2;
+        const int x = (kScreenWidth - width) / 2;
+        constexpr int kTop = 8;
+        canvas.framed(x, kTop, width, height, kDark, kWhite);
+        canvas.text(x + kPadding, kTop + kPadding - 1, overlay.waiting, kWhite, font);
+    }
+    return canvas.done();
+}
 
 std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<assets::IndexedImage>& font,
                                        bool flash_shown) {

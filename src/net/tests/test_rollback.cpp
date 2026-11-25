@@ -347,3 +347,21 @@ TEST_CASE("rollback: the one ahead of the other on average is told to wait a ref
     }
     CHECK_FALSE(rollback.ahead());
 }
+
+TEST_CASE("rollback: a step the game says is never to be run again waits for every player's input") {
+    class Waits : public Toy {
+      public:
+        bool waits = false;
+        bool waits_for_inputs() override { return waits; }
+    };
+    Waits game;
+    Rollback rollback{game, Settings{.players = 2, .local = 0, .delay = 0}};
+    REQUIRE(rollback.add_local(held(0, 0)));
+    REQUIRE(rollback.advance());  // on a prediction
+    game.waits = true;
+    REQUIRE(rollback.add_local(held(0, 1)));
+    CHECK_FALSE(rollback.advance());  // not on a prediction
+    rollback.add_remote(1, 0, held(1, 0));
+    rollback.add_remote(1, 1, held(1, 1));
+    CHECK(rollback.advance());
+}

@@ -64,6 +64,7 @@
 #include "input/input.hpp"
 #include "lvr/gpu.hpp"
 #include "lvr/menu.hpp"
+#include "lvr/online.hpp"
 #include "lvr/profile.hpp"
 #include "lvr/render.hpp"
 #include "lvr/session.hpp"
@@ -80,6 +81,7 @@ constexpr const char* kWindowTitle = "The Lost Vikings";
 // showing longer than the other (which includes the wait for the screen's refresh: up to a 60 Hz one's).
 constexpr double kSlowStepMilliseconds = 8;
 constexpr double kSlowShowMilliseconds = 20;
+constexpr std::uint16_t kDefaultPort = 47230;  // co-op online's, when --join gives none
 
 bool write_wav(const std::filesystem::path& path, const std::vector<std::int16_t>& samples, std::uint32_t rate) {
     std::ofstream out(path, std::ios::binary);
@@ -138,7 +140,7 @@ void use_settings(Session& session, GpuRenderer* gpu, const Settings& settings) 
 
 // What the menu has to choose from: the Modern sound if there is one, and the screen's looks.
 Menu::Choices menu_choices(const Session& session) {
-    Menu::Choices choices{.has_modern = session.has_modern(), .screens = {}};
+    Menu::Choices choices{.has_modern = session.has_modern(), .screens = {}, .online = session.online()};
     for (const GpuRenderer::Look look : GpuRenderer::kLooks) {
         choices.screens.emplace_back(GpuRenderer::name_of(look));
     }
@@ -166,16 +168,101 @@ bool save_shown(GpuRenderer& gpu, const Screen& screen, const Minimap* minimap, 
 
 // Without a window: `steps` steps with no key held, the last picture written as a PNG, the sound as a WAV. With
 // `gpu` (Remaster rules) the picture is the one it shows, and `zoom` steps out are asked for before step `zoom_at`.
+// Co-op online (ADR-0012): the names under the Vikings this machine's view shows, and whom the game waits for.
+CoopOverlay coop_overlay(const Session& session, const NetGame& net) {
+    constexpr int kWaitedRefreshes = 18;  // a third of a second before the box says so
+    CoopOverlay overlay;
+    const World& world = session.world();
+    if (world.has_vikings && world.has_hud) {
+        const Camera& camera = world.players.at(static_cast<std::size_t>(session.player())).camera;
+        const double scale = static_cast<double>(kScreenWidth) / static_cast<double>(std::max(camera.view_width, 1));
+        for (int viking = 0; viking < kVikingSlots; ++viking) {
+            const Entity* entity = world.at(viking);
+            if (entity == nullptr || entity->dead) {
+                continue;
+            }
+            CoopOverlay::Label label{.x = static_cast<int>((entity->x - camera.x) * scale),
+                                     .y = static_cast<int>((entity->box.bottom + 3 - camera.y) * scale),
+                                     .names = {}};
+            // His player's name first, then his viewers' in their line's order.
+            std::vector<std::pair<std::uint32_t, int>> watching;
+            for (int who = 0; who < world.player_count; ++who) {
+                const Player& player = world.players.at(static_cast<std::size_t>(who));
+                if (player.viking == viking) {
+                    watching.emplace_back(player.controls ? 0 : std::uint32_t{player.in_line} + 1, who);
+                }
+            }
+            std::ranges::sort(watching);
+            for (const auto& [place, who] : watching) {
+                if (std::cmp_less(who, net.names().size())) {
+                    label.names.push_back(net.names().at(static_cast<std::size_t>(who)));
+                }
+            }
+            if (!label.names.empty()) {
+                overlay.labels.push_back(std::move(label));
+            }
+        }
+    }
+    if (const std::optional<std::string> whom = net.waiting_for(); whom && net.waited() >= kWaitedRefreshes) {
+        overlay.waiting = "WAITING FOR " + *whom;
+    }
+    return overlay;
+}
+
+// Online: the menu's page of the players: each one's name, the Viking he plays or watches, his round trip.
+std::vector<Menu::PlayerLine> player_lines(const Session& session, const NetGame& net) {
+    constexpr std::array<std::string_view, kVikingSlots> kVikings{"ERIK", "BALEOG", "OLAF"};
+    std::vector<Menu::PlayerLine> lines;
+    const World& world = session.world();
+    for (int who = 0; who < world.player_count && std::cmp_less(who, net.names().size()); ++who) {
+        const Player& player = world.players.at(static_cast<std::size_t>(who));
+        const bool viking = player.viking >= 0 && player.viking < kVikingSlots && world.has_vikings;
+        std::string latency = "-";
+        if (who == session.player()) {
+            latency = "YOU";
+        } else if (const std::optional<int> ms = net.latency_ms(who)) {
+            latency = std::format("{} MS", *ms);
+        }
+        lines.push_back({.name = net.names().at(static_cast<std::size_t>(who)),
+                         .viking = viking ? std::string{kVikings.at(static_cast<std::size_t>(player.viking))} : "-",
+                         .latency = latency});
+    }
+    return lines;
+}
+
+// The lobby, before the game: in the terminal for now (hosting and joining from the menu come later). Who is
+// there as they join; the game starts for all once the host has everyone.
+std::expected<NetGame::Joined, std::string> wait_in_lobby(NetGame& net) {
+    std::size_t shown = 0;
+    while (true) {
+        auto lobby = net.lobby();
+        if (!lobby) {
+            return std::unexpected{lobby.error()};
+        }
+        if (net.names().size() != shown) {
+            shown = net.names().size();
+            std::string names;
+            for (const std::string& name : net.names()) {
+                names += (names.empty() ? "" : ", ") + name;
+            }
+            std::println("vikings-remaster: in the game: {}", names);
+        }
+        if (*lobby) {
+            return **lobby;
+        }
+        SDL_Delay(5);
+    }
+}
+
 struct DumpOptions {
     int zoom = 0;     // this many steps of zoom out ...
     int zoom_at = 0;  // ... asked for before this step
     std::uint16_t held = 0;
-    std::uint16_t tapped = 0;
-    int tap_at = -1;
-    int rewind_from = -1;          // the rewind held from this step ...
-    int rewind_until = -1;         // ... until this one
-    int whole_at = -1;             // the view the whole level from this step on
-    Showcase* showcase = nullptr;  // its place, written as --whole writes the whole level
+    std::vector<std::pair<int, std::uint16_t>> taps;  // keys pressed once (--tap, as often as given): at which step
+    int rewind_from = -1;                             // the rewind held from this step ...
+    int rewind_until = -1;                            // ... until this one
+    int whole_at = -1;                                // the view the whole level from this step on
+    Showcase* showcase = nullptr;                     // its place, written as --whole writes the whole level
     int moments = 0;
     // The menu over the last picture (Remaster rules), with these of its keys pressed: u, d, l, r (up, down, left,
     // right), c (choose), b (back), x (clear); none: as it opens.
@@ -183,7 +270,7 @@ struct DumpOptions {
 };
 
 int dump(Session& session, int steps, const std::filesystem::path& out, const std::filesystem::path& wav,
-         GpuRenderer* gpu, const DumpOptions& options) {
+         GpuRenderer* gpu, const DumpOptions& options, NetGame* net) {
     Screen last = session.start_frames.empty() ? Screen{} : session.start_frames.back();
     std::vector<std::int16_t> sound = std::move(session.samples);
     session.samples.clear();
@@ -197,8 +284,30 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
         if (step == options.whole_at && !session.view_whole_level()) {
             std::println(stderr, "--whole: step {} is not in a level being played (Remaster rules)", step);
         }
-        const std::uint16_t keys = step == options.tap_at ? options.tapped : options.held;
-        frames = session.step(options.showcase != nullptr ? options.showcase->before_step(session, keys) : keys);
+        std::uint16_t keys = options.held;
+        for (const auto& [at, tapped] : options.taps) {
+            if (at == step) {
+                keys = static_cast<std::uint16_t>(unsigned{keys} | unsigned{tapped});
+            }
+        }
+        if (net != nullptr) {  // online: the step once every input allows it, what comes taken meanwhile
+            std::optional<std::vector<Screen>> pictures;
+            while (!pictures) {
+                if (const auto polled = net->poll(); !polled) {
+                    std::println(stderr, "vikings-remaster: {}", polled.error());
+                    return EXIT_FAILURE;
+                }
+                if (net->wants_input()) {
+                    net->give(session.take_input(keys, {}, {}));
+                }
+                if (pictures = net->step(); !pictures) {
+                    SDL_Delay(1);
+                }
+            }
+            frames = std::move(*pictures);
+        } else {
+            frames = session.step(options.showcase != nullptr ? options.showcase->before_step(session, keys) : keys);
+        }
         refreshes += frames.size();
         if (!frames.empty()) {
             last = frames.back();
@@ -209,6 +318,15 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
     if (!session.error().empty()) {
         std::println(stderr, "vikings-remaster: {}", session.error());
         return EXIT_FAILURE;
+    }
+    if (net != nullptr) {  // a second for the others to finish theirs, before this machine is gone
+        const std::uint64_t until = SDL_GetTicks() + 1000;
+        while (SDL_GetTicks() < until && net->poll()) {
+            SDL_Delay(2);
+        }
+        if (gpu != nullptr) {
+            gpu->set_overlay(coop_picture(coop_overlay(session, *net), session.font()));
+        }
     }
     std::println("scene {} after {} refreshes", session.scene(), refreshes);
     if (gpu != nullptr && (options.whole_at >= 0 || options.showcase != nullptr)) {
@@ -227,6 +345,9 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
     } else if (gpu != nullptr) {
         if (options.menu) {
             Menu menu{settings_now(session, gpu, Settings{}), menu_choices(session)};
+            if (net != nullptr) {
+                menu.set_players(player_lines(session, *net));
+            }
             for (const char key : *options.menu) {
                 constexpr std::string_view kKeys = "udlrcbx";
                 if (const auto at = kKeys.find(key); at != std::string_view::npos) {
@@ -344,7 +465,7 @@ struct Remastered {
 // without, they are the Classic renderer's and a window is made here. With `remastered` (Remaster rules): the
 // player's controls and settings, the menu, Remaster's own keys and buttons, walking as fast as a stick is pushed.
 int play(Session& session, input::Controls controls, SDL_Window* window, GpuRenderer* gpu, bool report_slow,
-         Showcase* showcase, Remastered* remastered) {
+         Showcase* showcase, Remastered* remastered, NetGame* net) {
     using input::Action;
     using input::bit;
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
@@ -399,6 +520,7 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
     bool flash_shown = true;
     bool give_up = false;         // the menu asked for the original's pause box (where the level is given up) ...
     bool quit_box = false;        // ... or its quit box: with the next step
+    CoopOverlay coop_shown;       // online: what is laid over the screen while the menu isn't
     std::uint64_t repeat_at = 0;  // a gamepad's direction held in the menu: when it counts again
     const auto alt_held = [] {
         const bool* held = SDL_GetKeyboardState(nullptr);
@@ -651,6 +773,19 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
             }
         }
         pads_before = reading;
+        if (net != nullptr) {  // what came, and what is due to be sent
+            if (const auto polled = net->poll(); !polled) {
+                std::println(stderr, "vikings-remaster: {}", polled.error());
+                status = EXIT_FAILURE;
+                running = false;
+            }
+            if (menu) {  // its page of the players, as they are now
+                if (std::vector<Menu::PlayerLine> lines = player_lines(session, *net); lines != menu->players()) {
+                    menu->set_players(std::move(lines));
+                    draw_menu();
+                }
+            }
+        }
         // Every refresh that is due shows the next picture; a step runs when the last one is used up.
         const double elapsed =
             static_cast<double>(SDL_GetPerformanceCounter() - start) / static_cast<double>(frequency);
@@ -661,7 +796,7 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
         const Screen* shown = nullptr;
         for (; refreshes < due && running; ++refreshes) {
             while (running && next_frame >= frames.size()) {
-                if (menu) {  // the game holds: its pictures as it is, a zoom asked for in the menu shown at once
+                if (menu && net == nullptr) {  // the game holds: its pictures as it is, a zoom shown at once
                     frames = session.held();
                     cues = std::move(session.cues);
                     next_frame = 0;
@@ -696,17 +831,40 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
                 }
                 const std::uint64_t step_began = SDL_GetPerformanceCounter();
                 const std::size_t pages_before = gpu != nullptr ? gpu->pages_set_up() : 0;
-                frames = session.step(showcase != nullptr ? showcase->before_step(session, given) : given,
-                                      Play::MenuKeys{.yes = held[SDL_SCANCODE_Y],
-                                                     .no = held[SDL_SCANCODE_N],
-                                                     .quit = held[SDL_SCANCODE_F10] ||
-                                                             (alt && (held[SDL_SCANCODE_X] || held[SDL_SCANCODE_Q])) ||
-                                                             std::exchange(quit_box, false),
-                                                     .effects = sound_keys.effects,
-                                                     .music = sound_keys.music,
-                                                     .previous_level = held[SDL_SCANCODE_F5],
-                                                     .next_level = held[SDL_SCANCODE_F6]},
-                                      pace);
+                const Play::MenuKeys menu_keys{.yes = held[SDL_SCANCODE_Y],
+                                               .no = held[SDL_SCANCODE_N],
+                                               .quit = held[SDL_SCANCODE_F10] ||
+                                                       (alt && (held[SDL_SCANCODE_X] || held[SDL_SCANCODE_Q])) ||
+                                                       std::exchange(quit_box, false),
+                                               .effects = sound_keys.effects,
+                                               .music = sound_keys.music,
+                                               .previous_level = held[SDL_SCANCODE_F5],
+                                               .next_level = held[SDL_SCANCODE_F6]};
+                if (net != nullptr) {
+                    // Online: this machine's input when it can be given (in the menu: nothing held, the game goes
+                    // on), and the next step when it can run; else the last picture again for this refresh.
+                    if (net->wants_input()) {
+                        net->give(session.take_input(menu ? std::uint16_t{0} : given,
+                                                     menu ? Play::MenuKeys{} : menu_keys, pace));
+                    }
+                    const Screen again = frames.empty() ? Screen{} : frames.back();
+                    if (std::optional<std::vector<Screen>> pictures = net->step()) {
+                        frames = std::move(*pictures);
+                        cues = std::move(session.cues);
+                    } else {
+                        frames = {again};
+                        cues = {{}};
+                    }
+                    next_frame = 0;
+                    sound_keys.effects = session.menu_keys().effects;
+                    sound_keys.music = session.menu_keys().music;
+                    if (session.scene_loaded()) {
+                        keyboard = 0;
+                    }
+                    continue;
+                }
+                frames =
+                    session.step(showcase != nullptr ? showcase->before_step(session, given) : given, menu_keys, pace);
                 if (report_slow) {
                     const double took = static_cast<double>(SDL_GetPerformanceCounter() - step_began) * 1000.0 /
                                         static_cast<double>(frequency);
@@ -750,6 +908,17 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
                                  static_cast<double>(frequency) * kDisplayHz) -
                                 static_cast<double>(refreshes);
             const auto between = static_cast<float>(std::clamp(into, 0.0, 1.0));
+            if (net != nullptr && !menu) {  // the names, and whom the game waits for
+                CoopOverlay now = coop_overlay(session, *net);
+                if (now != coop_shown) {
+                    coop_shown = std::move(now);
+                    gpu->set_overlay(coop_shown.labels.empty() && coop_shown.waiting.empty()
+                                         ? std::vector<std::uint8_t>{}
+                                         : coop_picture(coop_shown, session.font()));
+                }
+            } else if (menu) {
+                coop_shown = {};  // (drawn again when the menu closes)
+            }
             const Minimap* minimap = last_shown.fading ? nullptr : session.minimap();  // when the level is there
             const std::uint64_t show_began = SDL_GetPerformanceCounter();
             const auto done = gpu->show(last_shown, minimap, between);
@@ -836,9 +1005,16 @@ int main(int argc, char* argv[]) try {
     std::optional<GpuRenderer::Look> look;  // --shader
     std::filesystem::path profile;          // Remaster rules: where the player's profile is kept
     DumpOptions dumping;
-    std::string held;          // a dump: the key held
-    std::string tapped;        // and the one pressed once
-    bool sound_asked = false;  // --sound (a dump under Remaster rules: in a window the menu's)
+    std::string held;                                 // a dump: the key held
+    std::vector<std::pair<int, std::string>> tapped;  // and the ones pressed once, at their steps
+    bool sound_asked = false;                         // --sound (a dump under Remaster rules: in a window the menu's)
+    // Co-op online (ADR-0012): hosting on a port, or joining a host; how many play, this one's name, the delay.
+    std::optional<std::uint16_t> host_port;
+    std::string join_address;
+    std::uint16_t join_port = kDefaultPort;
+    int players = 2;
+    std::string name;
+    std::optional<int> delay;
     const std::vector<std::string_view> args(argv + 1, argv + argc);
     for (std::size_t i = 0; i < args.size(); ++i) {
         const auto value = [&](std::size_t ahead) { return i + ahead < args.size() ? args[i + ahead] : ""; };
@@ -894,11 +1070,30 @@ int main(int argc, char* argv[]) try {
             dumping.whole_at = *number;
             ++i;
         } else if (const auto step = parse_number(value(2)); step && args[i] == "--tap") {
-            tapped = args[i + 1];
-            dumping.tap_at = *step;
+            tapped.emplace_back(*step, std::string{args[i + 1]});
             i += 2;
         } else if (args[i] == "--menu" && i + 1 < args.size()) {
             dumping.menu = std::string{args[i + 1]};
+            ++i;
+        } else if (number && args[i] == "--host" && *number > 0 && *number < 65536) {
+            host_port = static_cast<std::uint16_t>(*number);
+            ++i;
+        } else if (args[i] == "--join" && i + 1 < args.size()) {
+            const std::string_view address = args[i + 1];
+            const std::size_t colon = address.rfind(':');
+            const std::optional<int> port =
+                colon != std::string_view::npos ? parse_number(address.substr(colon + 1)) : std::nullopt;
+            join_address = std::string{port ? address.substr(0, colon) : address};
+            join_port = port && *port > 0 && *port < 65536 ? static_cast<std::uint16_t>(*port) : kDefaultPort;
+            ++i;
+        } else if (number && args[i] == "--players" && *number >= 1 && *number <= kMostPlayers) {
+            players = *number;
+            ++i;
+        } else if (args[i] == "--name" && i + 1 < args.size()) {
+            name = args[i + 1];
+            ++i;
+        } else if (number && args[i] == "--delay" && *number >= 0 && *number <= 4) {
+            delay = *number;
             ++i;
         } else if (args[i] == "--hold" && i + 1 < args.size()) {
             held = args[i + 1];
@@ -912,11 +1107,50 @@ int main(int argc, char* argv[]) try {
                 stderr,
                 "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--soundfont FILE] "
                 "[--rules vanilla|remaster] [--cheat] [--slow-frames] [--profile DIR] [--showcase N] "
+                "[--host PORT [--players N] [--delay N] | --join ADDRESS[:PORT]] [--name NAME] "
                 "[--dump STEPS FILE.png [--wav FILE.wav] [--sound classic|modern] [--no-effects] "
                 "[--shader none|crt|xbr] [--zoom BY AT_STEP] [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] "
                 "[--whole AT_STEP] [--moments N] [--menu KEYS]]");
             return EXIT_FAILURE;
         }
+    }
+    // Co-op online (ADR-0012), under Remaster rules: in the lobby before anything else, until everyone is there; the
+    // host's scene and cheat are the game's.
+    std::unique_ptr<NetGame> net;
+    NetGame::Joined joined;
+    if (host_port || !join_address.empty()) {
+        if (host_port && !join_address.empty()) {
+            std::println(stderr, "vikings-remaster: --host or --join, not both");
+            return EXIT_FAILURE;
+        }
+        rules = Rules::kRemaster;
+        auto files = assets::GameFiles::open(dir);
+        if (!files) {
+            std::println(stderr, "vikings-remaster: {}", files.error());
+            return EXIT_FAILURE;
+        }
+        const NetGame::Identity identity{
+            .build = LVR_BUILD, .game = files->release().exe_hash ^ files->release().data_content_hash, .name = name};
+        auto opened = host_port ? NetGame::host(*host_port, players, slot, cheat, delay, identity)
+                                : NetGame::join(join_address, join_port, identity);
+        if (!opened) {
+            std::println(stderr, "vikings-remaster: {}", opened.error());
+            return EXIT_FAILURE;
+        }
+        net = std::move(*opened);
+        std::println("vikings-remaster: {}",
+                     host_port ? std::format("hosting on port {}, for {} players", *host_port, players)
+                               : std::format("joined {} port {}", join_address, join_port));
+        auto started = wait_in_lobby(*net);
+        if (!started) {
+            std::println(stderr, "vikings-remaster: {}", started.error());
+            return EXIT_FAILURE;
+        }
+        joined = *started;
+        slot = joined.slot;
+        cheat = joined.cheat;
+        std::println("vikings-remaster: the game starts: player {} of {}, {} step(s) of input delay", joined.player + 1,
+                     joined.players, joined.delay);
     }
     if (rules == Rules::kRemaster && dump_to.empty() && (sound_asked || look || !effects)) {
         // (The user, 2026-11-25: what the menu sets and the profile keeps isn't a start-up option as well.)
@@ -983,10 +1217,15 @@ int main(int argc, char* argv[]) try {
             return EXIT_FAILURE;
         }
     }
-    auto session = Session::open(dir, slot, sound, rules, std::move(draw_with));
+    auto session =
+        Session::open(dir, slot, sound, rules, std::move(draw_with),
+                      Online{.on = net != nullptr, .players = net != nullptr ? joined.players : 1}, joined.player);
     if (!session) {
         std::println(stderr, "vikings-remaster: {}", session.error());
         return EXIT_FAILURE;
+    }
+    if (net != nullptr) {
+        net->begin(**session);
     }
     if (cheat) {
         (*session)->cheat();
@@ -1021,9 +1260,11 @@ int main(int argc, char* argv[]) try {
     if (!dump_to.empty()) {
         const input::Controls original = input::original_controls();
         dumping.held = input::game_bits(input::key_actions(original, held));
-        dumping.tapped = input::game_bits(input::key_actions(original, tapped));
+        for (const auto& [at, key] : tapped) {
+            dumping.taps.emplace_back(at, input::game_bits(input::key_actions(original, key)));
+        }
         dumping.showcase = showcase ? &*showcase : nullptr;
-        return dump(**session, steps, dump_to, wav, gpu.get(), dumping);
+        return dump(**session, steps, dump_to, wav, gpu.get(), dumping, net.get());
     }
     // The controls: the original's under Vanilla rules, the player's under Remaster's; a keys file over them.
     input::Controls controls = remastered ? remastered->settings.controls : input::original_controls();
@@ -1045,7 +1286,7 @@ int main(int argc, char* argv[]) try {
         SDL_SetWindowTitle(window, showcase->title().c_str());
     }
     const int status = play(**session, controls, window, gpu.get(), report_slow, showcase ? &*showcase : nullptr,
-                            remastered ? &*remastered : nullptr);
+                            remastered ? &*remastered : nullptr, net.get());
     if (const auto saved = (*session)->save_profile(); !saved) {
         std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
     }

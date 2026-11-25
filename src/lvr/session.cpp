@@ -19,7 +19,7 @@ constexpr std::size_t kStartRefreshes = 145;
 
 std::expected<std::unique_ptr<Session>, std::string> Session::open(const std::filesystem::path& dir, int slot,
                                                                    const SessionSound& sound, Rules rules,
-                                                                   Draw draw_with) {
+                                                                   Draw draw_with, const Online& online, int player) {
     auto files = assets::GameFiles::open(dir);
     if (!files) {
         return std::unexpected{files.error()};
@@ -56,7 +56,8 @@ std::expected<std::unique_ptr<Session>, std::string> Session::open(const std::fi
     }
     std::unique_ptr<Session> session{new Session{std::move(*files), std::make_unique<LoadedLevel>(std::move(*loaded)),
                                                  std::move(*shared), slot, rules, std::move(*classic),
-                                                 std::move(modern), std::move(gm)}};
+                                                 std::move(modern), std::move(gm), online}};
+    session->player_ = static_cast<std::uint8_t>(std::clamp(player, 0, kMostPlayers - 1));
     session->snes_ = std::move(snes);
     session->play_.snes = session->snes_ ? &*session->snes_ : nullptr;
     session->draw_ = std::move(draw_with);
@@ -80,10 +81,10 @@ std::expected<std::unique_ptr<Session>, std::string> Session::open(const std::fi
 
 Session::Session(assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, SharedGraphics shared, int slot,
                  Rules rules, audio::SoundData sound, std::optional<audio::SoundData> modern,
-                 std::unique_ptr<audio::GmSynth> gm)
+                 std::unique_ptr<audio::GmSynth> gm, const Online& online)
     : files_{std::move(files)},
       shared_{std::move(shared)},
-      play_{files_, std::move(loaded), slot, rules},
+      play_{files_, std::move(loaded), slot, rules, online},
       sound_{std::move(sound)},
       modern_sound_{std::move(modern)},
       gm_{std::move(gm)} {
@@ -246,10 +247,12 @@ void Session::set_view(int width, int height, bool at_once) {
 }
 
 StepInput Session::input_of(std::uint16_t keyboard, const Play::MenuKeys& keys, Pace pace) {
-    StepInput input = StepInput::one(keyboard, pace);
+    StepInput input;
     input.menu = keys;
     input.typed = std::exchange(typed_, 0);
-    PlayerInput& own = input.players.at(player_);
+    PlayerInput& own = input.players.at(player_);  // this machine's player's (offline: the only one, the first)
+    own.keys = keyboard;
+    own.pace = pace;
     const auto& chosen = kZoomViews.at(static_cast<std::size_t>(zoom_));
     own.zoom = {static_cast<std::int16_t>(chosen[0]), static_cast<std::int16_t>(chosen[1])};
     if (view_now_) {
@@ -663,16 +666,6 @@ std::vector<Screen> Session::held() {
 // more keeps its last ones (what the pictures that aren't shown asked of the sound is heard with the first that
 // is). The same rule as the pixel-match harness's player (src/replay/player.cpp).
 std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys, Pace pace) {
-    struct Frame {
-        Screen screen;
-        std::vector<SoundCue> cues;
-    };
-    std::vector<Frame> frames;
-    const auto take_cues = [this] {
-        std::vector<SoundCue> asked = std::move(play_.world.cues);
-        play_.world.cues.clear();
-        return asked;
-    };
     play_.scene_loaded = false;
     // The quicksave, with the cheat on only: kept in a level, brought back from anywhere.
     const bool remaster = play_.world.rules == Rules::kRemaster;
@@ -720,11 +713,55 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys, P
             rewind_.pop_front();
         }
     }
-    cues.clear();
+    return run(take_input(keyboard, keys, pace));
+}
+
+StepInput Session::take_input(std::uint16_t keyboard, Play::MenuKeys keys, Pace pace) {
+    const auto within = [](std::uint8_t part) { return std::clamp(part, std::uint8_t{1}, kFullPace); };
+    pace = play_.world.rules == Rules::kRemaster ? Pace{.across = within(pace.across), .up_down = within(pace.up_down)}
+                                                 : Pace{};
     change_view(false);
+    return input_of(keyboard, keys, pace);
+}
+
+void Session::run_again(const StepInput& input, std::uint32_t step) {
+    std::vector<SoundCue> asked;
+    const auto take_cues = [&] {  // (when a shown step takes them: the world comes out the same)
+        asked.insert(asked.end(), play_.world.cues.begin(), play_.world.cues.end());
+        play_.world.cues.clear();
+    };
+    (void)play_.step(input, take_cues);
+    take_cues();
+    const CueLedger::Heard heard = ledger_.heard(step, asked);
+    carried_.insert(carried_.end(), heard.play.begin(), heard.play.end());  // heard with the next picture
+    for (const SoundCue& undone : heard.undone) {
+        if (undone.kind == SoundCue::Kind::kEffect) {
+            carried_.push_back({.kind = SoundCue::Kind::kStopEffect,
+                                .value = undone.value,
+                                .tune = 0,
+                                .entity = undone.entity,
+                                .x = undone.x,
+                                .y = undone.y,
+                                .heard_by = undone.heard_by});
+        }
+    }
+}
+
+std::vector<Screen> Session::run(const StepInput& input, std::optional<std::uint32_t> step) {
+    struct Frame {
+        Screen screen;
+        std::vector<SoundCue> cues;
+    };
+    std::vector<Frame> frames;
+    const auto take_cues = [this] {
+        std::vector<SoundCue> asked = std::move(play_.world.cues);
+        play_.world.cues.clear();
+        return asked;
+    };
+    const bool remaster = play_.world.rules == Rules::kRemaster;
+    cues.clear();
     moving_ = true;
-    const int refreshes = play_.step(input_of(keyboard, keys, pace),
-                                     [&] { frames.push_back({.screen = picture(), .cues = take_cues()}); });
+    const int refreshes = play_.step(input, [&] { frames.push_back({.screen = picture(), .cues = take_cues()}); });
     moving_ = false;
     // A step that shows fewer pictures than its refreshes (a wait for a key: a text box, a password) shows the last
     // one again for the rest. While the zoom changes the view that held its change up: one stage a step, each shown
@@ -741,6 +778,14 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys, P
         rewind_scene_ = play_.scenes_started;
     }
     const std::vector<SoundCue> late = take_cues();  // asked after the step's last picture: heard with it
+    if (step) {                                      // online: the step's sounds, for a rollback that runs it again
+        std::vector<SoundCue> all;
+        for (const Frame& frame : frames) {
+            all.insert(all.end(), frame.cues.begin(), frame.cues.end());
+        }
+        all.insert(all.end(), late.begin(), late.end());
+        (void)ledger_.heard(*step, all);
+    }
     const auto wanted = static_cast<std::size_t>(refreshes);
     const std::size_t first = frames.size() > wanted ? frames.size() - wanted : 0;
     std::vector<SoundCue> early = std::move(carried_);

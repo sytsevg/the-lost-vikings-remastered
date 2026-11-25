@@ -96,6 +96,15 @@ Then run it on your own desktop, since the container has no screen or sound:
 The keys are the original's. Arrows to move, Ctrl to switch Viking, E, S, D and F for what each of them can do,
 Tab for the inventory, Esc to pause, F10 to quit. A gamepad works as well.
 
+Co-op online, still being built: one player hosts and the others join, each with a Viking of their own on a screen
+of their own. Everyone needs the same build and the same game files, and the host's port must be reachable (a
+LAN, a forwarded port, or a VPN such as Tailscale):
+
+```sh
+./build/release/bin/vikings-remaster --host 47230 --players 2 --name erik   # waits for the others, then starts
+./build/release/bin/vikings-remaster --join 192.168.1.10:47230 --name baleog
+```
+
 Everything else about building, the checks and the code style is in
 [`docs/development.md`](docs/development.md).
 

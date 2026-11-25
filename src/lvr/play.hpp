@@ -69,7 +69,7 @@ World prepare_world(const LoadedLevel& loaded, const Map* map_before = nullptr, 
 
 // The level's world as it starts: the Vikings where they start, the camera on the first, the placements that are
 // always active or in view, and the one tick the original runs before the first picture. `loaded` must outlive it.
-World start_world(const LoadedLevel& loaded, Rules rules = Rules::kVanilla);
+World start_world(const LoadedLevel& loaded, Rules rules = Rules::kVanilla, const Online& online = {});
 
 // A level being played, a step of input at a time, as the original's main loop takes them: a tick (three pictures)
 // and the conversation its entities started; or, while a line waits for a key, a pass of that wait.
@@ -79,8 +79,9 @@ class Play {
     explicit Play(const LoadedLevel& loaded) : world{start_world(loaded)}, loaded_{&loaded} {}
     // One that goes on: to the game-over scene when the Vikings are all dead, and from there back into the level.
     // The scenes are loaded from `files`, which must outlive it.
-    Play(const assets::GameFiles& files, std::unique_ptr<LoadedLevel> first, int slot, Rules rules = Rules::kVanilla)
-        : world{start_world(*first, rules)}, files_{&files}, loaded_{first.get()}, owned_{std::move(first)} {
+    Play(const assets::GameFiles& files, std::unique_ptr<LoadedLevel> first, int slot, Rules rules = Rules::kVanilla,
+         const Online& online = {})
+        : world{start_world(*first, rules, online)}, files_{&files}, loaded_{first.get()}, owned_{std::move(first)} {
         world.scene = slot;
         world.next_scene = loaded_->level.next_slot;
         start_demo(slot);
@@ -266,6 +267,9 @@ class Play {
     void scene_sound();
     // The pause menu or the quit box is open; a scene is played from a recording.
     bool in_menu() const noexcept { return state_.menu != Menu::kNone; }
+    // The next step begins by changing the scene (the level is done, the game over, ...): online it runs only on
+    // every player's input (ADR-0012), so a level's end or start is never run again.
+    bool changing_scene() const noexcept { return leaving(); }
     bool playing_demo() const noexcept { return state_.playback; }
 
     World world;

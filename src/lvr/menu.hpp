@@ -28,6 +28,7 @@ class Menu {
     struct Choices {
         bool has_modern = false;
         std::vector<std::string> screens{"none"};
+        bool online = false;  // co-op online (ADR-0012): a page of the players, and their latency
     };
     Menu(Settings settings, Choices choices);
 
@@ -56,6 +57,15 @@ class Menu {
     // Whether a gamepad is there, as it is plugged in and out: the gamepad's page says so ("found", or flashing
     // that none is), and without one its buttons can't be bound (or cleared).
     void set_has_pad(bool has_pad) noexcept;
+    // Online: the players, as the front end has them now (their latency changes while the menu is open).
+    struct PlayerLine {
+        std::string name;
+        std::string viking;   // the Viking he plays or watches
+        std::string latency;  // his round trip ("23 MS"), "YOU", or "-" where it isn't known
+        bool operator==(const PlayerLine&) const = default;
+    };
+    void set_players(std::vector<PlayerLine> players) { players_ = std::move(players); }
+    const std::vector<PlayerLine>& players() const noexcept { return players_; }
 
     // What is shown, for menu_picture (and a test): the page's title, its lines, the one chosen, and a note.
     struct Line {
@@ -72,8 +82,9 @@ class Menu {
     bool note_flashes() const noexcept;     // its first line comes and goes (no gamepad)
 
   private:
-    enum class Page : std::uint8_t { kFirst, kOptions, kKeyboard, kGamepad };
-    static constexpr std::size_t kPages = 4;
+    enum class Page : std::uint8_t { kFirst, kOptions, kKeyboard, kGamepad, kPlayers };
+    static constexpr std::size_t kPages = 5;
+    std::vector<std::string_view> first_lines() const;
     std::size_t line_count() const;
     void change(int by);  // the chosen option's value
     Asked choose();
@@ -85,6 +96,7 @@ class Menu {
     Waiting waiting_ = Waiting::kNothing;
     std::string said_;  // what the last key did, if it says something (a key that can't be bound)
     bool has_pad_ = false;
+    std::vector<PlayerLine> players_;
 };
 
 // The menu's picture, the original's screen's size (kScreenWidth x kScreenHeight, render.hpp): red, green, blue and
@@ -94,5 +106,21 @@ class Menu {
 // a note that flashes (note_flashes) is there in this one.
 std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<assets::IndexedImage>& font,
                                        bool flash_shown = true);
+
+// Co-op online (ADR-0012): what is laid over the screen for the players, in the menu's look. Under each Viking the
+// names of his player (white) and of those watching him (grey), at a point of the screen; and while the game waits
+// for a player's input, a box at the screen's top saying for whom.
+struct CoopOverlay {
+    struct Label {
+        int x = 0;  // the middle of the names, on the original's screen (kScreenWidth x kScreenHeight)
+        int y = 0;  // their top
+        std::vector<std::string> names;  // his player's first, then his viewers'
+        bool operator==(const Label&) const = default;
+    };
+    std::vector<Label> labels;
+    std::string waiting;  // none: empty
+    bool operator==(const CoopOverlay&) const = default;
+};
+std::vector<std::uint8_t> coop_picture(const CoopOverlay& overlay, const std::vector<assets::IndexedImage>& font);
 
 }  // namespace lvr

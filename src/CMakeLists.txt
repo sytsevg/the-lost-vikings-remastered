@@ -34,6 +34,7 @@ lvr_target_defaults(lvr_input)
 
 # Co-op online (ADR-0012): rollback, plain C++ (the sockets are lvr_transport's).
 add_library(lvr_net STATIC
+    net/protocol.cpp
     net/rollback.cpp)
 add_library(lvr::net ALIAS lvr_net)
 target_include_directories(lvr_net PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -120,13 +121,14 @@ lvr_target_defaults(lvr_engine)
 
 # --- The engine as a game to play: its pictures and sound per refresh (what a front end needs) ---
 add_library(lvr_session STATIC
+    lvr/coop.cpp
     lvr/effects.cpp
     lvr/menu.cpp
     lvr/profile.cpp
     lvr/session.cpp)
 add_library(lvr::session ALIAS lvr_session)
 target_include_directories(lvr_session PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(lvr_session PUBLIC lvr::assets lvr::engine lvr::audio lvr::input)
+target_link_libraries(lvr_session PUBLIC lvr::assets lvr::engine lvr::audio lvr::input lvr::net)
 lvr_target_defaults(lvr_session)
 
 # --- The pixel-match harness (ADR-0017): replays, what an engine shows per refresh, the comparison ---
@@ -195,9 +197,21 @@ if(LVR_BUILD_APPS)
     target_link_libraries(lv-replay PRIVATE lvr::replay lvr::image lvr::gpu)
     lvr_target_defaults(lv-replay)
 
+    # --- online: co-op online's front end, rollback over the session through the transport (ADR-0012) ---
+    add_library(lvr_online STATIC
+        lvr/online.cpp)
+    add_library(lvr::online ALIAS lvr_online)
+    target_include_directories(lvr_online PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(lvr_online PUBLIC lvr::session lvr::net lvr::transport)
+    lvr_target_defaults(lvr_online)
+
     # --- vikings-remaster: the game on the engine ---
+    # The build's commit: two machines play online only with the same (ADR-0012).
+    execute_process(COMMAND git rev-parse --short HEAD WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                    OUTPUT_VARIABLE lvr_commit OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
     add_executable(vikings-remaster lvr/main.cpp lvr/showcase.cpp)
-    target_link_libraries(vikings-remaster PRIVATE lvr::session lvr::input lvr::image lvr::gpu SDL3::SDL3)
+    target_compile_definitions(vikings-remaster PRIVATE LVR_BUILD="${lvr_commit}")
+    target_link_libraries(vikings-remaster PRIVATE lvr::session lvr::online lvr::input lvr::image lvr::gpu SDL3::SDL3)
     lvr_target_defaults(vikings-remaster)
 
 endif()
@@ -223,6 +237,7 @@ if(LVR_BUILD_TESTS)
         audio/tests/test_sequencer.cpp
         exporter/tests/test_level_dump.cpp
         input/tests/test_input.cpp
+        net/tests/test_protocol.cpp
         net/tests/test_rollback.cpp
         replay/tests/test_golden.cpp
         replay/tests/test_replay.cpp
@@ -243,6 +258,7 @@ if(LVR_BUILD_TESTS)
         lvr/tests/test_profile.cpp
         lvr/tests/test_play.cpp
         lvr/tests/test_players.cpp
+        lvr/tests/test_coop.cpp
         lvr/tests/test_render.cpp
         lvr/tests/test_session.cpp
         lvr/tests/test_sprites.cpp
@@ -258,8 +274,9 @@ if(LVR_BUILD_TESTS)
     lvr_target_warnings(lvr_tests)
     # SDL3-backed code is only built with LVR_BUILD_APPS.
     if(LVR_BUILD_APPS)
-        target_sources(lvr_tests PRIVATE image/tests/test_png.cpp lvr/tests/test_gpu.cpp net/tests/test_transport.cpp)
-        target_link_libraries(lvr_tests PRIVATE lvr::image lvr::gpu lvr::transport)
+        target_sources(lvr_tests PRIVATE image/tests/test_png.cpp lvr/tests/test_gpu.cpp net/tests/test_transport.cpp
+                                       lvr/tests/test_online.cpp)
+        target_link_libraries(lvr_tests PRIVATE lvr::image lvr::gpu lvr::transport lvr::online)
     endif()
     include(Catch)
     # Catch2's tags become CTest labels.

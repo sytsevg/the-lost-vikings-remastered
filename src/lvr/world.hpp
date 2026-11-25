@@ -82,6 +82,12 @@ enum class ViewPart : std::uint8_t { kWhole, kLeft, kRight, kBottom, kTop };
 // player is the original's game: his keys are its keyboard word, his view its camera.
 inline constexpr int kMostPlayers = 3;
 
+// How a game is played (ADR-0012): offline, or online with that many players (Remaster rules).
+struct Online {
+    bool on = false;
+    int players = 1;
+};
+
 // Each player's view (Remaster rules' zoom), and the original's for all.
 using Views = std::array<std::array<int, 2>, kMostPlayers>;
 inline constexpr Views kOriginalViews{

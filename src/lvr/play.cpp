@@ -393,8 +393,9 @@ World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rule
     return world;
 }
 
-World start_world(const LoadedLevel& loaded, Rules rules) {
-    World world = prepare_world(loaded, nullptr, rules);
+World start_world(const LoadedLevel& loaded, Rules rules, const Online& online) {
+    World world = prepare_world(loaded, nullptr, rules, kOriginalViews, online.on ? online.players : 1);
+    world.online = online.on;
     for (int part = 0; part < 3; ++part) {
         world.run(part, true);
     }

@@ -159,6 +159,9 @@ bool Rollback::advance() {
     if (local_known() <= step_) {
         return false;  // this machine's input for it isn't given yet
     }
+    if (game_->waits_for_inputs() && confirmed() <= step_) {
+        return false;  // a step that is never to be run again: on every player's input only
+    }
     if (const std::uint32_t all = confirmed();
         all != kAll && step_ >= all + static_cast<std::uint32_t>(settings_.window)) {
         return false;  // as far ahead of the others' inputs as it may run: it waits for them
@@ -168,11 +171,14 @@ bool Rollback::advance() {
     return true;
 }
 
-std::vector<std::pair<std::uint32_t, Input>> Rollback::local_from(std::uint32_t from) const {
-    const Known& local = players_.at(static_cast<std::size_t>(settings_.local));
+std::vector<std::pair<std::uint32_t, Input>> Rollback::known_from(int player, std::uint32_t from) const {
     std::vector<std::pair<std::uint32_t, Input>> unsent;
-    for (std::uint32_t step = from; step < local.contiguous; ++step) {
-        unsent.emplace_back(step, local.inputs.at(step).value_or(Input{}));  // (all there: they are contiguous)
+    if (player < 0 || player >= settings_.players) {
+        return unsent;
+    }
+    const Known& known = players_.at(static_cast<std::size_t>(player));
+    for (std::uint32_t step = from; step < known.contiguous; ++step) {
+        unsent.emplace_back(step, known.inputs.at(step).value_or(Input{}));  // (all there: they are contiguous)
     }
     return unsent;
 }
