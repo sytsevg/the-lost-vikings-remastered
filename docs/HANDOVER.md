@@ -69,25 +69,30 @@ only under Remaster rules; Vanilla rules must stay exactly what they are, and th
   being played (`Session::takes_play_keys`: not a scene, a demo, or the pause menu or quit box), and so does
   the rewind (since 2026-11-25: no longer from the game-over scene back into the level just lost); F8 brings the
   quicksave back from anywhere but a menu. A key that doesn't act is passed to the game like any other (any key ends a demo), so nothing
-  pressed in a scene is kept for the next level. The Classic/Modern sound switch (F12) works everywhere.
+  pressed in a scene is kept for the next level. The Classic/Modern sound switch (F12) works everywhere, and so
+  does the screen's look (F11).
 - **The profile** (`profile.*`): the folder `profiles` beside the game's program, or `--profile DIR`. In it
-  `minimap.txt` and `quicksave.bin`. What the game writes goes there, not into the user's home.
+  `minimap.txt`, `quicksave.bin` and `screen.txt` (the screen's look). What the game writes goes there, not into
+  the user's home.
 
 ## M8: the visuals
 
 Decided with the user (2026-11-24): the visuals go with the rules, chosen at launch (ADR-0005): Vanilla rules
 show the Classic picture, Remaster rules the Modern one. At the original's view under Vanilla rules the GPU
 renderer must still make the Classic picture; under Remaster rules a visual may differ. Smooth movement first.
-The rest of the list is in [`ROADMAP.md`](ROADMAP.md): events in animations and effects on them, lights and
-shaders, art packs, sound placed by position.
+The rest of the list is in [`ROADMAP.md`](ROADMAP.md): sound placed by position (art packs and the SNES sound
+were dropped by the user, 2026-11-25). The screen's look is built ("Screen look" below).
 
 ### Next
 - **The Vikings' deaths by electricity and fire (built, 2026-11-25; approved by the user on the host):** showcase
   spots 17-21 ("Effects" below).
-- **After that the user picks the next M8 item.** The effects are built and approved (2026-11-25, "Effects"
-  below); left on the roadmap's list: shaders (a CRT look), art packs, sound placed by position, the SNES sound.
-  More effects can be added to the table any time (water and lava cross-fading between their colour steps was
-  talked about, not tried).
+- **The screen's look (built and approved by the user on the host, 2026-11-25, after it was made flat, gentler
+  and sharper, and the VGA look dropped):** a television, F11 ("Screen look" below). Its numbers (beam, mask,
+  glow, lines, corners) are in `GpuRenderer::State::show_look`; a test card of stripes, greys and colours is in
+  `gamedata/previews/shaders/` (not in the repository).
+- **After that the user picks the next M8 item.** Left on the roadmap's list: sound placed by position. More
+  effects can be added to the table any time (water and lava cross-fading between their colour steps was talked
+  about, not tried).
 - **The rewind's bar:** approved by the user on the host (2026-11-25). It belongs with the minimap: put away
   with it (M), the bar goes too (the user, 2026-11-25). The minimap's frame stays grey (the bar's is white).
 - **F8 outside a played level:** the quicksave's load still acts from anywhere but a menu; the user decided to
@@ -135,8 +140,6 @@ How the visuals work so far:
 - **What effects have.** Animations are the original's programs, played as they are (`sprites.*`); a program
   reports only the sounds it asks for. The roadmap's "events" (a frame shown, a sound asked for, an end), named
   beside the animations in `animations.hpp`, don't exist yet.
-- **Art packs** need a piece named by the frame it shows (which set, which frame, which colours), not by its
-  pixels' hash.
 - **How visuals are checked.** `lv-replay --check --gpu` (one or two replays are enough for most changes, all of
   them take five minutes on the container's software driver) draws the kept list at the original's size with
   nothing moved: it must be the Classic picture. Everything beyond that has no golden: under Remaster rules
@@ -186,6 +189,25 @@ pixel and in steps of brightness), subtle.
   without him and finds his light. With `--dump STEPS FILE.png` it writes that
   spot; `--whole AT_STEP` writes a whole level. Stills: `gamedata/previews/effects/` (not in the repository).
 
+### Screen look (built, 2026-11-25)
+
+How the window shows the finished picture, under Remaster rules (ADR-0005, ADR-0006), decided with the user: as
+it is, or as a television would (lines with dark gaps, soft along them, a slot mask, flat glass a little darker
+at the corners). A line for each of the picture's rows as shown: 240 at the original's view, 360 and 480 zoomed
+out, so zoomed out nothing is dropped (with a fixed 240 every other row of the text was, the user found it
+unreadable); its softness is in the picture's pixels, and where a line is less than four of the window's pixels
+high the gaps close. F11 switches it; `--shader none|tv` at the start; the profile keeps the one the window
+ended with (`screen.txt`, `load_screen_look`). Everything on the screen goes through it, the minimap and the
+rewind's bar too (the user). Tried and dropped after the user saw them on the host: a VGA monitor's look (480 fine
+lines, a fine mask; "just blurry") and the television's curved glass with rounded corners.
+- **How:** `GpuRenderer::set_look`. With a look, `State::show` draws what it always draws into `crt_source` (a
+  texture the target's size, with the pipelines for our own format) and `show_look` puts it onto the target
+  through `gpu_crt.frag`, as large as 4:3 fits. A dump (`--dump`, `--shader`) shows it too; `shown_whole` and
+  the checks never do.
+- **Tuned on a test card**, not on the game's pictures (and one of small shapes a pixel wide, zoomed out, for
+  the text): white 254, the greys within a few steps of the picture's. Made gentler and sharper after the user's
+  first look (a weaker mask and glow, shallower gaps, softness 0.4 of a pixel).
+
 ### Parallax (built, 2026-11-24)
 
 The SNES version has a **backdrop** behind every level's map, scrolled slower than it, where the DOS game shows
@@ -220,6 +242,8 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
 
 ## Open
 
+- **Zooming while a text box is open is slow, not smooth** (the user, 2026-11-25, on the host; not looked into
+  yet). The world holds while the box waits for a key, and the zoom's change of view goes on meanwhile.
 - **Frames now and then a refresh or more late** in the window (the user's AMD Radeon 890M, RADV), mostly noticed
   while moving. `--slow-frames` shows the time is spent waiting for the window's next picture (the card or the
   compositor holding frames), not in the game's step, its drawing, or its uploads; it was there before smooth

@@ -42,6 +42,9 @@ constexpr std::uint32_t kMarkFragmentShader[] =
 constexpr std::uint32_t kGaugeFragmentShader[] =
 #include "gpu_gauge.frag.inc"
     ;
+constexpr std::uint32_t kCrtFragmentShader[] =
+#include "gpu_crt.frag.inc"
+    ;
 
 // How many pictures are kept for showing: more than two steps make (a change of scene is some 150), since the
 // last of a step is still shown while the next step's are drawn.
@@ -207,6 +210,14 @@ struct GpuRenderer::State {
     // The rewind's bar.
     SDL_GPUGraphicsPipeline* gauge_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* gauge_pipeline_own = nullptr;
+    // The screen's look (Look): what is shown is drawn into `crt_source` (the target's size), and from there onto
+    // the target as the tube would show it.
+    Look look = Look::kNone;
+    SDL_GPUGraphicsPipeline* crt_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* crt_pipeline_own = nullptr;
+    SDL_GPUTexture* crt_source = nullptr;
+    int crt_width = 0;
+    int crt_height = 0;
     int marked = 0;       // for how many pictures in a row it has been wanted
     float made_room = 0;  // how far the HUD has slid aside for the minimap: 0 not at all, 1 all the way
     float faded_in = 0;   // how much of the minimap is there: 0 nothing, 1 all of it
@@ -298,6 +309,9 @@ struct GpuRenderer::State {
             SDL_ReleaseGPUGraphicsPipeline(device, mark_pipeline);
             SDL_ReleaseGPUGraphicsPipeline(device, gauge_pipeline_own);
             SDL_ReleaseGPUGraphicsPipeline(device, gauge_pipeline);
+            SDL_ReleaseGPUGraphicsPipeline(device, crt_pipeline_own);
+            SDL_ReleaseGPUGraphicsPipeline(device, crt_pipeline);
+            SDL_ReleaseGPUTexture(device, crt_source);
             SDL_ReleaseGPUGraphicsPipeline(device, over_pipeline);
             SDL_ReleaseGPUTexture(device, palette_texture);
             SDL_ReleaseGPUTexture(device, ground_texture);
@@ -322,6 +336,8 @@ struct GpuRenderer::State {
     }
 
     std::expected<void, std::string> set_up();
+    void show_look(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* onto, int width, int height, float lines,
+                   const std::array<float, 4>& screen, bool own);
     SDL_GPUTexture* texture(SDL_GPUTextureFormat format, SDL_GPUTextureUsageFlags usage, int width, int height);
     SDL_GPUTexture* picture_texture(int width, int height);
     std::expected<Picture, std::string> make(SDL_GPUCommandBuffer* commands, const View& view,
@@ -435,7 +451,9 @@ std::expected<void, std::string> GpuRenderer::State::set_up() {
         shader(kMarkFragmentShader, sizeof(kMarkFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
     SDL_GPUShader* gauge_fragment =
         shader(kGaugeFragmentShader, sizeof(kGaugeFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
-    if (over_fragment == nullptr || mark_fragment == nullptr || gauge_fragment == nullptr) {
+    SDL_GPUShader* crt_fragment =
+        shader(kCrtFragmentShader, sizeof(kCrtFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+    if (over_fragment == nullptr || mark_fragment == nullptr || gauge_fragment == nullptr || crt_fragment == nullptr) {
         return sdl_error("the shaders");
     }
     const auto show_onto = [this, show_vertex](SDL_GPUTextureFormat format, SDL_GPUShader* fragment, bool blended) {
@@ -465,21 +483,24 @@ std::expected<void, std::string> GpuRenderer::State::set_up() {
     over_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, over_fragment, true);
     mark_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, mark_fragment, true);
     gauge_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, gauge_fragment, true);
+    crt_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, crt_fragment, false);
     if (window != nullptr) {
         show_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), show_fragment, false);
         over_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), over_fragment, true);
         mark_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), mark_fragment, true);
         gauge_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), gauge_fragment, true);
+        crt_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), crt_fragment, false);
     }
     SDL_ReleaseGPUShader(device, show_vertex);
     SDL_ReleaseGPUShader(device, show_fragment);
     SDL_ReleaseGPUShader(device, over_fragment);
     SDL_ReleaseGPUShader(device, mark_fragment);
     SDL_ReleaseGPUShader(device, gauge_fragment);
+    SDL_ReleaseGPUShader(device, crt_fragment);
     if (show_pipeline_own == nullptr || over_pipeline_own == nullptr || mark_pipeline_own == nullptr ||
-        gauge_pipeline_own == nullptr ||
+        gauge_pipeline_own == nullptr || crt_pipeline_own == nullptr ||
         (window != nullptr && (show_pipeline == nullptr || over_pipeline == nullptr || mark_pipeline == nullptr ||
-                               gauge_pipeline == nullptr))) {
+                               gauge_pipeline == nullptr || crt_pipeline == nullptr))) {
         return sdl_error("the pipeline that shows");
     }
     return {};
@@ -1167,7 +1188,11 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         }
         shown_kept = screen.kept;
     }
-    SDL_GPUGraphicsPipeline* with = own ? show_pipeline_own : show_pipeline;
+    // With a screen look all of it is drawn into a texture of our own first (onto which the pipelines for our own
+    // format draw), and from there onto the target.
+    const bool crt = look != Look::kNone && whole == 0;
+    const bool own_format = own || crt;
+    SDL_GPUGraphicsPipeline* with = own_format ? show_pipeline_own : show_pipeline;
     // The HUD slides aside first, and the minimap fades in when it is there; taken away, the minimap fades out and
     // then the HUD slides back. (A picture read back is shown as it ends up.) Fading out, it is the minimap as it
     // last was.
@@ -1256,8 +1281,18 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
             in_work_scale = drawn;
         }
     }
+    if (crt && (crt_source == nullptr || crt_width != width || crt_height != height)) {
+        SDL_ReleaseGPUTexture(device, crt_source);
+        crt_source = texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                             SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER, width, height);
+        crt_width = crt_source != nullptr ? width : 0;
+        crt_height = crt_source != nullptr ? height : 0;
+        if (crt_source == nullptr) {
+            return sdl_error("the picture for the screen's look");
+        }
+    }
     SDL_GPUColorTargetInfo colour{};
-    colour.texture = onto;
+    colour.texture = crt ? crt_source : onto;
     colour.clear_color = {.r = 0, .g = 0, .b = 0, .a = 1};
     colour.load_op = SDL_GPU_LOADOP_CLEAR;
     colour.store_op = SDL_GPU_STOREOP_STORE;
@@ -1432,7 +1467,7 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
             how.vikings.at(who) = {static_cast<float>(viking.x) * kToMinimap, static_cast<float>(viking.y) * kToMinimap,
                                    viking.there ? 1.0F : 0.0F, viking.played ? 1.0F : 0.0F};
         }
-        SDL_BindGPUGraphicsPipeline(pass, own ? over_pipeline_own : over_pipeline);
+        SDL_BindGPUGraphicsPipeline(pass, own_format ? over_pipeline_own : over_pipeline);
         SDL_PushGPUVertexUniformData(commands, 0, &placed, sizeof(placed));
         SDL_PushGPUFragmentUniformData(commands, 0, &how, sizeof(how));
         const SDL_GPUTextureSamplerBinding over_picture{.texture = over_texture, .sampler = smooth};
@@ -1452,7 +1487,7 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
                              .unused = {}};
             const Gauge gauge{.size = {kGaugeAt[2], kGaugeAt[3], kGaugeRadius, 1},
                               .left = {std::clamp(*screen.rewind_left, 0.0F, 1.0F), faded_in, 0, 0}};
-            SDL_BindGPUGraphicsPipeline(pass, own ? gauge_pipeline_own : gauge_pipeline);
+            SDL_BindGPUGraphicsPipeline(pass, own_format ? gauge_pipeline_own : gauge_pipeline);
             SDL_PushGPUVertexUniformData(commands, 0, &bar, sizeof(bar));
             SDL_PushGPUFragmentUniformData(commands, 0, &gauge, sizeof(gauge));
             SDL_DrawGPUPrimitives(pass, kCorners, 1, 0, 0);
@@ -1472,7 +1507,7 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
             std::array<float, 2> size;
             std::array<float, 2> unused;
         };
-        SDL_BindGPUGraphicsPipeline(pass, own ? mark_pipeline_own : mark_pipeline);
+        SDL_BindGPUGraphicsPipeline(pass, own_format ? mark_pipeline_own : mark_pipeline);
         const auto mark = [&](int nudge, const std::array<float, 4>& tint) {
             const Placed placed{
                 .dest = {static_cast<float>(left + ((kScreenWidth - kFromEdge - kWide + nudge) * scale)),
@@ -1489,7 +1524,57 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         mark(0, {1, 1, 1, 0.95F});
     }
     SDL_EndGPURenderPass(pass);
+    if (crt) {
+        // A line of the tube for each of the picture's rows as shown: the original's 240 at its view, more zoomed out.
+        show_look(commands, onto, width, height, static_cast<float>(kScreenHeight * scale) / fit,
+                  {static_cast<float>(left), static_cast<float>(top), static_cast<float>(kScreenWidth * scale),
+                   static_cast<float>(kScreenHeight * scale)},
+                  own);
+    }
     return {};
+}
+
+// The screen's look: `crt_source`'s part `screen` (the original's screen, as large as it was shown) onto `onto`,
+// as a tube shows it with `lines` lines, as large as 4:3 fits in the middle.
+void GpuRenderer::State::show_look(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* onto, int width, int height,
+                                   float lines, const std::array<float, 4>& screen, bool own) {
+    struct Placed {  // gpu_show.vert
+        std::array<float, 4> dest;
+        std::array<float, 4> source;
+        std::array<float, 2> size;
+        std::array<float, 2> unused;
+    };
+    struct Tube {  // gpu_crt.frag
+        std::array<float, 4> screen;
+        std::array<float, 4> beam;
+        std::array<float, 4> tube;
+    };
+    // The television (the user's to judge; made gentler and sharper after a first look on the host): the beam on a
+    // line at its darkest and brightest, its softness along it, the light spread; the lines, the mask, the
+    // brightness made up for them, the corners' darkening.
+    const Tube tube{.screen = screen, .beam = {0.24F, 0.38F, 0.4F, 0.06F}, .tube = {lines, 0.2F, 1.4F, 0.25F}};
+    const auto wide = static_cast<float>(width);
+    const auto high = static_cast<float>(height);
+    const float glass_width = std::min(wide, high * 4 / 3);
+    const float glass_height = glass_width * 3 / 4;
+    const Placed placed{.dest = {(wide - glass_width) / 2, (high - glass_height) / 2, glass_width, glass_height},
+                        .source = screen,
+                        .size = {wide, high},
+                        .unused = {}};
+    SDL_GPUColorTargetInfo colour{};
+    colour.texture = onto;
+    colour.clear_color = {.r = 0, .g = 0, .b = 0, .a = 1};
+    colour.load_op = SDL_GPU_LOADOP_CLEAR;
+    colour.store_op = SDL_GPU_STOREOP_STORE;
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &colour, 1, nullptr);
+    SDL_BindGPUGraphicsPipeline(pass, own ? crt_pipeline_own : crt_pipeline);
+    SDL_PushGPUVertexUniformData(commands, 0, &placed, sizeof(placed));
+    SDL_PushGPUFragmentUniformData(commands, 0, &tube, sizeof(tube));
+    const SDL_GPUTextureSamplerBinding picture{.texture = crt_source, .sampler = smooth};
+    SDL_BindGPUFragmentSamplers(pass, 0, &picture, 1);
+    constexpr std::uint32_t kCorners = 6;
+    SDL_DrawGPUPrimitives(pass, kCorners, 1, 0, 0);
+    SDL_EndGPURenderPass(pass);
 }
 
 std::expected<void, std::string> GpuRenderer::draw(Screen& screen, const View& view, const SceneGraphics& scene,
@@ -1692,6 +1777,14 @@ std::expected<std::vector<std::uint8_t>, std::string> GpuRenderer::State::read_b
 std::expected<std::vector<std::uint8_t>, std::string> GpuRenderer::shown(const Screen& screen, int scale,
                                                                          const Minimap* minimap, float between) {
     return state_->read_back(screen, kScreenWidth * scale, kScreenHeight * scale, minimap, between, 0);
+}
+
+void GpuRenderer::set_look(Look look) noexcept {
+    state_->look = look;
+}
+
+GpuRenderer::Look GpuRenderer::look() const noexcept {
+    return state_->look;
 }
 
 std::expected<GpuRenderer::Whole, std::string> GpuRenderer::shown_whole(const Screen& screen, int scale) {

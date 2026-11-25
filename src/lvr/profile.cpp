@@ -210,4 +210,35 @@ std::expected<void, std::string> save_quicksave(const std::filesystem::path& fol
     return write_file(folder, kQuicksaveFile, {reinterpret_cast<const char*>(bytes.data()), bytes.size()});
 }
 
+namespace {
+
+constexpr std::string_view kScreenKind = "lvr-screen 1";
+constexpr std::string_view kScreenFile = "screen.txt";
+constexpr std::string_view kLookWord = "look ";
+
+}  // namespace
+
+std::expected<std::optional<std::string>, std::string> load_screen_look(const std::filesystem::path& folder) {
+    const std::filesystem::path path = folder / kScreenFile;
+    std::ifstream file{path, std::ios::binary};
+    if (!file) {
+        return std::optional<std::string>{};
+    }
+    std::stringstream read;
+    read << file.rdbuf();
+    const std::string contents = read.str();
+    std::string_view text{contents};
+    const std::string_view kind = line_of(text);
+    std::string_view look = line_of(text);
+    if (kind != kScreenKind || !look.starts_with(kLookWord)) {
+        return std::unexpected{std::format("{}: not a screen file of this kind", path.string())};
+    }
+    look.remove_prefix(kLookWord.size());
+    return std::optional<std::string>{std::string{look}};
+}
+
+std::expected<void, std::string> save_screen_look(const std::filesystem::path& folder, std::string_view look) {
+    return write_file(folder, kScreenFile, std::format("{}\n{}{}\n", kScreenKind, kLookWord, look));
+}
+
 }  // namespace lvr

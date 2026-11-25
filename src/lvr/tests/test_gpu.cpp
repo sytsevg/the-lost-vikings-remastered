@@ -635,3 +635,81 @@ TEST_CASE("gpu: a kept picture is shown with the scene's backdrop where the map 
     REQUIRE(none);
     CHECK(index_at(*none, 0, 0) == 0x20);
 }
+
+TEST_CASE("gpu: the screen's look shows the picture as a television would; without one it is as it was") {
+    auto opened = GpuRenderer::open_headless();
+    if (!opened) {
+        SKIP("no graphics device: " << opened.error());
+    }
+    GpuRenderer& gpu = **opened;
+    using Look = GpuRenderer::Look;
+    // Their names; F11 goes from the one to the other.
+    for (const Look look : {Look::kNone, Look::kTv}) {
+        CHECK(GpuRenderer::look_named(GpuRenderer::name_of(look)) == look);
+    }
+    CHECK_FALSE(GpuRenderer::look_named("vga"));  // tried and dropped
+    CHECK(GpuRenderer::after(Look::kNone) == Look::kTv);
+    CHECK(GpuRenderer::after(Look::kTv) == Look::kNone);
+    // A screen all of one grey.
+    const SharedGraphics shared = sample_shared();
+    SceneGraphics scene = sample_scene();
+    assets::IndexedImage grey = assets::make_image(kScreenWidth, kScreenHeight);
+    std::ranges::fill(grey.pixels, std::uint8_t{1});
+    scene.picture = grey;
+    scene.hud_picture = grey;
+    View view;
+    view.camera_y = kPictureTop;
+    view.palette[1] = {.r = 128, .g = 128, .b = 128};
+    Screen screen;
+    REQUIRE(gpu.keep(screen, view, scene, shared));
+    constexpr int kScale = 2;
+    constexpr std::size_t kWide = std::size_t{kScreenWidth} * kScale;
+    constexpr std::size_t kHigh = std::size_t{kScreenHeight} * kScale;
+    CHECK(gpu.look() == Look::kNone);
+    const auto plain = gpu.shown(screen, kScale);
+    gpu.set_look(Look::kTv);
+    const auto tv = gpu.shown(screen, kScale);
+    CHECK(gpu.look() == Look::kTv);
+    REQUIRE(plain);
+    REQUIRE(tv);
+    const auto red = [](const std::vector<std::uint8_t>& pixels, std::size_t x, std::size_t y) {
+        return int{pixels.at(((y * kWide) + x) * 4)};
+    };
+    // The mean of an 8 x 8 block from (x, y); the lowest and highest in it.
+    const auto block = [&](const std::vector<std::uint8_t>& pixels, std::size_t x, std::size_t y) {
+        int sum = 0;
+        int lowest = 255;
+        int highest = 0;
+        for (std::size_t down = y; down < y + 8; ++down) {
+            for (std::size_t across = x; across < x + 8; ++across) {
+                const int value = red(pixels, across, down);
+                sum += value;
+                lowest = std::min(lowest, value);
+                highest = std::max(highest, value);
+            }
+        }
+        return std::array<int, 3>{sum / 64, lowest, highest};
+    };
+    // Without a look: the grey everywhere.
+    std::size_t not_grey = 0;
+    for (std::size_t at = 0; at < plain->size(); at += 4) {
+        not_grey += plain->at(at) != 128 || plain->at(at + 1) != 128 || plain->at(at + 2) != 128 ? 1 : 0;
+    }
+    CHECK(not_grey == 0);
+    // The television: about as bright in the middle, but in lines and through a mask, not one grey; flat glass
+    // (its corners shown, not black), a little darker there.
+    const auto [middle, lowest, highest] = block(*tv, kWide / 2, kHigh / 2);
+    CHECK(middle > 0.85 * 128);
+    CHECK(middle < 1.15 * 128);
+    CHECK(highest - lowest > 10);
+    const int corner = block(*tv, 0, 0)[0];
+    CHECK(corner > 0);
+    CHECK(corner < middle);
+    // A picture of the whole view (a development tool's) never has it.
+    const auto whole = gpu.shown_whole(screen, 1);
+    gpu.set_look(Look::kNone);
+    const auto whole_plain = gpu.shown_whole(screen, 1);
+    REQUIRE(whole);
+    REQUIRE(whole_plain);
+    CHECK(whole->pixels == whole_plain->pixels);
+}

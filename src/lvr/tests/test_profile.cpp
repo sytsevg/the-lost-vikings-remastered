@@ -115,3 +115,22 @@ TEST_CASE("profile: the quicksave's file is written and read back; another kind 
     CHECK(stale.error().find("another version") != std::string::npos);
     std::filesystem::remove_all(folder);
 }
+
+TEST_CASE("profile: the screen's look is kept by its name; another kind of file is refused") {
+    const std::filesystem::path folder = folder_for("screen");
+    const auto nothing = load_screen_look(folder);
+    REQUIRE(nothing);
+    CHECK_FALSE(*nothing);  // nothing kept yet
+    REQUIRE(save_screen_look(folder, "tv"));
+    const auto kept = load_screen_look(folder);
+    REQUIRE(kept);
+    REQUIRE(*kept);
+    CHECK(**kept == "tv");
+    REQUIRE(save_screen_look(folder, "none"));  // written again over it
+    CHECK(load_screen_look(folder)->value() == "none");
+    for (const std::string bad : {"lvr-screen 2\nlook tv\n", "lvr-screen 1\nshade tv\n", "", "lvr-screen 1"}) {
+        std::ofstream{folder / "screen.txt", std::ios::binary | std::ios::trunc} << bad;
+        CHECK_FALSE(load_screen_look(folder));
+    }
+    std::filesystem::remove_all(folder);
+}

@@ -1,7 +1,8 @@
 #pragma once
 
 // The player's profile: what is theirs and not the simulation's, kept in a folder from one run of the game to the
-// next (ADR-0011, Remaster rules). So far: how much of each level the minimap has seen.
+// next (ADR-0011, Remaster rules). So far: how much of each level the minimap has seen, the quicksave, and the
+// screen's look.
 
 #include <cstdint>
 #include <expected>
@@ -47,5 +48,10 @@ struct SavedPlay {
 };
 std::expected<std::optional<SavedPlay>, std::string> load_quicksave(const std::filesystem::path& folder);
 std::expected<void, std::string> save_quicksave(const std::filesystem::path& folder, const SavedPlay& play);
+
+// The screen's look (GpuRenderer::Look), by its name: a line naming the file's kind, then `look NAME`. Reading:
+// none if there is no file; an error if it can't be understood.
+std::expected<std::optional<std::string>, std::string> load_screen_look(const std::filesystem::path& folder);
+std::expected<void, std::string> save_screen_look(const std::filesystem::path& folder, std::string_view look);
 
 }  // namespace lvr

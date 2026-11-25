@@ -12,10 +12,13 @@
 //       from the Nth on: each with the view held on it; PgDn or ] and PgUp or [ go to the next and the one before (with
 //       --dump: the Nth, as --whole writes it); the last ones put a Viking where he dies, starting the level again
 //       --no-effects: under Remaster rules, the pictures without the Modern visuals' effects (effects.hpp)
+//       --shader none|tv: under Remaster rules, the screen's look (gpu.hpp): as it is, or a television's; F11
+//       switches it. The profile keeps the one the window ended with.
 //       --cheat: the game's cheat on from the start, as if its password had been typed at the title: F5 and F6
 //       change the level, and under Remaster rules F7 and F8 are a quicksave and its load.
 //       play, from scene N (default 39, the first logo; 0-36 are the levels); FILE: other keys, lines
-//       "KEY NAME = action" (input/input.hpp). F12 switches between the Classic and the Modern sound.
+//       "KEY NAME = action" (input/input.hpp). F12 switches between the Classic and the Modern sound; under
+//       Remaster rules F11 the screen's look.
 //   vikings-remaster [--data DIR] [--slot N] --dump STEPS FILE.png [--wav FILE.wav] [--zoom BY AT_STEP]
 //                    [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] [--whole AT_STEP] [--moments N]
 //       run STEPS steps without a window and without a key (or with KEY held, a name as in a keys file; and the
@@ -51,6 +54,7 @@
 #include "image/png.hpp"
 #include "input/input.hpp"
 #include "lvr/gpu.hpp"
+#include "lvr/profile.hpp"
 #include "lvr/render.hpp"
 #include "lvr/session.hpp"
 #include "lvr/showcase.hpp"
@@ -332,6 +336,10 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
                 // (taken: see remaster_key)
             } else if (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y != 0) {
                 (void)session.zoom(event.wheel.y < 0 ? 1 : -1);
+            } else if (gpu != nullptr && event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F11 &&
+                       !event.key.repeat) {
+                gpu->set_look(GpuRenderer::after(gpu->look()));  // the screen's look (Remaster rules)
+                std::println(stderr, "screen: {}", GpuRenderer::name_of(gpu->look()));
             } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F12 &&
                        !event.key.repeat) {
                 session.set_modern(!session.modern());  // the Classic / Modern switch (ADR-0015)
@@ -517,9 +525,10 @@ int main(int argc, char* argv[]) try {
     int steps = 0;
     Rules rules = Rules::kVanilla;
     bool cheat = false;
-    bool report_slow = false;       // --slow-frames
-    bool effects = true;            // --no-effects: false
-    std::filesystem::path profile;  // Remaster rules: where the player's profile is kept
+    bool report_slow = false;               // --slow-frames
+    bool effects = true;                    // --no-effects: false
+    std::optional<GpuRenderer::Look> look;  // --shader
+    std::filesystem::path profile;          // Remaster rules: where the player's profile is kept
     DumpOptions dumping;
     std::string held;    // a dump: the key held
     std::string tapped;  // and the one pressed once
@@ -541,6 +550,9 @@ int main(int argc, char* argv[]) try {
             effects = false;
         } else if (args[i] == "--slow-frames") {
             report_slow = true;
+        } else if (const auto named = GpuRenderer::look_named(value(1)); args[i] == "--shader" && named) {
+            look = named;
+            ++i;
         } else if (args[i] == "--profile" && i + 1 < args.size()) {
             profile = args[i + 1];
             ++i;
@@ -588,7 +600,9 @@ int main(int argc, char* argv[]) try {
             std::println(
                 stderr,
                 "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] "
-                "[--soundfont FILE] [--rules vanilla|remaster] [--no-effects] [--showcase N] [--cheat] [--slow-frames] "
+                "[--soundfont FILE] [--rules vanilla|remaster] [--no-effects] [--shader none|tv] [--showcase N] "
+                "[--cheat] "
+                "[--slow-frames] "
                 "[--profile DIR] "
                 "[--dump STEPS "
                 "FILE.png [--wav FILE.wav] [--zoom BY AT_STEP] [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] "
@@ -634,6 +648,10 @@ int main(int argc, char* argv[]) try {
     if (gpu != nullptr && report_slow) {
         std::println(stderr, "the GPU renderer draws on {}", gpu->device_name());
     }
+    if (look && rules != Rules::kRemaster) {
+        std::println(stderr, "vikings-remaster: --shader is for Remaster rules (--rules remaster)");
+        return EXIT_FAILURE;
+    }
     if (showcase) {  // it starts in its first scenario's level, under Remaster rules
         slot = showcase->current().slot;
         if (rules != Rules::kRemaster) {
@@ -662,7 +680,16 @@ int main(int argc, char* argv[]) try {
             if (const auto used = (*session)->use_profile(profile); !used) {
                 std::println(stderr, "vikings-remaster: the profile: {}", used.error());
             }
+            // The screen's look: the one asked for, or the one the profile kept.
+            if (const auto kept = load_screen_look(profile); !kept) {
+                std::println(stderr, "vikings-remaster: the profile: {}", kept.error());
+            } else if (!look && *kept) {
+                look = GpuRenderer::look_named(**kept);
+            }
         }
+    }
+    if (gpu != nullptr && look) {
+        gpu->set_look(*look);
     }
     if (!dump_to.empty()) {
         dumping.held = input::key_bits(input::default_bindings(), held);
@@ -688,6 +715,11 @@ int main(int argc, char* argv[]) try {
     const int status = play(**session, bindings, window, gpu.get(), report_slow, showcase ? &*showcase : nullptr);
     if (const auto saved = (*session)->save_profile(); !saved) {
         std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
+    }
+    if (gpu != nullptr && !profile.empty()) {
+        if (const auto saved = save_screen_look(profile, GpuRenderer::name_of(gpu->look())); !saved) {
+            std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
+        }
     }
     if (gpu != nullptr) {
         gpu.reset();

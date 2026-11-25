@@ -10,7 +10,9 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "lvr/minimap.hpp"
@@ -22,6 +24,23 @@ namespace lvr {
 
 class GpuRenderer {
   public:
+    // How the window shows what it shows (Remaster rules' screen look, the user's to choose: F11): as it is, or as a
+    // television's tube would: 240 lines with dark gaps between them, soft along them, a mask of red, green and
+    // blue, flat glass a little darker at the corners, filling the window at 4:3. (A VGA monitor's look, its 480
+    // fine lines, was tried and dropped: only blurry, the user said.)
+    enum class Look : std::uint8_t { kNone, kTv };
+    static constexpr std::string_view name_of(Look look) noexcept { return look == Look::kTv ? "tv" : "none"; }
+    static constexpr std::optional<Look> look_named(std::string_view name) noexcept {
+        for (const Look look : {Look::kNone, Look::kTv}) {
+            if (name == name_of(look)) {
+                return look;
+            }
+        }
+        return std::nullopt;
+    }
+    // The other one: F11 goes from the one to the other.
+    static constexpr Look after(Look look) noexcept { return look == Look::kNone ? Look::kTv : Look::kNone; }
+
     // Without a window: for a tool or a test, on whatever Vulkan driver there is (a software one will do).
     static std::expected<std::unique_ptr<GpuRenderer>, std::string> open_headless();
     // On `window`, which must outlive it; SDL's video is the caller's to start.
@@ -55,6 +74,10 @@ class GpuRenderer {
         std::vector<std::uint8_t> pixels;
     };
     std::expected<Whole, std::string> shown_whole(const Screen& screen, int scale = 1);
+
+    // The look from the next picture shown on (show(), shown(); never shown_whole()).
+    void set_look(Look look) noexcept;
+    Look look() const noexcept;
 
     // How many times a page of the atlas was set up (a scene's pictures put in anew): for finding what is slow.
     std::size_t pages_set_up() const noexcept;

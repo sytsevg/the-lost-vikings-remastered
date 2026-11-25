@@ -32,15 +32,9 @@ rewind, a quicksave, and the player's profile on disk that keeps the last two ar
   the Modern visuals, ADR-0005)
 - Parallax: the SNES backdrops behind the levels and the village's scenes, from the user's own ROM image (built,
   2026-11-24; HANDOVER.md, "Parallax")
-- Shaders (a CRT look, for one)
-- Art packs: replace sprites one for one
+- **Screen look** (built, 2026-11-25; HANDOVER.md, "Screen look"): a television's, flat, F11
 - Modern sound: the effects placed by position, and extra effects (notes below)
-- **Sound: the SNES version, as an exercise first.** Its music and effects (sampled instruments with echo, and
-  effects for things the DOS version is silent on: bow, sword). To find out: how the game starts tunes and effects,
-  what playing them takes (an emulator of its sound CPU running the game's own driver, permissively licensed or
-  ours), and how DOS tunes and effects map to SNES ones. Found so far: the sound is not in the ROM's chunk table; it
-  sits with the code below `0x58000` (a second table at `0x2A64F`, not looked into). If it works out: a third
-  sound choice, from the user's own ROM image
+- Dropped (the user, 2026-11-25): art packs (sprites replaced one for one) and the SNES version's sound
 
 ## M9: Co-op
 [`decisions.md`](decisions.md), ADR-0012.
@@ -92,5 +86,3 @@ rewind, a quicksave, and the player's profile on disk that keeps the last two ar
   envelopes, filters, as retro sound tools do). Claude can't hear: it can build candidates and measure an example
   the user gives (its length, loudness over time, pitch, spectrum) to get close, and the user judges by ear. To be
   worked out as an exercise together when this starts. Files loaded from `gamedata/`, WAV first.
-- **The SNES version** has effects for some of these (bow, sword swings: user, 2026-11-18), and a sampled
-  soundtrack: a possible third sound choice and a source of effects (below, an exercise first).

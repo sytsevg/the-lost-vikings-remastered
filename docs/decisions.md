@@ -21,6 +21,10 @@ comments and other docs points here). A decision that was later replaced is not 
   start of M8 (2026-11-24): the visuals go with the rules, chosen at launch, nothing switched while playing.
   Vanilla rules show the Classic picture (the CPU renderer); Remaster rules the Modern one (the GPU renderer, with
   smooth movement and what M8 adds after it). Presentation only all the same: the simulation doesn't know.
+- **The screen's look** (2026-11-25): how the window shows the finished picture: as it is, or as a television
+  would. A display setting of the Modern visuals, not part of the rules: F11 changes it at any moment,
+  `--shader` at the start, and the profile keeps it (ADR-0011). Remaster rules only (the user): Vanilla's window
+  stays the CPU renderer's.
 - **The Modern visuals' effects** (2026-11-25): light, glow and particles drawn in the game's own pixels (every
   light worked out per pixel of the picture, in steps of brightness; particles a pixel each in the game's fixed
   colours), not smoothed over it. A light is cast: it brightens what it falls on and the map's ground stops it.
@@ -210,8 +214,16 @@ publishing: its author asks not to link his download files directly.
   prompt as before). Only that split is evened out; a new frame, a flip, a jump are shown as the game makes
   them. The pieces an animation moves itself, the HUD, and pictures that aren't a tick's (a scene's start, the
   inventory, a menu, rewind) aren't moved.
-- **Ahead** (ROADMAP, Modern visuals): parallax, lights, shaders, art packs that replace sprites one for one,
-  on the GPU renderer.
+- **The screen's look** (built, 2026-11-25; ADR-0005): with it, everything shown (the picture, the HUD, the
+  minimap and the rewind's bar and mark) is drawn into a texture the window's size, and a last pass
+  (`gpu_crt.frag`) shows it as a television's tube would, as large as 4:3 fits in the window: a line for each of
+  the picture's rows as shown (240 at the original's view, 480 zoomed out all the way), each taking the rows it
+  covers, its beam as tall as it is bright and soft along the line (in the picture's pixels); the gaps between
+  the lines close where a line is less than four of the window's pixels high; a slot mask of red, green and blue
+  at the window's pixels, light spread around what is bright, flat glass a little darker at the corners, in
+  linear light. (First it had 240 lines whatever the zoom: zoomed out each line took one of two rows and dropped
+  the other, and the text could not be read.) Never in a picture of a whole level (a development tool's) or the checks. Tried and dropped (the user,
+  2026-11-25): a VGA monitor's look (480 fine lines, as the DOS game was seen; only blurry) and curved glass.
 
 ### ADR-0011: Remaster rules
 Only under Remaster rules (ADR-0005). First called the QoL rules.
@@ -284,7 +296,8 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   run to the next; Vanilla rules keep none. By default the folder `profiles` beside the game's program, where it is found without knowing
   where to look (not a folder somewhere in the user's home); or `--profile DIR`. In it so far `minimap.txt`: what the minimap has seen of each level, as text (runs of seen
   and unseen pixels). It is read at the start and written when a scene is loaded and when the game is closed; a
-  file that can't be read is said and written over.
+  file that can't be read is said and written over. And `screen.txt`: the screen's look (ADR-0005), the one the
+  window ended with, written when the game is closed.
 - **The quicksave is a file in the profile too** (`quicksave.bin`, ADR-0020): written when F7 keeps the play,
   read when the game starts. It begins with the state's version (ADR-0020) and ends with a sum over the world's
   bytes: a file of another version, or a damaged one, is said and left alone.
