@@ -75,6 +75,13 @@ class Session {
     // The steps before `step` won't run again: the ledger lets go of them.
     void confirmed(std::uint32_t step) { ledger_.confirm(step); }
     Play::Snapshot snapshot() const { return play_.snapshot(); }
+    // A snapshot as bytes, for one joining the game under way (ADR-0012): the state's version, the scene and the
+    // database it was loaded with, the world, the play's own state. And taken: the play becomes it (its level
+    // loaded from this machine's files). False with why, if they aren't such bytes of this version.
+    static std::vector<std::uint8_t> state_bytes(const Play::Snapshot& snapshot);
+    std::expected<void, std::string> take_state(std::span<const std::uint8_t> bytes);
+    // The scene the bytes are of (to open a session at it before taking them); none if they can't be read.
+    static std::optional<int> scene_of(std::span<const std::uint8_t> bytes);
     // Back to a snapshot exactly (rollback: the views too).
     void restore(const Play::Snapshot& from) { (void)play_.restore(from); }
     std::uint64_t state_hash() { return play_.state_hash(hashed_); }

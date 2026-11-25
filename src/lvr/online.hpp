@@ -32,6 +32,11 @@ class NetGame {
         int slot = 0;
         bool cheat = false;
         std::vector<std::string> names;
+        // Joining under way: the game's state to start from (Session::take_state), its step, and the step he arrives
+        // at. Empty: the game starts at step 0 from the lobby.
+        std::vector<std::uint8_t> state;
+        std::uint32_t first_step = 0;
+        std::uint32_t arrives = 0;
     };
     // Who this build and these game files are, as a client says in its hello.
     struct Identity {
@@ -93,6 +98,8 @@ class NetGame {
     void broadcast(const net::Message& message, net::Channel channel);
     std::expected<void, std::string> take(int peer, const net::Message& message);
     void leaves(int player);
+    // Host: one says hello while the game is under way: a place, the game's state, and the step he arrives at.
+    void welcome_under_way(int peer, const net::Hello& hello);
     int peer_of(int player) const noexcept;  // the transport's number for a player (on a client, the host's: 0)
     int player_of(int peer) const noexcept;
 
@@ -108,6 +115,7 @@ class NetGame {
     int player_ = 0;
     std::optional<Joined> joined_;
     // The game.
+    Session* session_ = nullptr;
     std::unique_ptr<CoopGame> game_;
     std::unique_ptr<net::Rollback> rollback_;
     // By peer, by player: how far that peer has acknowledged the player's inputs (he knows them before that step).

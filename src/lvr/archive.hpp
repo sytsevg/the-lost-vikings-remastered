@@ -1,10 +1,12 @@
 #pragma once
 
-// Writing the game's state out and reading it back: a quicksave in a file, and later a snapshot sent to another
-// player. Numbers are written with a fixed width, the low byte first, whatever the machine; nothing is ever
-// written as the memory it sits in. A plain struct (no base, nothing private: an aggregate) is written field by
-// field without naming its fields, which is why every kind keeps what it remembers in one such struct (`Saved`,
-// its member `s`: entity.hpp).
+// Writing the game's state out and reading it back: a quicksave in a file, and a snapshot sent to one joining a game
+// online. Numbers are written with a fixed width, the low byte first, whatever the machine (Widths::kFixed); or in
+// as few bytes as they need (Widths::kVariable: seven bits a byte, the low ones first, the top bit set while more
+// follow; a signed number zigzagged first, so a small negative one is short too), for what goes over the network:
+// the game's state is mostly small numbers. Nothing is ever written as the memory it sits in. A plain struct (no base,
+// nothing private: an aggregate) is written field by field without naming its fields, which is why every kind keeps
+// what it remembers in one such struct (`Saved`, its member `s`: entity.hpp).
 //
 // What can be written: bool, the integers, enums, std::array, std::optional, std::vector, std::string,
 // std::bitset, a plain struct of those, and a class with `save(Writer&) const` and `load(Reader&)` of its own.
@@ -14,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <glaze/reflection/to_tuple.hpp>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -27,10 +30,12 @@ namespace lvr {
 // tell each other before one sends the other a snapshot. Whoever reads another version reads nothing. Raise it
 // whenever a kind's `Saved`, `EntityState` or `WorldState` changes (a test in test_play.cpp says when the written
 // size has changed without it).
-inline constexpr std::uint32_t kStateVersion = 8;
+inline constexpr std::uint32_t kStateVersion = 9;
 
 class Writer;
 class Reader;
+
+enum class Widths : std::uint8_t { kFixed, kVariable };
 
 namespace archive {
 
@@ -80,7 +85,8 @@ void each_field(T& value, With& with) {
 
 class Writer {
   public:
-    explicit Writer(std::vector<std::uint8_t>& out) noexcept : out_{&out} {}
+    explicit Writer(std::vector<std::uint8_t>& out, Widths widths = Widths::kFixed) noexcept
+        : out_{&out}, widths_{widths} {}
 
     template <class T>
     void operator()(const T& value) {
@@ -91,6 +97,22 @@ class Writer {
         } else if constexpr (std::is_enum_v<T>) {
             (*this)(static_cast<std::underlying_type_t<T>>(value));
         } else if constexpr (std::is_integral_v<T>) {
+            if (widths_ == Widths::kVariable) {
+                std::uint64_t bits = 0;
+                if constexpr (std::is_signed_v<T>) {
+                    // (A signed byte is a number here, not a character: its sign goes with it.)
+                    const auto number = static_cast<std::int64_t>(value);  // NOLINT(bugprone-signed-char-misuse)
+                    bits = (static_cast<std::uint64_t>(number) << 1U) ^ (number < 0 ? ~std::uint64_t{0} : 0U);
+                } else {
+                    bits = static_cast<std::uint64_t>(value);
+                }
+                while (bits >= 0x80U) {
+                    out_->push_back(static_cast<std::uint8_t>((bits & 0x7fU) | 0x80U));
+                    bits >>= 7U;
+                }
+                out_->push_back(static_cast<std::uint8_t>(bits));
+                return;
+            }
             const auto bits = static_cast<std::uint64_t>(static_cast<std::make_unsigned_t<T>>(value));
             for (std::size_t byte = 0; byte < archive::kWidth<T>; ++byte) {
                 out_->push_back(static_cast<std::uint8_t>(bits >> (8 * byte)));
@@ -129,7 +151,7 @@ class Writer {
     template <class Write>
     void measured(const Write& write) {
         std::vector<std::uint8_t> part;
-        Writer to{part};
+        Writer to{part, widths_};
         write(to);
         (*this)(static_cast<std::uint32_t>(part.size()));
         out_->insert(out_->end(), part.begin(), part.end());
@@ -137,15 +159,19 @@ class Writer {
 
   private:
     std::vector<std::uint8_t>* out_;
+    Widths widths_;
 };
 
 class Reader {
   public:
-    explicit Reader(std::span<const std::uint8_t> in) noexcept : in_{in} {}
+    explicit Reader(std::span<const std::uint8_t> in, Widths widths = Widths::kFixed) noexcept
+        : in_{in}, widths_{widths} {}
 
     // Everything asked for so far was there (what wasn't reads as nothing), and with `done` all of it was read.
     bool ok() const noexcept { return ok_; }
     bool done() const noexcept { return ok_ && at_ == in_.size(); }
+    // What a class reading itself found isn't what it writes (a count that can't be): nothing more is read.
+    void fail() noexcept { ok_ = false; }
 
     template <class T>
     void operator()(T& value) {
@@ -158,6 +184,10 @@ class Reader {
             (*this)(number);
             value = static_cast<T>(number);
         } else if constexpr (std::is_integral_v<T>) {
+            if (widths_ == Widths::kVariable) {
+                value = variable<T>();
+                return;
+            }
             std::uint64_t bits = 0;
             for (std::size_t i = 0; i < archive::kWidth<T>; ++i) {
                 bits |= std::uint64_t{byte()} << (8 * i);
@@ -211,13 +241,44 @@ class Reader {
             ok_ = false;
             return;
         }
-        Reader part{in_.subspan(at_, length)};
+        Reader part{in_.subspan(at_, length), widths_};
         read(part);
         ok_ = part.done();
         at_ += length;
     }
 
   private:
+    // A number written in as few bytes as it needs; one that doesn't fit T isn't what was written (not ok).
+    template <class T>
+    T variable() noexcept {
+        std::uint64_t bits = 0;
+        for (unsigned shift = 0;; shift += 7) {
+            const std::uint8_t next = byte();
+            if (shift >= 64 || (shift == 63 && (next & 0x7eU) != 0)) {
+                ok_ = false;
+                return T{};
+            }
+            bits |= std::uint64_t{next & 0x7fU} << shift;
+            if ((next & 0x80U) == 0 || !ok_) {
+                break;
+            }
+        }
+        if constexpr (std::is_signed_v<T>) {
+            const auto number = static_cast<std::int64_t>((bits >> 1U) ^ ((bits & 1U) != 0 ? ~std::uint64_t{0} : 0U));
+            if (number < std::numeric_limits<T>::min() || number > std::numeric_limits<T>::max()) {
+                ok_ = false;
+                return T{};
+            }
+            return static_cast<T>(number);
+        } else {
+            if (bits > std::numeric_limits<T>::max()) {
+                ok_ = false;
+                return T{};
+            }
+            return static_cast<T>(bits);
+        }
+    }
+
     std::uint8_t byte() noexcept {
         if (at_ >= in_.size()) {
             ok_ = false;
@@ -229,6 +290,7 @@ class Reader {
     std::span<const std::uint8_t> in_;
     std::size_t at_ = 0;
     bool ok_ = true;
+    Widths widths_;
 };
 
 // A class with a plain struct `Saved` after its base and nothing else of its own is exactly this large: what the

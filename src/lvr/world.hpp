@@ -83,7 +83,8 @@ enum class ViewPart : std::uint8_t { kWhole, kLeft, kRight, kBottom, kTop };
 // player is the original's game: his keys are its keyboard word, his view its camera.
 inline constexpr int kMostPlayers = 3;
 
-// How a game is played (ADR-0012): offline, or online with that many players (Remaster rules).
+// How a game is played (ADR-0012): offline, or online (Remaster rules) with that many players there from the start.
+// An online world has a place for every player there can be (kMostPlayers): the others absent until they come.
 struct Online {
     bool on = false;
     int players = 1;
@@ -493,6 +494,11 @@ class World : public WorldState {
     // Online: a player leaves the game. His Viking goes to the first in its line of viewers, or to nobody; his view
     // no longer makes the active area.
     void player_leaves(int player);
+    // Online: a player comes (into the game under way, or back): onto a Viking nobody plays, else into the line of
+    // the first living one; his view on him.
+    void player_arrives(int player);
+    // The players not in the game, a bit each (online: the places nobody has taken yet, or that were left).
+    std::uint8_t absent() const noexcept;
     // The player whose keys the Viking in `slot` goes by: his own, or the last one's who played him.
     const Player& keys_of(int slot) const {
         const bool viking = slot >= 0 && slot < kVikingSlots;

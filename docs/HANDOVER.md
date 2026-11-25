@@ -299,9 +299,10 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   compositor holding frames), not in the game's step, its drawing, or its uploads; it was there before smooth
   movement too, and mailbox presenting or a third frame in flight didn't change it. Likely the system (the
   GPU's power management); not confirmed (vkcube, a fixed clock).
-- **Co-op's snapshots.** Rollback keeps a copy of the world before every step, as the rewind does (70 to 110 KB
-  and an allocation per entity under Remaster rules): to be measured before anything is made flatter (ADR-0012).
-  The one sent to a player joining under way is to be written smaller (ADR-0020).
+- **Co-op's snapshots.** Rollback keeps a copy of the world before every step, as the rewind does (an allocation
+  per entity under Remaster rules): to be measured before anything is made flatter (ADR-0012). Written out, the
+  unused sprite pieces are a count (state version 9), and what a player joining under way is sent has numbers of
+  variable length (ADR-0020).
 - **Players in the world** (M9's first part in code, 2026-11-25): a world has up to three players
   (`WorldState::players`, `Player`), each with his keys, his stick's pace, his Viking and his camera; a step is given
   each one's input (`StepInput`). A Viking goes by the keys of the player who plays him, or of the last who did
@@ -338,8 +339,8 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   and join, a TCP connection and UDP to each client (introduced by a token over TCP), reliable and fast messages,
   the fast ones over TCP while no UDP gets through, pings for the round trip. Tests over 127.0.0.1
   (`src/net/tests/test_transport.cpp`).
-- **M9's state on 2026-11-25:** parts 1 to 6 of nine committed on the branch `m9-coop-online` (7654737, one
-  commit for a review: the user); part 7 built on top, uncommitted.
+- **M9's state on 2026-11-25:** parts 1 to 8 of nine committed on the branch `m9-coop-online` (the whole of M9
+  for one review there: the user); main untouched. Next: part 9, hosting and joining from the menu.
 - **The front end** (M9's sixth part, built 2026-11-25): `src/net/protocol.*` (the messages: Hello, Welcome,
   Refused, Lobby, Start, Inputs, Status, Hash, Leave, Quit; the host in the middle passing each player's inputs on),
   `src/lvr/coop.*` (a step's input as 16 bytes a player; `CoopGame`: the session as `net::Game`, its snapshots,
@@ -367,7 +368,15 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   view out of the active area: `World::views()`, `Player::here`; state version 8). Out of step, each machine writes
   the game's log beside the program (`logs/coop-BUILD-playerN.log`: the start, every confirmed step's inputs, its
   hashes); `lv-replay --coop LOG` plays it again and names the first step whose state isn't the log's
-  (`replay_log`). Not yet: the lobby in the window (part 9), joining a game under way (part 8).
+  (`replay_log`). Joining a game under way and coming back (part 8, ADR-0012): an online world has a place for
+  each of three players, the others absent (`Player::here`, `World::player_arrives`); the host gives one who says
+  hello a free place, the state before a step every machine has every input for (`Session::state_bytes`,
+  `take_state`), and a step to arrive at that nobody can have confirmed (`net::Joining`, `net::Arrive`,
+  `Rollback::arrive`, `Settings::first_step`). Found by its test: a Status's "known for ever" of a place nobody had
+  was taken as an acknowledgement, so the newcomer's inputs were never passed on (`NetGame::take`). Tested in
+  `test_online.cpp` (a third joins at step 60 and plays Olaf; the guest leaves and another comes into his place and
+  plays Baleog; every machine the same state, the host's log played again). Not yet: the lobby in the window, and
+  hosting and joining from the menu (part 9).
 - **Not checked by anything but the eye:** whatever the GPU renderer shows beyond the original's view, and
   whether a level still plays well zoomed out (enemies run for longer and further; nothing resets as often).
 - **The GPU renderer has run on one graphics card** (the user's) and the container's software driver. Vulkan

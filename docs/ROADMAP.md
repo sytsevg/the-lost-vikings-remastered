@@ -51,7 +51,7 @@ rollback. In this order, a commit each:
 - Rollback after GGPO's design: prediction, a window of 8 steps, input delay, time sync, the out-of-step check
 - The transport: SDL3_net, UDP with TCP behind it
 - The front end: hosting and joining, the names under the Vikings, the latency in the menu, a mark while waiting
-- Joining a game under way, and joining again
+- Joining a game under way, and joining again (built, 2026-11-25: ADR-0012)
 - Hosting and joining from the menu
 
 ## M10: Extra sound effects (Modern sound)

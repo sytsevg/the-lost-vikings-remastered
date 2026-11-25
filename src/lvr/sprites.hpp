@@ -96,15 +96,11 @@ class Pieces {
 
     bool operator==(const Pieces&) const = default;
 
-    // Written out and read back (lvr/archive.hpp): the layout, then every piece.
-    void save(Writer& to) const {
-        to(layout_);
-        to(all_);
-    }
-    void load(Reader& from) {
-        from(layout_);
-        from(all_);
-    }
+    // Written out and read back (lvr/archive.hpp): the layout, how many pieces, then by turns how many in a row are
+    // as they were made (never used: most of Remaster rules' 2048) and one that isn't. (A piece that was let go
+    // keeps its place for the next one to have it, so it is written whole.)
+    void save(Writer& to) const;
+    void load(Reader& from);
 
   private:
     PieceLayout layout_;

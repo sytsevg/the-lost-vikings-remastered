@@ -75,6 +75,9 @@ StepInput unpack(std::span<const net::Input> inputs) {
         own.view = {static_cast<std::int16_t>(get16(packed, 8)), static_cast<std::int16_t>(get16(packed, 10))};
         own.gone = (packed.bytes[net::kGoneByte] & 1U) != 0;
     }
+    for (std::size_t player = inputs.size(); player < input.players.size(); ++player) {
+        input.players.at(player).gone = true;  // (no input for the place: nobody there)
+    }
     if (!inputs.empty()) {
         input.typed = get16(inputs.front(), kTyped);
         input.menu = menu_of(inputs.front().bytes[kMenu]);
@@ -106,6 +109,13 @@ std::expected<std::optional<std::uint32_t>, std::string> replay_log(const std::f
             int on = 0;
             words >> on;
             cheat = on != 0;
+        } else if (word == "first") {
+            std::uint32_t first = 0;
+            words >> first;
+            if (first != 0) {
+                return std::unexpected{std::format(
+                    "the log of one who joined the game under way, from step {}: play the host's again", first)};
+            }
         } else if (word == "step") {
             std::uint32_t step = 0;
             words >> step;

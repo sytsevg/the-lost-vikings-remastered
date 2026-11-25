@@ -163,6 +163,19 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby() {
             names_ = lobby->names;
         } else if (const auto* refused = std::get_if<net::Refused>(&*message)) {
             return std::unexpected{std::format("refused: {}", refused->why)};
+        } else if (const auto* joining = std::get_if<net::Joining>(&*message)) {  // a game under way
+            player_ = joining->player;
+            names_ = joining->names;
+            joined_ = Joined{.player = joining->player,
+                             .players = net::kMostPlayers,
+                             .delay = joining->delay,
+                             .slot = Session::scene_of(joining->state).value_or(0),
+                             .cheat = false,  // (the state has it)
+                             .names = joining->names,
+                             .state = joining->state,
+                             .first_step = joining->step,
+                             .arrives = joining->arrives};
+            return joined_;
         } else if (const auto* start = std::get_if<net::Start>(&*message)) {
             names_ = start->names;
             joined_ = Joined{.player = player_,
@@ -170,7 +183,10 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby() {
                              .delay = start->delay,
                              .slot = start->slot,
                              .cheat = start->cheat,
-                             .names = start->names};
+                             .names = start->names,
+                             .state = {},
+                             .first_step = 0,
+                             .arrives = 0};
             return joined_;
         }
     }
@@ -198,20 +214,98 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby() {
                      .delay = delay,
                      .slot = slot_,
                      .cheat = cheat_,
-                     .names = names_};
+                     .names = names_,
+                     .state = {},
+                     .first_step = 0,
+                     .arrives = 0};
     return joined_;
 }
 
 void NetGame::begin(Session& session) {
     const Joined joined = joined_.value_or(Joined{});  // (the lobby's, once it started)
+    session_ = &session;
     delay_steps_ = joined.delay;
-    const net::Settings settings{
-        .players = joined.players, .local = joined.player, .delay = joined.delay, .window = kWindow};
+    // A place for every player there can be (the world has them too): those not there absent, until someone comes.
+    const net::Settings settings{.players = net::kMostPlayers,
+                                 .local = joined.player,
+                                 .delay = joined.delay,
+                                 .window = kWindow,
+                                 .first_step = joined.first_step};
     game_ = std::make_unique<CoopGame>(session, static_cast<std::size_t>(kWindow) + 2);
     rollback_ = std::make_unique<net::Rollback>(*game_, settings);
-    acked_.assign(static_cast<std::size_t>(joined.players), {});
-    gone_.assign(static_cast<std::size_t>(joined.players), false);
-    engine_.assign(static_cast<std::size_t>(joined.players), std::nullopt);
+    acked_.assign(net::kMostPlayers, {joined.first_step, joined.first_step, joined.first_step});
+    gone_.assign(net::kMostPlayers, false);
+    engine_.assign(net::kMostPlayers, std::nullopt);
+    names_.resize(net::kMostPlayers);
+    if (hosting()) {
+        peers_.resize(net::kMostPlayers, -1);
+    }
+    hash_sent_ = joined.first_step + ((7 + 8 - (joined.first_step % 8)) % 8);  // (every 8th: 7, 15, ...)
+    if (joined.state.empty()) {  // from the lobby: the places nobody took, away from the start
+        for (int player = joined.players; player < net::kMostPlayers; ++player) {
+            rollback_->leave(player, 0);
+            gone_.at(static_cast<std::size_t>(player)) = true;
+        }
+    } else {  // under way: who is away in the state given, and this one until he arrives
+        for (int player = 0; player < net::kMostPlayers; ++player) {
+            if (!session.world().players.at(static_cast<std::size_t>(player)).here) {
+                rollback_->leave(player, joined.first_step);
+                gone_.at(static_cast<std::size_t>(player)) = player != player_;
+            }
+        }
+        rollback_->arrive(player_, joined.arrives);
+    }
+    session.set_player_names(names_);
+}
+
+void NetGame::welcome_under_way(int peer, const net::Hello& hello) {
+    std::string refused;
+    if (hello.protocol != net::kProtocol || hello.state_version != kStateVersion) {
+        refused = "another version of the game";
+    } else if (hello.build != identity_.build) {
+        refused = std::format("another build ({}; the host's is {})", hello.build, identity_.build);
+    } else if (hello.game != identity_.game) {
+        refused = "other game files";
+    }
+    int place = -1;
+    for (int player = 1; player < net::kMostPlayers && place < 0 && refused.empty(); ++player) {
+        if (gone_.at(static_cast<std::size_t>(player)) && peer_of(player) < 0) {
+            place = player;
+        }
+    }
+    if (refused.empty() && place < 0) {
+        refused = "the game is full";
+    }
+    if (!refused.empty()) {
+        send(peer, net::Refused{.why = refused}, net::Channel::kReliable);
+        transport_->drop(peer);
+        return;
+    }
+    const auto at = static_cast<std::size_t>(place);
+    rollback_->catch_up();  // (a correction still to run: the states kept are right again)
+    // The state before the last step every input is known for (all machines have it so), and his first step: past
+    // any the host's input is known for, so no machine has confirmed it.
+    const std::uint32_t from = std::min(rollback_->confirmed(), rollback_->step());
+    const std::uint32_t arrives = std::max(rollback_->step(), rollback_->local_known()) + 1;
+    peers_.at(at) = peer;
+    names_.at(at) = net::shown_name(hello.name, place);
+    gone_.at(at) = false;
+    acked_.at(at) = {from, from, from};
+    engine_.at(at) = std::nullopt;
+    send(peer,
+         net::Joining{.player = static_cast<std::uint8_t>(place),
+                      .step = from,
+                      .arrives = arrives,
+                      .delay = static_cast<std::uint8_t>(delay_steps_),
+                      .names = names_,
+                      .state = Session::state_bytes(game_->snapshot_before(from, rollback_->step()))},
+         net::Channel::kReliable);
+    rollback_->arrive(place, arrives);
+    broadcast(net::Arrive{.player = static_cast<std::uint8_t>(place), .at = arrives, .name = names_.at(at)},
+              net::Channel::kReliable);
+    if (session_ != nullptr) {
+        session_->set_player_names(names_);
+    }
 }
 
 void NetGame::leaves(int player) {
@@ -221,12 +315,26 @@ void NetGame::leaves(int player) {
     const std::uint32_t from = rollback_->known(player);  // what he gave counts; after that, nothing
     rollback_->leave(player, from);
     gone_.at(static_cast<std::size_t>(player)) = true;
+    peers_.at(static_cast<std::size_t>(player)) = -1;  // (the place is free to come into again)
     broadcast(net::Leave{.player = static_cast<std::uint8_t>(player), .from = from}, net::Channel::kReliable);
 }
 
 std::expected<void, std::string> NetGame::take(int peer, const net::Message& message) {
     const int sender = player_of(peer);
-    if (const auto* inputs = std::get_if<net::Inputs>(&message)) {
+    if (const auto* hello = std::get_if<net::Hello>(&message)) {
+        if (hosting() && sender < 0) {
+            welcome_under_way(peer, *hello);
+        }
+    } else if (const auto* arrive = std::get_if<net::Arrive>(&message)) {
+        if (!hosting() && arrive->player < net::kMostPlayers) {
+            rollback_->arrive(arrive->player, arrive->at);
+            names_.at(arrive->player) = arrive->name;
+            gone_.at(arrive->player) = false;
+            if (session_ != nullptr) {
+                session_->set_player_names(names_);
+            }
+        }
+    } else if (const auto* inputs = std::get_if<net::Inputs>(&message)) {
         if (std::cmp_not_equal(inputs->player, player_)) {
             for (std::size_t i = 0; i < inputs->inputs.size(); ++i) {
                 rollback_->add_remote(inputs->player, inputs->first + static_cast<std::uint32_t>(i), inputs->inputs[i]);
@@ -236,7 +344,10 @@ std::expected<void, std::string> NetGame::take(int peer, const net::Message& mes
         if (sender >= 0 && std::cmp_less(sender, acked_.size())) {
             auto& acked = acked_.at(static_cast<std::size_t>(sender));
             for (std::size_t player = 0; player < acked.size(); ++player) {
-                acked.at(player) = std::max(acked.at(player), status->knows.at(player));
+                // (Known for ever: that player away; it says nothing of what he gives once he comes.)
+                if (status->knows.at(player) != net::kAll) {
+                    acked.at(player) = std::max(acked.at(player), status->knows.at(player));
+                }
             }
             // Where he is now: where he said, and half the round trip on.
             const int one_way = transport_->round_trip_ms(peer).value_or(0) / 2;
@@ -364,10 +475,13 @@ void NetGame::quit() {
 
 std::string NetGame::log() const {
     const Joined joined = joined_.value_or(Joined{});
-    std::string text = std::format("coop 1\nbuild {}\nslot {}\nplayers {}\ncheat {}\nplayer {}\n", identity_.build,
-                                   joined.slot, joined.players, joined.cheat ? 1 : 0, joined.player);
+    // (One who joined under way has the steps from the state he was given only: his log says so, and only the
+    // host's, from step 0, can be played again.)
+    std::string text =
+        std::format("coop 1\nbuild {}\nslot {}\nplayers {}\ncheat {}\nplayer {}\nfirst {}\n", identity_.build,
+                    joined.slot, joined.players, joined.cheat ? 1 : 0, joined.player, joined.first_step);
     const std::uint32_t confirmed = rollback_ ? std::min(rollback_->confirmed(), rollback_->step()) : 0;
-    for (std::uint32_t step = 0; rollback_ && step < confirmed; ++step) {
+    for (std::uint32_t step = joined.first_step; rollback_ && step < confirmed; ++step) {
         const std::optional<std::vector<net::Input>> inputs = rollback_->inputs_at(step);
         if (!inputs) {
             break;

@@ -1,9 +1,11 @@
-// Tests for src/lvr/archive.hpp: values written with a fixed width, the low byte first, and read back the same.
+// Tests for src/lvr/archive.hpp: values written with a fixed width, the low byte first, or in as few bytes as they
+// need, and read back the same.
 #include <array>
 #include <bitset>
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -193,4 +195,76 @@ TEST_CASE("archive: something written with its length is read only by what takes
     Reader past{cut};
     past.measured([&](Reader& part) { part(number); });
     CHECK_FALSE(past.ok());
+}
+
+TEST_CASE("archive: numbers in as few bytes as they need; a signed one zigzagged; one too large for its type fails") {
+    const Sample sample{.timer = 300,
+                        .turned = true,
+                        .doing = Doing::kFalls,
+                        .last = {-2, 7},
+                        .slot = -1,
+                        .swing = 258,
+                        .inner = {.x = 3, .there = true},
+                        .maybe = 9,
+                        .more = {{{.x = 1, .there = false}, {.x = -65, .there = true}}}};
+    std::vector<std::uint8_t> bytes;
+    Writer to{bytes, Widths::kVariable};
+    to(sample);
+    CHECK(bytes == std::vector<std::uint8_t>{0xac, 0x02,                      // timer: 300, seven bits a byte
+                                             0x01,                            // turned
+                                             0x02,                            // doing
+                                             0x03, 0x0e,                      // last: -2 and 7, zigzagged
+                                             0x01,                            // slot: -1
+                                             0x82, 0x02,                      // swing: 258
+                                             0x06, 0x01,                      // inner
+                                             0x01, 0x09,                      // maybe
+                                             0x02, 0x00, 0x81, 0x01, 0x01});  // more: 1, then -65 in two bytes
+    Sample back;
+    Reader from{bytes, Widths::kVariable};
+    from(back);
+    CHECK(from.done());
+    CHECK(back == sample);
+
+    // The ends of the types, there and back.
+    const std::array<std::int64_t, 2> wide{std::numeric_limits<std::int64_t>::min(),
+                                           std::numeric_limits<std::int64_t>::max()};
+    const std::uint64_t widest = std::numeric_limits<std::uint64_t>::max();
+    const std::int8_t narrow = -128;
+    std::vector<std::uint8_t> ends;
+    Writer to_ends{ends, Widths::kVariable};
+    to_ends(wide);
+    to_ends(widest);
+    to_ends(narrow);
+    std::array<std::int64_t, 2> wide_back{};
+    std::uint64_t widest_back = 0;
+    std::int8_t narrow_back = 0;
+    Reader from_ends{ends, Widths::kVariable};
+    from_ends(wide_back);
+    from_ends(widest_back);
+    from_ends(narrow_back);
+    CHECK(from_ends.done());
+    CHECK(wide_back == wide);
+    CHECK(widest_back == widest);
+    CHECK(narrow_back == narrow);
+
+    // 300 doesn't fit a byte; eleven bytes are more than any number has; a number cut short.
+    std::uint8_t small = 0;
+    const std::vector<std::uint8_t> three_hundred{0xac, 0x02};
+    Reader too_large{three_hundred, Widths::kVariable};
+    too_large(small);
+    CHECK_FALSE(too_large.ok());
+    std::uint64_t large = 0;
+    const std::vector<std::uint8_t> endless(11, 0xff);
+    Reader too_long{endless, Widths::kVariable};
+    too_long(large);
+    CHECK_FALSE(too_long.ok());
+    const std::vector<std::uint8_t> more_to_come{0x80};
+    Reader cut{more_to_come, Widths::kVariable};
+    cut(large);
+    CHECK_FALSE(cut.ok());
+    // Something written with its length: the part inside in the same widths.
+    std::vector<std::uint8_t> measured;
+    Writer to_measured{measured, Widths::kVariable};
+    to_measured.measured([](Writer& part) { part(std::uint32_t{5}); });
+    CHECK(measured == std::vector<std::uint8_t>{0x01, 0x05});
 }

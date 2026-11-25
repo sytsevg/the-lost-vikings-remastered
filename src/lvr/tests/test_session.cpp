@@ -13,6 +13,7 @@
 #include <string_view>
 #include <vector>
 
+#include "lvr/archive.hpp"
 #include "lvr/names.hpp"
 #include "lvr/play.hpp"
 #include "lvr/render.hpp"
@@ -921,4 +922,49 @@ TEST_CASE("real data: Remaster rules' effects: a Viking electrocuted or burning 
         CHECK(gone);
     }
     CHECK(deaths == 5);
+}
+
+TEST_CASE("real data: the game's state as bytes for one joining online: short, taken anywhere, the same play on",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    const auto keys_of = [](int step) {
+        return static_cast<std::uint16_t>(step < 6 ? (step % 2 != 0 ? key::kF : 0) : key::kRight);
+    };
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+    REQUIRE(opened);
+    Session& session = **opened;
+    for (int step = 0; step < 30; ++step) {
+        session.step(keys_of(step));
+    }
+    const Play::Snapshot snapshot = session.snapshot();
+    const std::vector<std::uint8_t> bytes = Session::state_bytes(snapshot);
+    std::vector<std::uint8_t> fixed;
+    Writer to{fixed};
+    snapshot.world.save(to);
+    CHECK(bytes.size() < fixed.size());  // (mostly small numbers: about 26 KB, against 31 in fixed widths)
+    CHECK(Session::scene_of(bytes) == std::optional<int>{session.world().scene});
+
+    // Taken by a session in another scene: the same state, and the same play from there.
+    auto other = Session::open(LVR_ORIGINAL_DIR, 5, {}, Rules::kRemaster);
+    REQUIRE(other);
+    REQUIRE((*other)->take_state(bytes));
+    // (It hears the level's music from its first step on, as a quickload does: cues the step takes out.)
+    REQUIRE((*other)->world().cues.size() == 2);
+    CHECK((*other)->world().cues[1].kind == SoundCue::Kind::kMusicAction);
+    for (int step = 30; step < 50; ++step) {
+        CHECK((*other)->step(keys_of(step)).back().pixels == session.step(keys_of(step)).back().pixels);
+    }
+    CHECK((*other)->state_hash() == session.state_hash());
+
+    // Cut short, or of another version: not taken, the play as it was.
+    const std::uint64_t before = (*other)->state_hash();
+    const std::vector<std::uint8_t> cut(bytes.begin(), bytes.end() - 10);
+    CHECK_FALSE((*other)->take_state(cut));
+    std::vector<std::uint8_t> another = bytes;
+    another.front() = static_cast<std::uint8_t>(kStateVersion + 1);
+    CHECK_FALSE((*other)->take_state(another));
+    CHECK_FALSE(Session::scene_of(another).has_value());
+    CHECK((*other)->state_hash() == before);
 }

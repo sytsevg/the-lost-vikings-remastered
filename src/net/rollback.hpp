@@ -9,6 +9,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <optional>
 #include <span>
@@ -28,6 +29,8 @@ struct Input {
     bool operator==(const Input&) const = default;
 };
 inline constexpr std::size_t kGoneByte = kInputBytes - 1;
+// How far a player's inputs are known when they are for ever (he is away, not to come back as far as is known).
+inline constexpr std::uint32_t kAll = std::numeric_limits<std::uint32_t>::max();
 // The input of a player who is gone: nothing, and the bit that says so.
 constexpr Input gone_input() noexcept {
     Input input;
@@ -67,6 +70,8 @@ struct Settings {
     int delay = 0;       // steps of input delay: the local input given now is for that many steps on
     int window = 8;      // steps the game can run ahead of the inputs it has
     int hash_every = 8;  // the steps whose states are compared (every 8th)
+    // The first step it runs: 0, or for one joining a game under way the step of the game's state he was given.
+    std::uint32_t first_step = 0;
 };
 
 class Rollback {
@@ -83,8 +88,13 @@ class Rollback {
     // step that was run with another input (a prediction that was wrong) has that step run again at the next
     // advance.
     void add_remote(int player, std::uint32_t step, const Input& input);
-    // From step `from` on the player is gone: his input is gone_input(), known for every step.
+    // From step `from` on the player is gone: his input is gone_input(), known for every step until he comes back.
     void leave(int player, std::uint32_t from);
+    // From step `at` on the player is there again (or for the first time): his inputs from there are his own, to come.
+    // `at` must be a step no machine has confirmed yet (the host picks it).
+    void arrive(int player, std::uint32_t at);
+    // Whether the player is there at that step.
+    bool there(int player, std::uint32_t step) const;
 
     // The next step: run it, after running again what a wrong prediction spoiled. False: it can't be run yet (this
     // machine's input for it isn't given, or the window is used up waiting for another player's: a stall).
@@ -130,8 +140,11 @@ class Rollback {
     struct Known {
         std::vector<std::optional<Input>> inputs;  // by step: what has come
         std::vector<Input> used;                   // by step: what the step was last run with
-        std::optional<std::uint32_t> gone_from;
-        std::uint32_t contiguous = 0;  // known without a gap before this step
+        // When he comes and goes: (the step, there from it on), in order of steps; none: there from the start.
+        std::vector<std::pair<std::uint32_t, bool>> presence;
+        // Known (his input come, or he is away) without a gap before this step; for ever: kAll.
+        std::uint32_t contiguous = 0;
+        bool there(std::uint32_t step) const noexcept;
         // Time sync: his frame advantage as this machine sees it, and as he reports it; the last few of each.
         std::array<int, 16> seen{};
         std::array<int, 16> reported{};
@@ -142,6 +155,8 @@ class Rollback {
     std::vector<Input> inputs_for(std::uint32_t step) const;
     void run(std::uint32_t step, bool shown);
     void compare_hashes();
+    static void move_contiguous(Known& known);
+    void changes(Known& known, std::uint32_t at, bool there);
 
     Game* game_;
     Settings settings_;

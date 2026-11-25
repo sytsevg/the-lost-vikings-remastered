@@ -12,6 +12,7 @@ namespace {
 constexpr std::size_t kMostInputs = 64;  // in one message: more than the window ever leaves unacknowledged
 constexpr std::size_t kMostString = 64;  // a build's commit, a name, why one was refused
 constexpr std::size_t kMostNames = kMostPlayers;
+constexpr std::size_t kMostState = std::size_t{8} << 20U;  // a game's state for one joining: far less than this
 
 class Out {
   public:
@@ -30,6 +31,11 @@ class Out {
         bytes_->insert(bytes_->end(), text.begin(), text.begin() + static_cast<std::ptrdiff_t>(length));
     }
     void operator()(const Input& input) { bytes_->insert(bytes_->end(), input.bytes.begin(), input.bytes.end()); }
+    void operator()(const std::vector<std::uint8_t>& bytes) {
+        (*this)(static_cast<std::uint32_t>(std::min(bytes.size(), kMostState)));
+        bytes_->insert(bytes_->end(), bytes.begin(),
+                       bytes.begin() + static_cast<std::ptrdiff_t>(std::min(bytes.size(), kMostState)));
+    }
 
   private:
     std::vector<std::uint8_t>* bytes_;
@@ -68,6 +74,17 @@ class In {
         for (std::uint8_t& byte : input.bytes) {
             byte = next();
         }
+    }
+    void operator()(std::vector<std::uint8_t>& bytes) {
+        std::uint32_t length = 0;
+        (*this)(length);
+        if (length > kMostState || length > bytes_.size() - std::min(at_, bytes_.size())) {
+            ok_ = false;
+            return;
+        }
+        bytes.assign(bytes_.begin() + static_cast<std::ptrdiff_t>(at_),
+                     bytes_.begin() + static_cast<std::ptrdiff_t>(at_ + length));
+        at_ += length;
     }
     bool done() const noexcept { return ok_ && at_ == bytes_.size(); }
     bool ok() const noexcept { return ok_; }
@@ -121,6 +138,10 @@ void fields(Io& io, auto& message) {
         }
     } else if constexpr (std::is_same_v<M, Echo> || std::is_same_v<M, Echoed>) {
         io(message.sent);
+    } else if constexpr (std::is_same_v<M, Arrive>) {
+        io(message.player);
+        io(message.at);
+        io(message.name);
     } else if constexpr (std::is_same_v<M, Quit>) {
         // nothing more
     }
@@ -166,6 +187,13 @@ std::vector<std::uint8_t> encode(const Message& message) {
                 out(one.slot);
                 out(static_cast<std::uint8_t>(one.cheat ? 1 : 0));
                 write_names(out, one.names);
+            } else if constexpr (std::is_same_v<M, Joining>) {
+                out(one.player);
+                out(one.step);
+                out(one.arrives);
+                out(one.delay);
+                write_names(out, one.names);
+                out(one.state);
             } else if constexpr (std::is_same_v<M, Inputs>) {
                 out(one.player);
                 out(one.first);
@@ -200,6 +228,15 @@ std::optional<Message> read_one(In& in) {
         if (!read_names(in, message.names)) {
             return std::nullopt;
         }
+    } else if constexpr (std::is_same_v<M, Joining>) {
+        in(message.player);
+        in(message.step);
+        in(message.arrives);
+        in(message.delay);
+        if (!read_names(in, message.names)) {
+            return std::nullopt;
+        }
+        in(message.state);
     } else if constexpr (std::is_same_v<M, Inputs>) {
         std::uint8_t count = 0;
         in(message.player);

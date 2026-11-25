@@ -365,3 +365,44 @@ TEST_CASE("rollback: a step the game says is never to be run again waits for eve
     rollback.add_remote(1, 1, held(1, 1));
     CHECK(rollback.advance());
 }
+
+TEST_CASE("rollback: one who arrives after being away: the steps from then are run again, and wait for his inputs") {
+    Toy game;
+    Rollback rollback{game, Settings{.players = 2, .local = 0, .delay = 0}};
+    rollback.leave(1, 0);  // nobody in the second place yet
+    for (std::uint32_t step = 0; step < 8; ++step) {
+        REQUIRE(rollback.add_local(held(0, step)));
+        REQUIRE(rollback.advance());
+    }
+    CHECK(rollback.confirmed() == 8);
+    CHECK(rollback.steps_run_again() == 0);
+    rollback.arrive(1, 5);  // he comes at step 5 (the host says): the steps from 5 were run without him
+    CHECK(rollback.there(1, 5));
+    CHECK_FALSE(rollback.there(1, 4));
+    CHECK(rollback.confirmed() == 5);
+    REQUIRE(rollback.add_local(held(0, 8)));
+    REQUIRE(rollback.advance());
+    CHECK(rollback.steps_run_again() == 3);  // 5, 6, 7
+    for (std::uint32_t step = 5; step < 9; ++step) {
+        rollback.add_remote(1, step, held(1, step));
+    }
+    CHECK(rollback.confirmed() == 9);
+    // And away again from 12: known from there without his inputs.
+    rollback.leave(1, 12);
+    for (std::uint32_t step = 9; step < 12; ++step) {
+        rollback.add_remote(1, step, held(1, step));
+    }
+    CHECK(rollback.known(1) > 1000);
+}
+
+TEST_CASE("rollback: one joining under way starts at the step of the state he was given") {
+    Toy game;
+    Rollback rollback{game, Settings{.players = 2, .local = 1, .delay = 1, .first_step = 100}};
+    CHECK(rollback.step() == 100);
+    CHECK(rollback.local_known() == 101);  // the delay's step: nothing
+    rollback.add_remote(0, 100, held(0, 100));
+    REQUIRE(rollback.add_local(held(1, 101)));
+    CHECK(rollback.advance());
+    CHECK(rollback.step() == 101);
+    CHECK(rollback.local_from(100).size() == 2);
+}

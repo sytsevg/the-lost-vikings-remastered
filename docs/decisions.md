@@ -115,9 +115,11 @@ comments and other docs points here). A decision that was later replaced is not 
   world out and reads it back before every step, and the replays must still match their goldens (a way through
   each level and the scenes by default, every replay with `--all`); that every kind keeps its state in its `Saved`
   is checked without playing (`scripts/kind_state.py`).
-- A world is 25 to 40 KB written out under Vanilla rules and 70 to 90 KB under Remaster rules (most of it the
-  larger layer of sprite pieces). Fine for a file. The snapshot sent to a player joining under way is to be
-  written smaller: integers of variable length (LEB128, signed ones zigzagged), and without the free sprite pieces.
+- A world is 22 to 40 KB written out (state version 9): the sprite pieces never used, most of Remaster rules'
+  2048, are written as how many in a row (`Pieces::save`; a piece let go keeps its place for the next one to have
+  it, so it is written whole). What is sent to a player joining under way (ADR-0012) has its numbers in as few
+  bytes as they need (`Widths::kVariable`: seven bits a byte, signed ones zigzagged): level 1 a moment in, 26 KB
+  against 31.
 
 ## Data
 
@@ -432,5 +434,17 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   first, at most 8 letters. Every player's name and two round trips to the host in the menu's first page, under a
   divider (the user: not a page of its own), as the host measures them and so the same on every screen (the host's
   own row: none): the network's (answered at once by the transport's own thread) and the game's (an Echo answered
-  by the other game's loop, once a refresh). No rewind online, and so no rewind bar (the user). Hosting and joining from the command line first, then from the menu (a port, a
-  level's password and a name; an address and a name), kept in the profile.
+  by the other game's loop, once a refresh). No rewind online, and so no rewind bar (the user). Hosting and joining
+  from the command line first, then from the menu (a port, a level's password and a name; an address and a name),
+  kept in the profile.
+- **Joining a game under way, and coming back.** An online world has a place for each of the three players there
+  can be, those nobody has taken absent (`Player::here`); rollback has them too, away (`net::Rollback::leave`) and
+  their input `net::gone_input()`. One who says hello while the game goes on is given a free place (the first left,
+  or never taken), the game's state before a step every machine has every input for (`Session::state_bytes`: the
+  state's version, the scene, the world and the play's own state), and the step he comes at: one no machine can
+  have confirmed yet, past the host's own inputs (`net::Joining`); the others are told (`net::Arrive`), and each
+  machine runs again whatever it ran with him away from then on (`Rollback::arrive`). His first input is his
+  arrival in the world (`World::player_arrives`): onto a Viking nobody plays, else into the line of the first
+  living one. One who left comes back the same way, into a free place; his Viking may be someone else's by then.
+  His own machine starts at the state's step (`net::Settings::first_step`), so its log can't be played from the
+  start: the host's can.

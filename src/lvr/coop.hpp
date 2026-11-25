@@ -39,6 +39,11 @@ class CoopGame : public net::Game {
     net::Input predict(const net::Input& last) override;
     bool waits_for_inputs() override { return session_->changing_scene(); }
 
+    // The play as it was before `step` (one of the window's: a snapshot kept), or as it is if that is the step to run
+    // next (`now`): what one joining under way is given.
+    Play::Snapshot snapshot_before(std::uint32_t step, std::uint32_t now) const {
+        return step == now ? session_->snapshot() : saved_.at(step % saved_.size());
+    }
     // The pictures of the steps shown since this was last asked, a refresh each.
     std::vector<Screen> take_pictures() { return std::exchange(pictures_, {}); }
 

@@ -309,11 +309,15 @@ std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files
     return loaded;
 }
 
-World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rules, const Views& views, int players) {
+World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rules, const Views& views, int players,
+                    std::uint8_t absent) {
     const Level& level = loaded.level;
     World world;
     world.set_rules(rules);
     world.player_count = std::clamp(players, 1, kMostPlayers);
+    for (int who = 1; who < world.player_count; ++who) {  // (the first, who drives the game, is always there)
+        world.players.at(static_cast<std::size_t>(who)).here = (absent & (1U << static_cast<unsigned>(who))) == 0;
+    }
     // A scene that is one picture has no map of its own: the one before it stays (and with it the camera's limits).
     world.map = level.map.cells.empty() && map_before != nullptr ? *map_before : level.map;
     world.placements = level.placements;
@@ -394,7 +398,11 @@ World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rule
 }
 
 World start_world(const LoadedLevel& loaded, Rules rules, const Online& online) {
-    World world = prepare_world(loaded, nullptr, rules, kOriginalViews, online.on ? online.players : 1);
+    // Online: a place for every player there can be, those not there yet absent.
+    const auto places = static_cast<unsigned>(kMostPlayers);
+    const auto there = static_cast<unsigned>(std::clamp(online.players, 1, kMostPlayers));
+    const auto absent = static_cast<std::uint8_t>(online.on ? ((1U << places) - 1U) & ~((1U << there) - 1U) : 0U);
+    World world = prepare_world(loaded, nullptr, rules, kOriginalViews, online.on ? kMostPlayers : 1, absent);
     world.online = online.on;
     for (int part = 0; part < 3; ++part) {
         world.run(part, true);
@@ -448,6 +456,7 @@ void Play::take(const StepInput& input) {
             world.player_leaves(who);
             continue;
         }
+        world.player_arrives(who);  // (if he wasn't there: his first input since he came)
         if (given.zoom[0] != 0 && given.zoom[1] != 0) {
             state_.views.at(static_cast<std::size_t>(who)) = {given.zoom[0], given.zoom[1]};
         }
@@ -638,7 +647,7 @@ int Play::change_scene(const std::function<void()>& picture) {
         return kFadeSteps;
     }
     auto loaded = std::make_unique<LoadedLevel>(std::move(*next));
-    World started = prepare_world(*loaded, &world.map, world.rules, state_.views, world.player_count);
+    World started = prepare_world(*loaded, &world.map, world.rules, state_.views, world.player_count, world.absent());
     started.cues.front().value = leaving_level.music.at_end == 1 ? 1 : 0;  // what plays stops, or the music stays
     // What goes on from scene to scene.
     started.seed = world.seed;

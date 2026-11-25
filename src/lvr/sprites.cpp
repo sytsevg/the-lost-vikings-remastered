@@ -364,6 +364,49 @@ bool take_pieces(Pieces& pieces, Sprite& sprite, Pool pool, const PieceStart& st
     return true;
 }
 
+void Pieces::save(Writer& to) const {
+    to(layout_);
+    to(static_cast<std::uint32_t>(all_.size()));
+    const Piece unused{};
+    for (std::size_t at = 0; at < all_.size();) {
+        std::uint32_t blank = 0;
+        while (at + blank < all_.size() && all_[at + blank] == unused) {
+            ++blank;
+        }
+        to(blank);
+        at += blank;
+        if (at < all_.size()) {
+            to(all_[at]);
+            ++at;
+        }
+    }
+}
+
+void Pieces::load(Reader& from) {
+    constexpr std::uint32_t kMostPieces = 1U << 16U;
+    from(layout_);
+    std::uint32_t count = 0;
+    from(count);
+    if (!from.ok() || count > kMostPieces) {
+        from.fail();
+        return;
+    }
+    all_.assign(count, Piece{});
+    for (std::size_t at = 0; at < all_.size() && from.ok();) {
+        std::uint32_t blank = 0;
+        from(blank);
+        if (blank > all_.size() - at) {
+            from.fail();
+            return;
+        }
+        at += blank;
+        if (at < all_.size()) {
+            from(all_[at]);
+            ++at;
+        }
+    }
+}
+
 void let_go(Pieces& pieces, const Sprite& sprite) {
     constexpr std::uint8_t kErases = 4;
     for (int index = sprite.first; index < sprite.first + sprite.count; ++index) {

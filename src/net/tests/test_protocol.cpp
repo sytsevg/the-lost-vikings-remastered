@@ -34,6 +34,13 @@ TEST_CASE("protocol: every message comes back as it was written") {
         Quit{},
         Echo{.sent = 123456},
         Echoed{.sent = 654321},
+        Arrive{.player = 2, .at = 777, .name = "LATE"},
+        Joining{.player = 2,
+                .step = 760,
+                .arrives = 777,
+                .delay = 1,
+                .names = {"A", "B", "LATE"},
+                .state = std::vector<std::uint8_t>(70000, 0xab)},
     };
     for (const Message& message : all) {
         const std::vector<std::uint8_t> bytes = encode(message);

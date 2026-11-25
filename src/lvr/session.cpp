@@ -335,6 +335,63 @@ std::expected<void, std::string> Session::write_quicksave() const {
 }
 
 // The quicksave's file: its level is loaded again, a world made for it, and what was written read into that.
+std::vector<std::uint8_t> Session::state_bytes(const Play::Snapshot& snapshot) {
+    std::vector<std::uint8_t> bytes;
+    Writer to{bytes, Widths::kVariable};  // (for the network: mostly small numbers)
+    to(kStateVersion);
+    to(snapshot.world.scene);
+    to(snapshot.loaded != nullptr ? snapshot.loaded->database_entry : 0);
+    to.measured([&snapshot](Writer& part) { snapshot.world.save(part); });
+    to.measured([&snapshot](Writer& part) { part(snapshot.state); });
+    return bytes;
+}
+
+std::optional<int> Session::scene_of(std::span<const std::uint8_t> bytes) {
+    Reader from{bytes, Widths::kVariable};
+    std::uint32_t version = 0;
+    int scene = 0;
+    from(version);
+    from(scene);
+    return from.ok() && version == kStateVersion && scene >= 0 && scene < kSceneSlots ? std::optional{scene}
+                                                                                      : std::nullopt;
+}
+
+std::expected<void, std::string> Session::take_state(std::span<const std::uint8_t> bytes) {
+    Reader from{bytes, Widths::kVariable};
+    std::uint32_t version = 0;
+    int scene = 0;
+    int database_entry = 0;
+    from(version);
+    from(scene);
+    from(database_entry);
+    if (!from.ok() || version != kStateVersion || scene < 0 || scene >= kSceneSlots) {
+        return std::unexpected{std::string{"the game's state is of another version of the game"}};
+    }
+    auto loaded = load_slot(files_, scene, database_entry, play_.snes);
+    if (!loaded) {
+        return std::unexpected{loaded.error()};
+    }
+    Play::Snapshot snapshot;
+    snapshot.owner = std::make_shared<LoadedLevel>(std::move(*loaded));
+    snapshot.loaded = snapshot.owner.get();
+    snapshot.world = prepare_world(*snapshot.loaded, nullptr, play_.world.rules);
+    bool read = false;
+    from.measured([&](Reader& part) { read = snapshot.world.load(part) && part.done(); });
+    from.measured([&](Reader& part) { part(snapshot.state); });
+    if (!read || !from.done()) {
+        return std::unexpected{std::string{"the game's state can't be read"}};
+    }
+    if (play_.restore(snapshot)) {
+        play_.scene_sound();
+    }
+    rewind_.clear();
+    effects_.clear();
+    scrolled_.reset();
+    grows_from_.reset();
+    shrinking_ = false;
+    return {};
+}
+
 std::expected<void, std::string> Session::read_quicksave() {
     auto kept = load_quicksave(profile_);
     if (!kept) {

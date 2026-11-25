@@ -147,7 +147,8 @@ TEST_CASE("real data: two machines online come to the state of one that had ever
     CHECK(machines[0].session->state_hash() == expected);
     CHECK(machines[1].session->state_hash() == expected);
     CHECK(machines[0].rollback->steps_run_again() + machines[1].rollback->steps_run_again() > 0);
-    CHECK(truth->world().player_count == 2);
+    CHECK(truth->world().player_count == kMostPlayers);  // a place for each player there can be ...
+    CHECK_FALSE(truth->world().players[2].here);         // ... the third nobody's
     // What they did happened: past the opening's boxes the host's Erik walked, and the second player's Baleog.
     CHECK(truth->world().at(0)->x != erik_from);
     CHECK(truth->world().at(1)->x != baleog_from);

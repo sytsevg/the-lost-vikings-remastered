@@ -521,13 +521,55 @@ void World::player_leaves(int player) {
 void World::choose_vikings() {
     for (int i = 0; i < player_count; ++i) {
         Player& player = players.at(static_cast<std::size_t>(i));
-        player.viking = has_vikings && i < kVikingSlots ? i : 0;
+        player.viking = !player.here ? kNobody : (has_vikings && i < kVikingSlots ? i : 0);
         player.controls = true;
         player.in_line = 0;
     }
     for (int viking = 0; viking < kVikingSlots; ++viking) {
-        keys_from.at(static_cast<std::size_t>(viking)) = viking < player_count ? viking : 0;
+        const bool played = viking < player_count && players.at(static_cast<std::size_t>(viking)).here;
+        keys_from.at(static_cast<std::size_t>(viking)) = played ? viking : 0;
     }
+}
+
+std::uint8_t World::absent() const noexcept {
+    unsigned bits = 0;
+    for (int who = 0; who < player_count; ++who) {
+        bits |= players[static_cast<std::size_t>(who)].here ? 0U : 1U << static_cast<unsigned>(who);
+    }
+    return static_cast<std::uint8_t>(bits);
+}
+
+void World::player_arrives(int player) {
+    Player& coming = players.at(static_cast<std::size_t>(player));
+    if (coming.here) {
+        return;
+    }
+    coming.here = true;
+    coming.viking = kNobody;
+    coming.controls = true;
+    coming.held = coming.pressed = coming.keys_before = 0;
+    int viking = has_vikings ? kNobody : 0;  // (a scene without Vikings: his view follows its first slot)
+    if (has_vikings) {
+        const auto alive = [this](int slot) {
+            const Entity* entity = at(slot);
+            return entity != nullptr && !entity->dead;
+        };
+        for (int slot = 0; slot < kVikingSlots && viking == kNobody; ++slot) {
+            viking = alive(slot) && player_of(slot) == kNobody ? slot : kNobody;  // one nobody plays
+        }
+        for (int slot = 0; slot < kVikingSlots && viking == kNobody; ++slot) {
+            viking = alive(slot) ? slot : kNobody;  // else the first living one's line
+        }
+    }
+    move_player(player, viking);
+    coming.camera = Camera{};
+    set_camera_limits(coming.camera, map.width, map.height);
+    if (const Entity* followed = at(viking != kNobody ? viking : 0)) {
+        start_camera(coming.camera, followed->x, followed->y);
+    }
+    coming.strip_x = cell_of(coming.camera.x);
+    coming.strip_y = cell_of(coming.camera.y);
+    coming.view_to_fill = true;
 }
 
 bool World::well_in_view(const Entity& entity, const Camera& camera) const noexcept {

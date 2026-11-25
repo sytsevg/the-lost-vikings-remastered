@@ -65,7 +65,7 @@ std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files
 // Under Remaster rules a level's world is made with the views the players' zoom asks for (`views`,
 // World::view_for).
 World prepare_world(const LoadedLevel& loaded, const Map* map_before = nullptr, Rules rules = Rules::kVanilla,
-                    const Views& views = kOriginalViews, int players = 1);
+                    const Views& views = kOriginalViews, int players = 1, std::uint8_t absent = 0);
 
 // The level's world as it starts: the Vikings where they start, the camera on the first, the placements that are
 // always active or in view, and the one tick the original runs before the first picture. `loaded` must outlive it.

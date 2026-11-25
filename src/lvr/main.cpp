@@ -185,6 +185,9 @@ std::vector<Menu::PlayerLine> player_lines(const Session& session, const NetGame
     const auto shown = [](std::optional<int> ms) { return ms ? std::format("{} MS", *ms) : std::string{"-"}; };
     std::vector<Menu::PlayerLine> lines;
     for (int who = 0; who < session.world().player_count && std::cmp_less(who, net.names().size()); ++who) {
+        if (!session.world().players.at(static_cast<std::size_t>(who)).here) {
+            continue;  // (a place nobody has: not listed)
+        }
         lines.push_back({.name = net.names().at(static_cast<std::size_t>(who)),
                          .network = shown(net.network_ms(who)),
                          .engine = shown(net.engine_ms(who))});
@@ -1124,8 +1127,9 @@ int main(int argc, char* argv[]) try {
         joined = *started;
         slot = joined.slot;
         cheat = joined.cheat;
-        std::println("vikings-remaster: the game starts: player {} of {}, {} step(s) of input delay", joined.player + 1,
-                     joined.players, joined.delay);
+        std::println("vikings-remaster: {}: player {}, {} step(s) of input delay",
+                     joined.state.empty() ? "the game starts" : "into the game under way", joined.player + 1,
+                     joined.delay);
     }
     if (rules == Rules::kRemaster && dump_to.empty() && (sound_asked || look || !effects)) {
         // (The user, 2026-11-25: what the menu sets and the profile keeps isn't a start-up option as well.)
@@ -1200,8 +1204,13 @@ int main(int argc, char* argv[]) try {
         return EXIT_FAILURE;
     }
     if (net != nullptr) {
+        if (!joined.state.empty()) {  // a game under way: its state as the host gave it
+            if (const auto taken = (*session)->take_state(joined.state); !taken) {
+                std::println(stderr, "vikings-remaster: {}", taken.error());
+                return EXIT_FAILURE;
+            }
+        }
         net->begin(**session);
-        (*session)->set_player_names(joined.names);
         if (const char* beside = SDL_GetBasePath()) {  // (what the game writes is beside it)
             net->set_log_folder(std::filesystem::path{beside} / "logs");
         }
