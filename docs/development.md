@@ -47,7 +47,8 @@ quicksave and later a network snapshot hold must be all a replay needs. About a 
 After a change to the GPU renderer's drawing, `lv-replay --check --gpu REPLAY...` plays replays with it in the
 Classic renderer's place, against the same goldens (all of them take about five minutes on the software driver;
 one or two are enough for most changes). What it shows when zoomed has no golden: under Remaster rules
-`vikings-remaster --dump STEPS FILE.png --zoom BY AT_STEP` writes what the window would show, to look at.
+`vikings-remaster --dump STEPS FILE.png --zoom BY AT_STEP` writes what the window would show, to look at
+(`--rewind FROM UNTIL` holds the rewind over those steps).
 
 ## Playing
 The game reads your own copy of the original files from `gamedata/original/` (or `--data DIR`):

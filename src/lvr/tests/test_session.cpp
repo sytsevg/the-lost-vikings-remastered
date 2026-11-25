@@ -295,6 +295,74 @@ TEST_CASE("real data: Remaster rules' rewind goes back at twice the speed, and t
     CHECK(plain.at(39) == steps.at(39));
 }
 
+TEST_CASE("real data: Remaster rules' rewind: ten seconds a level, given again when a level starts, shown in a bar",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    // Level 2: its password's box answered, and then the Vikings stand.
+    const auto keys_of = [](int step) { return static_cast<std::uint16_t>(step < 6 && step % 2 != 0 ? key::kF : 0); };
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+    REQUIRE(opened);
+    Session& session = **opened;
+    // What the bar over the HUD shows of the rewind: how much is left (none: no bar).
+    const auto bar = [](const Screen& screen) { return screen.rewind_left.value_or(-1.0F); };
+    const auto back_for = [&session](int steps) {
+        session.rewind(true);
+        int went_back = 0;
+        for (int step = 0; step < steps; ++step) {
+            (void)session.step(0);
+            went_back += session.rewinding() ? 1 : 0;
+        }
+        session.rewind(false);
+        return went_back;
+    };
+    std::vector<Screen> shown;
+    for (int step = 0; step < 100; ++step) {
+        shown = session.step(keys_of(step));
+    }
+    CHECK(session.rewind_left() == Session::kRewindSteps);
+    CHECK(bar(shown.back()) == 1);
+
+    // Back no further than the level's start: its 100 steps, two a step.
+    CHECK(back_for(60) == 50);
+    CHECK(session.rewind_left() == Session::kRewindSteps - 100);
+    CHECK(bar(session.step(0).back()) == static_cast<float>(Session::kRewindSteps - 100) / Session::kRewindSteps);
+    // Played on for longer than is left (the password's box answered again): that much is gone back over, and then
+    // there is none.
+    for (int step = 0; step < 150; ++step) {
+        (void)session.step(step == 1 ? key::kF : std::uint16_t{0});
+    }
+    CHECK(back_for(60) == 50);  // 99 steps
+    CHECK(session.rewind_left() == 0);
+    CHECK(bar(session.step(0).back()) == 0);
+    CHECK(back_for(10) == 0);
+
+    // A level started (here by the cheat's F5: the one before) has all of it, and nothing before its start.
+    session.cheat();
+    (void)session.step(0, Play::MenuKeys{.previous_level = true});
+    shown = session.step(0);
+    CHECK(session.scene() == 0);
+    CHECK(session.rewind_left() == Session::kRewindSteps);
+    REQUIRE(shown.size() > 145);
+    CHECK_FALSE(shown.at(10).rewind_left);  // nothing over the fades
+    CHECK(bar(shown.back()) == 1);
+    CHECK(back_for(1) == 0);
+
+    // Only in a level being played: not from the game-over scene back into the level it ends (given up in the pause
+    // menu here).
+    for (int step = 0; step < 20; ++step) {
+        (void)session.step(keys_of(step));
+    }
+    (void)session.step(key::kEnter);
+    (void)session.step(key::kLeft);  // "yes"
+    (void)session.step(0);
+    (void)session.step(key::kF);
+    REQUIRE(session.scene() == scene::kGameOver);
+    CHECK(back_for(5) == 0);
+    CHECK_FALSE(session.step(0).back().rewind_left);  // and no bar
+}
+
 TEST_CASE("real data: the quicksave keeps the play and brings it back, with the cheat on only", "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");

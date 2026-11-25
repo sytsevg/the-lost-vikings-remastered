@@ -39,6 +39,9 @@ constexpr std::uint32_t kOverFragmentShader[] =
 constexpr std::uint32_t kMarkFragmentShader[] =
 #include "gpu_mark.frag.inc"
     ;
+constexpr std::uint32_t kGaugeFragmentShader[] =
+#include "gpu_gauge.frag.inc"
+    ;
 
 // How many pictures are kept for showing: more than two steps make (a change of scene is some 150), since the
 // last of a step is still shown while the next step's are drawn.
@@ -64,6 +67,11 @@ constexpr int kHudSpare = 31;  // (a pixel less than a tile: the panel's tiles s
 constexpr float kSlidePictures = 10;
 constexpr float kFadePictures = 7;
 constexpr int kMarkPictures = 18;  // the rewind's mark: shown this long, then away this long
+// The rewind's bar (Remaster rules), in the original's pixels from the minimap's corner: along its bottom, inside its
+// frame, with a frame as wide as a pixel and corners of this radius (two pixels cut off at each: one, then the next
+// row's first).
+constexpr std::array<float, 4> kGaugeAt{3, 54, 58, 7};  // left, top, width, height
+constexpr float kGaugeRadius = 3.5F;
 
 constexpr int kAtlasSize = 2048;
 constexpr int kTilesAcross = kAtlasSize / kTileSize;  // the tileset's tiles in the atlas, a row of them
@@ -193,6 +201,9 @@ struct GpuRenderer::State {
     // The mark of time running backwards: two triangles, flashing.
     SDL_GPUGraphicsPipeline* mark_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* mark_pipeline_own = nullptr;
+    // The rewind's bar.
+    SDL_GPUGraphicsPipeline* gauge_pipeline = nullptr;
+    SDL_GPUGraphicsPipeline* gauge_pipeline_own = nullptr;
     int marked = 0;       // for how many pictures in a row it has been wanted
     float made_room = 0;  // how far the HUD has slid aside for the minimap: 0 not at all, 1 all the way
     float faded_in = 0;   // how much of the minimap is there: 0 nothing, 1 all of it
@@ -275,6 +286,8 @@ struct GpuRenderer::State {
             SDL_ReleaseGPUGraphicsPipeline(device, over_pipeline_own);
             SDL_ReleaseGPUGraphicsPipeline(device, mark_pipeline_own);
             SDL_ReleaseGPUGraphicsPipeline(device, mark_pipeline);
+            SDL_ReleaseGPUGraphicsPipeline(device, gauge_pipeline_own);
+            SDL_ReleaseGPUGraphicsPipeline(device, gauge_pipeline);
             SDL_ReleaseGPUGraphicsPipeline(device, over_pipeline);
             SDL_ReleaseGPUTexture(device, palette_texture);
             SDL_ReleaseGPUGraphicsPipeline(device, show_pipeline_own);
@@ -402,7 +415,9 @@ std::expected<void, std::string> GpuRenderer::State::set_up() {
         shader(kOverFragmentShader, sizeof(kOverFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
     SDL_GPUShader* mark_fragment =
         shader(kMarkFragmentShader, sizeof(kMarkFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
-    if (over_fragment == nullptr || mark_fragment == nullptr) {
+    SDL_GPUShader* gauge_fragment =
+        shader(kGaugeFragmentShader, sizeof(kGaugeFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
+    if (over_fragment == nullptr || mark_fragment == nullptr || gauge_fragment == nullptr) {
         return sdl_error("the shaders");
     }
     const auto show_onto = [this, show_vertex](SDL_GPUTextureFormat format, SDL_GPUShader* fragment, bool blended) {
@@ -431,17 +446,22 @@ std::expected<void, std::string> GpuRenderer::State::set_up() {
     show_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, show_fragment, false);
     over_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, over_fragment, true);
     mark_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, mark_fragment, true);
+    gauge_pipeline_own = show_onto(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, gauge_fragment, true);
     if (window != nullptr) {
         show_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), show_fragment, false);
         over_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), over_fragment, true);
         mark_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), mark_fragment, true);
+        gauge_pipeline = show_onto(SDL_GetGPUSwapchainTextureFormat(device, window), gauge_fragment, true);
     }
     SDL_ReleaseGPUShader(device, show_vertex);
     SDL_ReleaseGPUShader(device, show_fragment);
     SDL_ReleaseGPUShader(device, over_fragment);
     SDL_ReleaseGPUShader(device, mark_fragment);
+    SDL_ReleaseGPUShader(device, gauge_fragment);
     if (show_pipeline_own == nullptr || over_pipeline_own == nullptr || mark_pipeline_own == nullptr ||
-        (window != nullptr && (show_pipeline == nullptr || over_pipeline == nullptr || mark_pipeline == nullptr))) {
+        gauge_pipeline_own == nullptr ||
+        (window != nullptr && (show_pipeline == nullptr || over_pipeline == nullptr || mark_pipeline == nullptr ||
+                               gauge_pipeline == nullptr))) {
         return sdl_error("the pipeline that shows");
     }
     return {};
@@ -1316,6 +1336,25 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         const SDL_GPUTextureSamplerBinding over_picture{.texture = over_texture, .sampler = smooth};
         SDL_BindGPUFragmentSamplers(pass, 0, &over_picture, 1);
         SDL_DrawGPUPrimitives(pass, kCorners, 1, 0, 0);
+        if (screen.rewind_left) {
+            // Along its bottom, the rewind's bar: what is left of the level's rewind. It comes and goes with it.
+            struct Gauge {  // gpu_gauge.frag
+                std::array<float, 4> size;
+                std::array<float, 4> left;
+            };
+            const auto pixel = static_cast<float>(scale);
+            const Placed bar{.dest = {placed.dest[0] + (kGaugeAt[0] * pixel), placed.dest[1] + (kGaugeAt[1] * pixel),
+                                      kGaugeAt[2] * pixel, kGaugeAt[3] * pixel},
+                             .source = {0, 0, kGaugeAt[2], kGaugeAt[3]},
+                             .size = placed.size,
+                             .unused = {}};
+            const Gauge gauge{.size = {kGaugeAt[2], kGaugeAt[3], kGaugeRadius, 1},
+                              .left = {std::clamp(*screen.rewind_left, 0.0F, 1.0F), faded_in, 0, 0}};
+            SDL_BindGPUGraphicsPipeline(pass, own ? gauge_pipeline_own : gauge_pipeline);
+            SDL_PushGPUVertexUniformData(commands, 0, &bar, sizeof(bar));
+            SDL_PushGPUFragmentUniformData(commands, 0, &gauge, sizeof(gauge));
+            SDL_DrawGPUPrimitives(pass, kCorners, 1, 0, 0);
+        }
     }
     // Time running backwards: two triangles pointing left in the screen's top right corner, flashing (about twice
     // a second; in a picture read back they are there). First dark, a pixel down and right, then light over it.

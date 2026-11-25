@@ -1,6 +1,6 @@
 #version 450
 // The minimap laid over what is shown: a square of its picture, smoothly scaled, with the Vikings on it and a frame
-// around it. The picture has the whole map, and in its alpha what of it was seen; what the view shows now is seen
+// around it, its corners rounded off in the original's pixels as the rewind's bar's. The picture has the whole map, and in its alpha what of it was seen; what the view shows now is seen
 // too, to the exact edge.
 layout(location = 0) in vec2 at;  // in the minimap's pixels; outside it where the square reaches past the level
 layout(location = 0) out vec4 colour;
@@ -17,6 +17,12 @@ float inside(vec2 point, vec4 box) {
     vec2 from = clamp(point - box.xy + 0.5, 0.0, 1.0);
     vec2 to = clamp(box.zw - point + 0.5, 0.0, 1.0);
     return from.x * from.y * to.x * to.y;
+}
+
+// How far `point` is outside a box of `half_size` around (0, 0) with corners of radius `radius`; less than 0 inside.
+float outside(vec2 point, vec2 half_size, float radius) {
+    vec2 corner = abs(point) - half_size + radius;
+    return length(max(corner, 0.0)) + min(max(corner.x, corner.y), 0.0) - radius;
 }
 
 void main() {
@@ -44,7 +50,14 @@ void main() {
             shown = mix(shown, colours[who], inside(at, box));
         }
     }
-    bool framed = at.x < window.x + line || at.y < window.y + line || at.x >= window.z - line ||
-                  at.y >= window.w - line;
+    // The frame and its corners in the original's pixels (`line` of the minimap's each), each one colour, judged by
+    // its middle: two pixels cut off each corner, as the rewind's bar's.
+    const float radius = 3.5;
+    vec2 half_square = (window.zw - window.xy) / line * 0.5;
+    vec2 pixel = floor((at - window.xy) / line) + 0.5 - half_square;
+    if (outside(pixel, half_square, radius) > 0.0) {
+        discard;
+    }
+    bool framed = outside(pixel, half_square - 1.0, radius - 1.0) > 0.0;
     colour = (framed ? vec4(0.59, 0.60, 0.67, 1.0) : vec4(shown, 0.94)) * vec4(1.0, 1.0, 1.0, size.w);
 }

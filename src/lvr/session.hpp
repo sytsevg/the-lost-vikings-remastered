@@ -106,12 +106,16 @@ class Session {
     }
 
     // Remaster rules' rewind (ADR-0011): while it is held, every step goes two steps back instead of one on (time
-    // runs backwards at twice its speed, with the pictures in between as they were), as far as the last ten
-    // seconds of play in levels reach; there it is over and the play goes on, until it is let go and held again.
-    // Live, the sound of those seconds is heard backwards meanwhile, twice as fast. What the minimap has seen is
-    // not taken back.
+    // runs backwards at twice its speed, with the pictures in between as they were). Only in a level being played,
+    // and never back past its start. A level has ten seconds of it, shown in a bar in the minimap, used up as they are
+    // gone back over and given again only when a level is started (that one again too). With nothing left to go
+    // back to, or none of them, the rewind is over and the play goes on, until it is let go and held again. Live,
+    // the sound of those seconds is heard backwards meanwhile, twice as fast. What the minimap has seen is not
+    // taken back.
     void rewind(bool held) noexcept { rewind_held_ = held; }
     bool rewinding() const noexcept { return rewinding_; }
+    static constexpr int kRewindSteps = 199;  // a level's ten seconds, in steps (ticks: three refreshes each)
+    int rewind_left() const noexcept { return rewind_left_; }  // of the level's steps of rewind
     // The quicksave, only with the game's cheat on (the title was given its password, or `cheat` below): the play
     // as it is now is kept, in a level; and brought back, from wherever the game is by then but a menu (the
     // game-over scene, for one). One is kept, until the game is closed. Acted on at the next step.
@@ -228,9 +232,13 @@ class Session {
         Play::MenuKeys keys;
     };
     // The play back at `step`'s start, and the pictures the step showed, made again; none if it was more than a
-    // plain tick. True in `another` if that was another scene than the one played.
-    std::vector<Screen> back_to(const Kept& step, bool& another);
-    std::deque<Kept> rewind_;  // the last steps in levels, the oldest first
+    // plain tick.
+    std::vector<Screen> back_to(const Kept& step);
+    // Whether a picture of `world` has the rewind's bar (in the minimap): in a level being played.
+    bool gauge_shown(const World& world) const;
+    std::deque<Kept> rewind_;  // the last steps of the level, the oldest first: no more than can be gone back over
+    int rewind_left_ = kRewindSteps;
+    std::uint32_t rewind_scene_ = 0;  // the scene (Play::scenes_started) those are of
     std::optional<Play::Snapshot> quick_;
     bool rewind_held_ = false;
     bool rewinding_ = false;    // the last step went back

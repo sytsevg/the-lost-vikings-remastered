@@ -245,7 +245,10 @@ class Play {
     // the change counts only when it is pressed again, and what a demo's end left in the word is gone.
     bool scene_loaded = false;
     bool ended = false;  // the game went on to a scene the engine doesn't have yet, or one couldn't be loaded
-    std::string error;   // why, if it couldn't
+    // How many scenes were started after the first: one more as `world` becomes the next scene's (a level started
+    // again too). Not the world's, so a snapshot brought back doesn't change it.
+    std::uint32_t scenes_started = 0;
+    std::string error;  // why, if it couldn't
 
   private:
     // After a tick (the original's 08C8): Alt+S switches the effects off or on, Alt+M the music.

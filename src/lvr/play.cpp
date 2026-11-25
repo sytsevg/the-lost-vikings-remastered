@@ -557,6 +557,7 @@ int Play::change_scene(const std::function<void()>& picture) {
     started.after_game_over = world.scene == scene::kGameOver;
     started.cues.insert(started.cues.begin(), world.cues.begin(), world.cues.end());
     world = std::move(started);
+    ++scenes_started;
     owned_ = std::move(loaded);
     loaded_ = owned_.get();
     cleared_.reset();

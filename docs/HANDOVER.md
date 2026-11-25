@@ -8,14 +8,16 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
 - **The whole game plays** under Vanilla rules with Classic visuals: all 37 levels and every scene, each kind of
   entity written by hand (`src/lvr/`), with Classic and Modern sound.
 - **It matches the original.** At every refresh of every replay the engine shows the picture and asks for the
-  sounds that the original's own bytecode did (the goldens in `replays/`), and `tools/lockstep.py` compares it
-  with the original in DOSBox directly.
+  sounds that the original's own bytecode did (the goldens in `replays/`; a scene's fade-out as the original's
+  screen shows it, since 2026-11-25), and `tools/lockstep.py` compares it with the original in DOSBox directly.
 - **It is published:** MIT, at <https://github.com/sytsevg/the-lost-vikings-remastered>. History is kept: new
   work is new commits; the user pushes.
 - **M7, the Remaster rules, is built** (`--rules remaster`): the GPU renderer, zoom-out, no limit on entities,
   a minimap, rewind, a quicksave, a profile on disk, and the game's state written out and read back. What each
   is and where it lives is in the next section.
 - **M8, the visuals**, is under way, before co-op (M9): smooth movement and parallax are built (below, "M8").
+  Since then the rewind has ten seconds a level, shown in a bar in the minimap (2026-11-25, next section; tried
+  by the user on the host and committed).
 
 ## What the Remaster rules have
 
@@ -43,18 +45,30 @@ only under Remaster rules; Vanilla rules must stay exactly what they are, and th
   right for it.
 - **Rewind** (`Session`, Backspace): `World` can be copied (its slots are `OwnedEntity`, whose copy is the
   entity's clone), and `Play::Snapshot` is a world with its level. `Session` keeps one before every step in a
-  level with the step's keys, 199 of them (10 seconds), and the last 10 seconds of the sound as it was heard,
-  for playing backwards. Going back undoes two steps a tick and runs each again from its snapshot for the
-  pictures in between (`Session::back_to`). Two triangles flash meanwhile (`gpu_mark.frag`).
+  level being played with the step's keys, and the last 10 seconds of the sound as it was heard, for playing
+  backwards. Going back undoes two steps a tick and runs each again from its snapshot for the pictures in
+  between (`Session::back_to`). Two triangles flash meanwhile (`gpu_mark.frag`). A level has 199 steps of it
+  (10 seconds, `Session::kRewindSteps`; the user, 2026-11-25): each step undone uses one, and no more steps are
+  kept than are left; a scene's start (`Play::scenes_started`, a level started again too) lets go of what was
+  kept and gives all 199 again. Only in a level being played: never back from the game-over scene.
+- **The rewind's bar** (2026-11-25): `Screen::rewind_left` (set by `Session::picture` in a level being played,
+  not over a fade) says how much is left; the GPU renderer draws the bar along the minimap's bottom when it draws
+  the minimap, faded in and out with it (`kGaugeAt` in `gpu.cpp`, in the original's pixels from the minimap's
+  corner; `gpu_gauge.frag`: in the original's pixels, each one colour, as the user asked, 85% opaque: a white frame with
+  two pixels cut off each corner, light grey inside from the left in whole columns, dark past that, and the
+  rewind's mark in its middle, dark on the grey and grey on the dark). The minimap's frame has the same corners
+  (`gpu_over.frag`). The Classic picture never has either. Turned down on the way there: a vertical gauge
+  framed as the text's boxes are, a smooth (anti-aliased) bar with a grey frame and a blue fill, and the bar
+  over the middle of the HUD's bottom row (it took too much from the original's HUD).
 - **State that can be written out** (`archive.hpp`): every kind's own state is the plain struct `Saved` nested in
   it (member `s`), `Entity`'s and `World`'s are `EntityState` and `WorldState`. `World::save` and `World::load`
   write and read all of it, fixed-width and field by field, with `kStateVersion` to tell versions apart.
 - **Quicksave** (F7 and F8, only with the game's cheat on: its password typed at the title, or `--cheat`): that
   written world as a file.
 - **Where their keys act** (2026-11-24): the zoom, the minimap's M and the quicksave's F7 act only in a level
-  being played (`Session::takes_play_keys`: not a scene, a demo, or the pause menu or quit box); F8 brings the
-  quicksave back from anywhere but a menu, and the rewind also goes from the game-over scene back into the level
-  just lost. A key that doesn't act is passed to the game like any other (any key ends a demo), so nothing
+  being played (`Session::takes_play_keys`: not a scene, a demo, or the pause menu or quit box), and so does
+  the rewind (since 2026-11-25: no longer from the game-over scene back into the level just lost); F8 brings the
+  quicksave back from anywhere but a menu. A key that doesn't act is passed to the game like any other (any key ends a demo), so nothing
   pressed in a scene is kept for the next level. The Classic/Modern sound switch (F12) works everywhere.
 - **The profile** (`profile.*`): the folder `profiles` beside the game's program, or `--profile DIR`. In it
   `minimap.txt` and `quicksave.bin`. What the game writes goes there, not into the user's home.
@@ -66,6 +80,22 @@ show the Classic picture, Remaster rules the Modern one. At the original's view 
 renderer must still make the Classic picture; under Remaster rules a visual may differ. Smooth movement first.
 The rest of the list is in [`ROADMAP.md`](ROADMAP.md): events in animations and effects on them, lights and
 shaders, art packs, sound placed by position.
+
+### Next
+- **The user picks the next M8 item.** In the roadmap's order that is the events for effects (a frame shown, a
+  sound asked for, an animation's end, reported by the engine) and then effects on them; "What effects have"
+  below says what the code has for it. Lights and shaders, art packs and the SNES sound are the others.
+- **The rewind's bar:** approved by the user on the host (2026-11-25). Put away with the minimap (M), the bar
+  goes too: whether it should stay then was not asked. The minimap's frame stays grey (the bar's is white).
+- **To ask the user first:** F8 (the quicksave's load) still acts outside a played level, from anywhere but a
+  menu (decided earlier; it acts at once rather than being kept for later). The user said no keys but the skip
+  keys in scenes; whether F8 stays as it is was asked and not yet answered. (The rewind's half of the question
+  was answered on 2026-11-25: only in a level being played.)
+- **Parallax in play:** judged so far on dumps, stills and pans in the container
+  (`gamedata/previews/parallax/`); how it looks moving is the user's to say on the host (the factory's brick
+  backdrop looks much like its walls, as on the console; no dimming, decided).
+
+The fixes of this round, for the record:
 
 - **A scene's fade-out shows everyone (fixed, 2026-11-24; both rules).** The end of a scene removes every entity
   (the original's game-over pass) before the 70 fade pictures, which were drawn from that empty world. The
@@ -84,6 +114,8 @@ shaders, art packs, sound placed by position.
   level's start: at (0, 0), stacked in the level's corner. `World::set_view` now leaves the creating to the next
   tick's start (`view_to_fill`, saved: kStateVersion 2), as the original creates what comes into view: right
   before its first turn. While the world holds, the newly shown part has no entities yet.
+How the visuals work so far:
+
 - **Smooth movement (built, 2026-11-24).** The GPU renderer keeps a picture as its list of
   atlas rectangles and draws it when it is shown, as large as it is shown (`GpuRenderer::keep`, `show`), with
   every entity's pieces and the camera moved evenly over the tick instead of in the original's three
@@ -109,8 +141,8 @@ shaders, art packs, sound placed by position.
   nothing moved: it must be the Classic picture. Everything beyond that has no golden: under Remaster rules
   `vikings-remaster --dump STEPS FILE.png` writes what the window would show (three times the size) for looking
   at in the container; `--zoom BY AT_STEP` zooms out, `--hold KEY` holds a key, `--tap KEY AT_STEP` presses one
-  (a level's password box waits for F), and `--moments N` writes the last step's pictures at N moments of their
-  refresh each. The user judges motion on the host. Timings in the renderer are counted in pictures (a zoom
+  (a level's password box waits for F), `--rewind FROM UNTIL` holds the rewind over those steps, and
+  `--moments N` writes the last step's pictures at N moments of their refresh each. The user judges motion on the host. Timings in the renderer are counted in pictures (a zoom
   change takes 20, a third of a second).
 
 ### Parallax (built, 2026-11-24)
@@ -197,7 +229,9 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   until its sizes and version are brought up to date).
 - **After a change to how the GPU renderer draws:** `lv-replay --check --gpu` on a replay or two.
 - **What only the eye can judge is tried before it is committed.** Since M7 the user tries a change on the host
-  first and says when to commit; stills for them go into `gamedata/previews/` (not in the repository).
+  first and says when to commit; stills for them go into `gamedata/previews/` (not in the repository). When a
+  new request comes while finished work is still uncommitted, say "let's commit this first" before starting it;
+  what is in the tree goes in as one commit, never rebuilt into several (the user, 2026-11-25).
 - **The game itself runs on the host**, not in the container (no display or sound there):
   `./build/release/bin/vikings-remaster --slot 0 --sound modern`, with `--rules remaster` for the Remaster rules.
   What a Remaster window would show can be written as a picture in the container (`--dump`, with `--zoom`).
@@ -209,7 +243,8 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
 - **Something new or in doubt about the original:** `tools/lockstep.py` plays the same input to the original in
   DOSBox and to the engine and compares the pictures ([`dosbox.md`](dosbox.md)). It starts at the first logo;
   with the cheat's password typed, F6 goes on a level at a time, and `--place` puts the Vikings where they are
-  needed. A run worth keeping becomes a replay.
+  needed. A run worth keeping becomes a replay. The user can also play it by hand on the host (a Wayland
+  session: `SDL_VIDEODRIVER=wayland`, [`dosbox.md`](dosbox.md), "By hand").
 - **A fault of the original is not copied.** When a comparison turns up an accident of the original (a stray
   write, a glitch pixel), trace it far enough to be sure, write it into [`quirks.md`](quirks.md) as "not kept", and
   leave it out.

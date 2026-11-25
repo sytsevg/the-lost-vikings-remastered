@@ -233,7 +233,9 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   level around the view, 64 cells a side, in the screen's bottom left corner, as high as the HUD. Each cell is
   coloured by what it is to the entities (ground, a platform, water, lava, spikes, electricity, a spring; a
   ladder dark with lighter rungs). Only what a view has shown is drawn, the rest is dark. On it the three
-  Vikings, the one being played framed; no enemies or other entities, and no outline of the view. It is drawn
+  Vikings, the one being played framed; no enemies or other entities, and no outline of the view. Its frame
+  is in the original's pixels with two cut off each corner, as the rewind's bar's (the user, 2026-11-25). It is
+  drawn
   smoothly at every refresh: the map scrolls with the view by fractions of a pixel, and what the view shows now
   and where the Vikings are is exact, not rounded to the map's cells. At the original's view the HUD moves right
   by a column of its stone tiles to make room (it slides aside, then the minimap fades in; the other way round
@@ -245,17 +247,23 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   stop at walls only and fly on through a slope's ground; zoomed out that is seen, so they burst there.
 - **The game-over letters drop in front of the Vikings** (Remaster rules): their pieces come from the front
   pool instead of the middle one, where they end up under the Vikings' figures in the original.
-- **Rewind** (built): while Backspace is held, time runs backwards at twice its speed, as far as the last 10
-  seconds of play in levels reach; there the rewind is over and the play goes on. Let go earlier, the play goes
-  on from where it is. The
-  pictures between the ticks are there as they were going forwards: a step that is undone is run again from
-  its snapshot with the keys it had, for its pictures. It crosses scenes: from the game-over scene back into
-  the level. The sound of those seconds is heard backwards meanwhile, twice as fast (the last 10 seconds of
-  what was played are kept), and the music then goes on from where it was. Two triangles flash in the
-  screen's top right corner while it runs. The minimap is not taken back. Only the 37 levels have it (and the
-  game-over scene, back into the level): anywhere else (the title, the village, a demo) what was kept is let
-  go. The zoom is the player's, not the play's: a step brought back keeps the view the zoom has, and so does a
-  quicksave brought back.
+- **Rewind** (built): while Backspace is held, time runs backwards at twice its speed; let go, the play goes on
+  from where it is. Only in a level being played (one of the 37; not a demo, a menu, or the game-over scene),
+  and never back past the level's start: what was kept is let go whenever a scene starts. A level has 10
+  seconds of it (the user, 2026-11-25), counted in the play gone back over (so 5 seconds of holding the key),
+  and gets them again only when a level is started, the same one again too (after the game-over scene, or the
+  cheat's F5 and F6); a quicksave brought back doesn't. A bar along the minimap's bottom shows what is left
+  (the user, 2026-11-25: in the minimap so as not to take from the original's HUD; simple, horizontal, and in the
+  original's pixels to go with the game, not smoothed, a little see-through): a white frame with two pixels cut
+  off each corner, light grey inside from the left as far as there is rewind left, dark past that, and the
+  rewind's mark (two triangles pointing left) in its middle, dark on the grey and grey on the dark. It is part of
+  the minimap: there when it is, faded in and out with it, and put away with it (M). With nothing left to go
+  back to, or none of the 10 seconds, the rewind is over and the play goes on. The pictures between the ticks are there as they were
+  going forwards: a step that is undone is run again from its snapshot with the keys it had, for its pictures.
+  The sound of those seconds is heard backwards meanwhile, twice as fast (the last 10 seconds of what was
+  played are kept), and the music then goes on from where it was. Two triangles flash in the screen's top
+  right corner while it runs. The minimap is not taken back. The zoom is the player's, not the play's: a step
+  brought back keeps the view the zoom has, and so does a quicksave brought back.
 - **A world can be copied**, which is what rewind and quicksave are: a snapshot is a copy of the `World` (each
   entity its own copy) with the level it belongs to. The rewind keeps one before every step. That a copy keeps
   everything is checked on the replays: `lv-replay --copies` replaces the world by a copy of itself before

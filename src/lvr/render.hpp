@@ -117,6 +117,9 @@ struct Screen {
     std::uint32_t refresh = 0;
     bool rewinding = false;  // the picture is one of time running backwards (Remaster rules): it is marked so
     bool fading = false;     // a scene's going dark or coming in: nothing is laid over it (the minimap)
+    // Remaster rules, in a level being played: how much of the level's rewind is left (0 to 1), shown in a bar along
+    // the minimap's bottom.
+    std::optional<float> rewind_left;
 };
 
 // What draws a view: draw() below, or something that is to make the same picture.

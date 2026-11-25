@@ -268,7 +268,13 @@ TEST_CASE("gpu: a kept picture is shown with its colours looked up") {
     CHECK(near(colour(*with, 54, 200), kRed));
     CHECK(colour(*with, 0, 200) == std::array<int, 3>{150, 153, 171});  // the frame
     CHECK(colour(*with, 30, 239) == colour(*with, 0, 200));
-    CHECK(colour(*with, 63, 176) == colour(*with, 0, 200));
+    CHECK(colour(*with, 63, 190) == colour(*with, 0, 200));
+    CHECK(colour(*with, 40, 176) == colour(*with, 0, 200));
+    CHECK(colour(*with, 61, 176) == colour(*with, 0, 200));  // its corners: two pixels cut off, then a step in
+    CHECK(colour(*with, 62, 177) == colour(*with, 0, 200));
+    CHECK(colour(*with, 63, 176) == colour(*shown, 30, 176));
+    CHECK(colour(*with, 62, 176) == colour(*shown, 29, 176));
+    CHECK(colour(*with, 63, 177) == colour(*shown, 30, 177));
     CHECK(colour(*with, 64 + 30, 200) == colour(*shown, 31 + 30, 200));  // the HUD, 33 to the right
     CHECK(colour(*with, 319, 200) == colour(*shown, 286, 200));
     CHECK(colour(*with, 100, 100) == colour(*shown, 100, 100));
@@ -335,6 +341,65 @@ TEST_CASE("gpu: a kept picture is shown with its colours looked up") {
     const auto without = gpu.shown(first, 1, &minimap);
     REQUIRE(without);
     CHECK(*without == *shown);
+
+    // Remaster rules' rewind bar along the minimap's bottom (3 to 60, rows 230 to 236), in the original's pixels
+    // and a little see-through: half of it left, the left half of its inside light grey (28 of 56 columns), the
+    // rest dark, in a white frame with two pixels cut off each corner; in its middle the rewind's mark (29 to 34,
+    // rows 231 to 235), dark on the light grey and light grey on the dark.
+    constexpr std::array<int, 3> kWhite{251, 251, 251};
+    constexpr std::array<int, 3> kGrey{170, 170, 170};
+    minimap = Minimap{.width = 96, .height = 96, .pixels = std::vector<std::uint8_t>(96 * 96 * 4, 255)};
+    const auto plain = gpu.shown(first, 1, &minimap);
+    REQUIRE(plain);
+    // Whether a pixel is a colour of the bar over the picture under it.
+    const auto over = [&](const std::vector<std::uint8_t>& from, std::size_t x, std::size_t y,
+                          const std::array<int, 3>& bar) {
+        const std::array<int, 3> is = colour(from, x, y);
+        const std::array<int, 3> under = colour(*plain, x, y);
+        bool close = true;
+        for (std::size_t i = 0; i < 3; ++i) {
+            const double wanted = (0.85 * bar.at(i)) + (0.15 * under.at(i));
+            close = close && std::abs(is.at(i) - wanted) <= 2;
+        }
+        return close;
+    };
+    first.rewind_left = 0.5F;
+    const auto bar = gpu.shown(first, 1, &minimap);
+    REQUIRE(bar);
+    CHECK(over(*bar, 4, 233, kGrey));
+    CHECK(over(*bar, 28, 233, kGrey));
+    CHECK(over(*bar, 35, 233, kDark));
+    CHECK(over(*bar, 59, 233, kDark));
+    CHECK(over(*bar, 29, 233, kDark));  // the mark's points, half way down: on the light grey
+    CHECK(over(*bar, 32, 233, kGrey));  // and on the dark
+    CHECK(over(*bar, 31, 231, kDark));  // the first triangle's back, at the top
+    CHECK(over(*bar, 30, 231, kGrey));  // and beside it
+    CHECK(over(*bar, 34, 235, kGrey));
+    CHECK(over(*bar, 20, 230, kWhite));  // the frame
+    CHECK(over(*bar, 60, 233, kWhite));
+    CHECK(over(*bar, 3, 233, kWhite));
+    CHECK(over(*bar, 5, 230, kWhite));  // a corner: cut off, then a step in
+    CHECK(over(*bar, 4, 231, kWhite));
+    CHECK(colour(*bar, 3, 230) == colour(*plain, 3, 230));
+    CHECK(colour(*bar, 4, 230) == colour(*plain, 4, 230));
+    CHECK(colour(*bar, 3, 231) == colour(*plain, 3, 231));
+    CHECK(colour(*bar, 2, 233) == colour(*plain, 2, 233));
+    CHECK(colour(*bar, 20, 237) == colour(*plain, 20, 237));
+    CHECK(colour(*bar, 150, 233) == colour(*plain, 150, 233));  // nothing over the HUD
+    first.rewind_left = 1.0F / 199;                             // any of it: a column
+    const auto least = gpu.shown(first, 1, &minimap);
+    REQUIRE(least);
+    CHECK(over(*least, 4, 233, kGrey));
+    CHECK(over(*least, 5, 233, kDark));
+    first.rewind_left = 0;
+    const auto none = gpu.shown(first, 1, &minimap);
+    REQUIRE(none);
+    CHECK(over(*none, 4, 233, kDark));
+    CHECK(over(*none, 29, 233, kGrey));  // the mark
+    // It comes and goes with the minimap: without it, nothing.
+    CHECK(colour(*gpu.shown(first, 1), 20, 233) == colour(*shown, 20, 233));
+    first.rewind_left.reset();
+    CHECK(colour(*gpu.shown(first, 1, &minimap), 20, 233) == colour(*plain, 20, 233));
 }
 
 TEST_CASE("gpu: a kept picture is drawn as it is shown: what moves between ticks, as large as it is shown") {

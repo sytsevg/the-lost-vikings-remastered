@@ -13,11 +13,12 @@
 //       play, from scene N (default 39, the first logo; 0-36 are the levels); FILE: other keys, lines
 //       "KEY NAME = action" (input/input.hpp). F12 switches between the Classic and the Modern sound.
 //   vikings-remaster [--data DIR] [--slot N] --dump STEPS FILE.png [--wav FILE.wav] [--zoom BY AT_STEP]
-//                    [--hold KEY] [--tap KEY AT_STEP] [--moments N]
+//                    [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] [--moments N]
 //       run STEPS steps without a window and without a key (or with KEY held, a name as in a keys file; and the
 //       key of --tap alone at step AT_STEP, for what waits for a key to be pressed: a level's password), write
-//       the last picture (and the sound). Under Remaster rules, --moments: the last step's pictures each at N
-//       moments of its refresh as well, FILE-P-M.png, for what moves between ticks
+//       the last picture (and the sound). Under Remaster rules, --rewind: the rewind held from step FROM until
+//       step UNTIL; --moments: the last step's pictures each at N moments of its refresh as well, FILE-P-M.png,
+//       for what moves between ticks
 //
 // Keys: arrows, Ctrl/Home and Ins/PgUp (switch Viking), E, S, D, F/Space/Enter, Esc/P (pause; Y, N), Tab
 // (inventory), Alt+X, Alt+Q, F10 (quit) as in the original; a gamepad as the original's joystick (A/B/X/Y: F, D, E,
@@ -113,6 +114,8 @@ struct DumpOptions {
     std::uint16_t held = 0;
     std::uint16_t tapped = 0;
     int tap_at = -1;
+    int rewind_from = -1;   // the rewind held from this step ...
+    int rewind_until = -1;  // ... until this one
     int moments = 0;
 };
 
@@ -127,6 +130,7 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
         if (step == options.zoom_at && options.zoom != 0 && !session.zoom(options.zoom)) {
             std::println(stderr, "--zoom: step {} is not in a level being played (Remaster rules): no zoom", step);
         }
+        session.rewind(step >= options.rewind_from && step < options.rewind_until);
         frames = session.step(step == options.tap_at ? options.tapped : options.held);
         refreshes += frames.size();
         if (!frames.empty()) {
@@ -520,6 +524,10 @@ int main(int argc, char* argv[]) try {
         } else if (number && args[i] == "--moments") {
             dumping.moments = *number;
             ++i;
+        } else if (const auto until = parse_number(value(2)); number && until && args[i] == "--rewind") {
+            dumping.rewind_from = *number;
+            dumping.rewind_until = *until;
+            i += 2;
         } else if (const auto step = parse_number(value(2)); step && args[i] == "--tap") {
             tapped = args[i + 1];
             dumping.tap_at = *step;
@@ -537,7 +545,8 @@ int main(int argc, char* argv[]) try {
                 "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--sound classic|modern] "
                 "[--soundfont FILE] [--rules vanilla|remaster] [--cheat] [--slow-frames] [--profile DIR] "
                 "[--dump STEPS "
-                "FILE.png [--wav FILE.wav] [--zoom BY AT_STEP] [--hold KEY] [--tap KEY AT_STEP] [--moments N]]");
+                "FILE.png [--wav FILE.wav] [--zoom BY AT_STEP] [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] "
+                "[--moments N]]");
             return EXIT_FAILURE;
         }
     }
