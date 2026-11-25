@@ -491,7 +491,8 @@ Screen Session::picture(bool dimmed) {
         constexpr float kLevels = 63;
         const float brightness =
             play_.fade ? std::max(0.0F, kLevels - static_cast<float>(*play_.fade)) / kLevels : 1.0F;
-        effects_.add(world, play_.graphics(), view, screen, moving_ && !play_.fade, brightness);
+        // (Under the original's pause box or quit box the world holds, and so does what it gives off: the user.)
+        effects_.add(world, play_.graphics(), view, screen, moving_ && !play_.fade && !play_.in_menu(), brightness);
     }
     draw_(screen, view, play_.graphics(), shared_);
     if (view.hud && gauge_shown(world) && !play_.fade) {  // (not laid over a scene's fades, as the minimap isn't)

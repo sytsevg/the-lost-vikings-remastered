@@ -968,3 +968,41 @@ TEST_CASE("real data: the game's state as bytes for one joining online: short, t
     CHECK_FALSE(Session::scene_of(another).has_value());
     CHECK((*other)->state_hash() == before);
 }
+
+TEST_CASE("real data: Remaster rules' effects hold still under the original's pause box, as the world does",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    // Level 4, the view held on an electric barrier: its light flickers and it sparks, a picture at a time.
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 3, {}, Rules::kRemaster);
+    REQUIRE(opened);
+    Session& session = **opened;
+    session.set_effects(true);
+    for (int step = 0; step < 30; ++step) {
+        if (step == 8) {
+            REQUIRE(session.hold_view(730, 328, 384, 224));
+        }
+        session.step(static_cast<std::uint16_t>(step < 6 && step % 2 != 0 ? key::kF : 0));
+    }
+    // Whether the lights or the sparks change from one picture to the next, over 40 steps (a step that shows no
+    // picture of its own, as the one the pause box opens in, leaves the one before).
+    Screen last = session.step(0).back();
+    const auto lights_change = [&] {
+        bool changed = false;
+        for (int step = 0; step < 40; ++step) {  // (the box's word blinks every 16th step: a picture anew)
+            for (Screen& now : session.step(0)) {
+                changed =
+                    changed || now.lights != last.lights || now.motion.sprites.size() != last.motion.sprites.size();
+                last = std::move(now);
+            }
+        }
+        return changed;
+    };
+    CHECK(lights_change());
+    // The pause box (Enter; the tick it opens in still moves the world): from its first picture on nothing moves,
+    // though the box's word blinks (were it not open, they would).
+    CHECK(session.step(key::kEnter).empty());
+    last = session.step(0).back();
+    CHECK_FALSE(lights_change());
+}

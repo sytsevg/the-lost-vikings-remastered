@@ -104,6 +104,8 @@ struct Light {
     float half_height = 0;
     float reach = 0;
     std::array<float, 3> colour{};
+
+    bool operator==(const Light&) const = default;
 };
 inline constexpr std::size_t kMostLights = 64;  // a picture's most (gpu_show.frag takes as many)
 
