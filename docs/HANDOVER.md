@@ -403,6 +403,9 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   A/B, self-playing scenes ended by an action key, Enter or Escape only. In the tests: the original ignores a
   player's keys while his Viking is out of his view (`check_viking_in_view`), so after a switch wait for the view
   to come over.
+- **Too many tests (the user, 2026-11-25):** the unit tests and the replays' goldens, saves, copies and rollback
+  are "way too many"; to be cut back a lot, later (a proposal first: which replay modes to merge or drop, which
+  unit tests the replays already cover).
 - **Not checked by anything but the eye:** whatever the GPU renderer shows beyond the original's view, and
   whether a level still plays well zoomed out (enemies run for longer and further; nothing resets as often).
 - **The GPU renderer has run on one graphics card** (the user's) and the container's software driver. Vulkan
