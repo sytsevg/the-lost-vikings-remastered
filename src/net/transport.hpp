@@ -50,6 +50,8 @@ class Transport {
     void send(int peer, std::span<const std::uint8_t> bytes, Channel channel);
     // Host: lets a client go.
     void drop(int peer);
+    // Waits up to `wait_ms` for what was sent reliably to have gone (before this machine leaves the game).
+    void drain(int wait_ms);
     // The last round trip to the peer, in milliseconds, once a ping has come back.
     std::optional<int> round_trip_ms(int peer) const;
     // Whether UDP gets through to the peer (else the fast messages go over TCP).

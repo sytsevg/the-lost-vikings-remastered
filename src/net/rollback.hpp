@@ -20,12 +20,20 @@ namespace lvr::net {
 inline constexpr std::size_t kInputBytes = 16;
 inline constexpr int kMostPlayers = 3;
 
-// One player's input for one step, as bytes: what they mean is the game's.
+// One player's input for one step, as bytes: what they mean is the game's, but for the last byte's first bit: the
+// player is gone (leave).
 struct Input {
     std::array<std::uint8_t, kInputBytes> bytes{};
 
     bool operator==(const Input&) const = default;
 };
+inline constexpr std::size_t kGoneByte = kInputBytes - 1;
+// The input of a player who is gone: nothing, and the bit that says so.
+constexpr Input gone_input() noexcept {
+    Input input;
+    input.bytes[kGoneByte] = 1;
+    return input;
+}
 
 // What rollback drives: the game, a step at a time.
 class Game {
@@ -75,7 +83,7 @@ class Rollback {
     // step that was run with another input (a prediction that was wrong) has that step run again at the next
     // advance.
     void add_remote(int player, std::uint32_t step, const Input& input);
-    // From step `from` on the player is gone: his input is nothing (Input{}), known for every step.
+    // From step `from` on the player is gone: his input is gone_input(), known for every step.
     void leave(int player, std::uint32_t from);
 
     // The next step: run it, after running again what a wrong prediction spoiled. False: it can't be run yet (this
@@ -93,6 +101,10 @@ class Rollback {
     // The local inputs from step `from` on, as they are to be sent (all the others haven't acknowledged).
     std::vector<std::pair<std::uint32_t, Input>> local_from(std::uint32_t from) const {
         return known_from(settings_.local, from);
+    }
+    // Every player's input for a confirmed step (none for one that isn't): what a log of the game keeps.
+    std::optional<std::vector<Input>> inputs_at(std::uint32_t step) const {
+        return step < confirmed() ? std::optional{inputs_for(step)} : std::nullopt;
     }
     // Any player's inputs known without a gap from step `from` on: what the host passes on to the others.
     std::vector<std::pair<std::uint32_t, Input>> known_from(int player, std::uint32_t from) const;

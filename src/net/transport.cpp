@@ -397,6 +397,15 @@ void Transport::send(int peer, std::span<const std::uint8_t> bytes, Channel chan
     }
 }
 
+void Transport::drain(int wait_ms) {
+    const std::scoped_lock held{inner_->lock};
+    for (Inner::Peer& peer : inner_->peers) {
+        if (peer.stream != nullptr) {
+            (void)NET_WaitUntilStreamSocketDrained(peer.stream, wait_ms);
+        }
+    }
+}
+
 void Transport::drop(int peer) {
     const std::scoped_lock held{inner_->lock};
     if (Inner::Peer* gone = inner_->find(peer)) {

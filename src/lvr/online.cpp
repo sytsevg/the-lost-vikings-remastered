@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <fstream>
 #include <utility>
 
 #include "lvr/archive.hpp"
@@ -334,12 +335,56 @@ std::expected<void, std::string> NetGame::flush() {
     while (const std::optional<std::uint64_t> hash = rollback_->hash_at(hash_sent_)) {
         broadcast(net::Hash{.player = static_cast<std::uint8_t>(player_), .step = hash_sent_, .hash = *hash},
                   net::Channel::kReliable);
+        hashes_.emplace_back(hash_sent_, *hash);
         hash_sent_ += 8;
     }
     if (const std::optional<std::uint32_t> out = rollback_->out_of_step()) {
-        return std::unexpected{std::format("out of step with another machine at step {}", *out)};
+        std::string written;
+        if (!logged_ && !log_folder_.empty()) {  // what went before, for lv-replay --coop
+            logged_ = true;
+            std::error_code ignored;
+            std::filesystem::create_directories(log_folder_, ignored);
+            const std::filesystem::path file =
+                log_folder_ / std::format("coop-{}-player{}.log", identity_.build, player_ + 1);
+            std::ofstream out_file{file};
+            out_file << log();
+            written = out_file ? std::format(" (the game's log: {})", file.string()) : std::string{};
+        }
+        return std::unexpected{std::format("out of step with another machine at step {}{}", *out, written)};
     }
     return {};
+}
+
+void NetGame::quit() {
+    if (!hosting() && transport_) {
+        send(0, net::Quit{}, net::Channel::kReliable);
+        transport_->drain(500);
+    }
+}
+
+std::string NetGame::log() const {
+    const Joined joined = joined_.value_or(Joined{});
+    std::string text = std::format("coop 1\nbuild {}\nslot {}\nplayers {}\ncheat {}\nplayer {}\n", identity_.build,
+                                   joined.slot, joined.players, joined.cheat ? 1 : 0, joined.player);
+    const std::uint32_t confirmed = rollback_ ? std::min(rollback_->confirmed(), rollback_->step()) : 0;
+    for (std::uint32_t step = 0; rollback_ && step < confirmed; ++step) {
+        const std::optional<std::vector<net::Input>> inputs = rollback_->inputs_at(step);
+        if (!inputs) {
+            break;
+        }
+        text += std::format("step {}", step);
+        for (const net::Input& input : *inputs) {
+            text += ' ';
+            for (const std::uint8_t byte : input.bytes) {
+                text += std::format("{:02x}", byte);
+            }
+        }
+        text += '\n';
+    }
+    for (const auto& [step, hash] : hashes_) {
+        text += std::format("hash {} {:016x}\n", step, hash);
+    }
+    return text;
 }
 
 bool NetGame::wants_input() const {

@@ -5,7 +5,11 @@
 // view from this step on), and, the host's only, the character typed and the menu keys.
 
 #include <cstdint>
+#include <expected>
+#include <filesystem>
+#include <optional>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "lvr/session.hpp"
@@ -17,6 +21,11 @@ namespace lvr {
 // first, has the character typed and the menu keys).
 net::Input pack(const StepInput& input, int player);
 StepInput unpack(std::span<const net::Input> inputs);
+
+// A log of a game online (NetGame::log) played again: the game started as it was, every step run on every player's
+// input as the log has it. The first step whose state's hash isn't the log's; none: all of them are.
+std::expected<std::optional<std::uint32_t>, std::string> replay_log(const std::filesystem::path& game_files,
+                                                                    std::string_view log);
 
 class CoopGame : public net::Game {
   public:

@@ -175,3 +175,10 @@ TEST_CASE("coop: a step's input as bytes and back; what is pressed once isn't pr
     CHECK_FALSE(back.menu.quit);
     CHECK(pack(input, 1).bytes[12] == 0);  // only the host's has them
 }
+
+TEST_CASE("coop: a player gone is so in the step's input") {
+    const std::vector<net::Input> inputs{net::Input{}, net::gone_input()};
+    const StepInput input = unpack(inputs);
+    CHECK_FALSE(input.players[0].gone);
+    CHECK(input.players[1].gone);
+}

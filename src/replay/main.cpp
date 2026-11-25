@@ -14,6 +14,8 @@
 //                      must keep everything a replay needs
 //       --saves        the world written out and read back (lvr/archive.hpp) before every step: what is written
 //                      must be all of it
+//   lv-replay --coop LOG                   a log of a game online that went out of step (NetGame::log) played again:
+//                                           the first step whose state isn't the log's, or that all are
 //       --rollback N   GGPO's sync test (ADR-0012): before every step the last N run again from the snapshot
 //                      before them, without pictures; they must come to the same state, and the play goes on from
 //                      there
@@ -34,12 +36,14 @@
 #include <memory>
 #include <optional>
 #include <print>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "assets/graphics.hpp"
 #include "image/png.hpp"
+#include "lvr/coop.hpp"
 #include "lvr/gpu.hpp"
 #include "replay/golden.hpp"
 #include "replay/player.hpp"
@@ -213,6 +217,23 @@ void print_usage() {
 int run_all(int argc, char** argv) {
     Options options;
     const std::vector<std::string_view> args(argv + 1, argv + argc);
+    if (args.size() >= 2 && args[0] == "--coop") {  // a game online's log
+        std::ifstream file{std::string{args[1]}};
+        std::stringstream text;
+        text << file.rdbuf();
+        const fs::path data = args.size() >= 4 && args[2] == "--data" ? fs::path{args[3]} : options.data;
+        const auto replayed = replay_log(data, text.str());
+        if (!file || !replayed) {
+            std::println(stderr, "{}: {}", args[1], replayed ? "can't be read" : replayed.error());
+            return EXIT_FAILURE;
+        }
+        if (*replayed) {
+            std::println("{}: the state after step {} isn't the log's", args[1], **replayed);
+            return EXIT_FAILURE;
+        }
+        std::println("{}: every step's state is the log's", args[1]);
+        return EXIT_SUCCESS;
+    }
     for (std::size_t i = 0; i < args.size(); ++i) {
         const std::string_view arg = args[i];
         if (arg == "--record") {

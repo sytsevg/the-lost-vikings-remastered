@@ -1,6 +1,10 @@
 #include "lvr/coop.hpp"
 
 #include <array>
+#include <format>
+#include <map>
+#include <sstream>
+#include <string>
 #include <utility>
 
 namespace lvr {
@@ -9,6 +13,7 @@ namespace {
 
 constexpr std::size_t kTyped = 12;  // where the host's own bytes are
 constexpr std::size_t kMenu = 14;
+static_assert(net::kGoneByte == 15);  // the last: whether he is gone (net::gone_input)
 
 void put16(net::Input& input, std::size_t at, std::uint16_t value) {
     input.bytes.at(at) = static_cast<std::uint8_t>(value & 0xffU);
@@ -68,12 +73,81 @@ StepInput unpack(std::span<const net::Input> inputs) {
         own.pace = Pace{.across = packed.bytes[2], .up_down = packed.bytes[3]};
         own.zoom = {static_cast<std::int16_t>(get16(packed, 4)), static_cast<std::int16_t>(get16(packed, 6))};
         own.view = {static_cast<std::int16_t>(get16(packed, 8)), static_cast<std::int16_t>(get16(packed, 10))};
+        own.gone = (packed.bytes[net::kGoneByte] & 1U) != 0;
     }
     if (!inputs.empty()) {
         input.typed = get16(inputs.front(), kTyped);
         input.menu = menu_of(inputs.front().bytes[kMenu]);
     }
     return input;
+}
+
+std::expected<std::optional<std::uint32_t>, std::string> replay_log(const std::filesystem::path& game_files,
+                                                                    std::string_view log) {
+    int slot = 0;
+    int players = 1;
+    bool cheat = false;
+    std::vector<std::vector<net::Input>> steps;
+    std::map<std::uint32_t, std::uint64_t> hashes;
+    std::istringstream lines{std::string{log}};
+    std::string line;
+    int number = 0;
+    while (std::getline(lines, line)) {
+        ++number;
+        std::istringstream words{line};
+        std::string word;
+        words >> word;
+        const auto bad = [&] { return std::unexpected{std::format("line {}: can't be read: {}", number, line)}; };
+        if (word == "slot") {
+            words >> slot;
+        } else if (word == "players") {
+            words >> players;
+        } else if (word == "cheat") {
+            int on = 0;
+            words >> on;
+            cheat = on != 0;
+        } else if (word == "step") {
+            std::uint32_t step = 0;
+            words >> step;
+            if (step != steps.size()) {
+                return bad();
+            }
+            std::vector<net::Input>& inputs = steps.emplace_back();
+            std::string hex;
+            while (words >> hex) {
+                net::Input& input = inputs.emplace_back();
+                if (hex.size() != input.bytes.size() * 2) {
+                    return bad();
+                }
+                for (std::size_t i = 0; i < input.bytes.size(); ++i) {
+                    input.bytes.at(i) = static_cast<std::uint8_t>(std::stoul(hex.substr(i * 2, 2), nullptr, 16));
+                }
+            }
+        } else if (word == "hash") {
+            std::uint32_t step = 0;
+            std::string hex;
+            words >> step >> hex;
+            hashes[step] = std::stoull(hex, nullptr, 16);
+        }
+        if (words.fail() && !words.eof()) {
+            return bad();
+        }
+    }
+    auto opened = Session::open(game_files, slot, {}, Rules::kRemaster, draw, Online{.on = true, .players = players});
+    if (!opened) {
+        return std::unexpected{opened.error()};
+    }
+    Session& session = **opened;
+    if (cheat) {
+        session.cheat();
+    }
+    for (std::uint32_t step = 0; step < steps.size(); ++step) {
+        session.run_again(unpack(steps.at(step)), step);
+        if (const auto logged = hashes.find(step); logged != hashes.end() && session.state_hash() != logged->second) {
+            return step;
+        }
+    }
+    return std::nullopt;
 }
 
 void CoopGame::advance(std::span<const net::Input> inputs, std::uint32_t step, bool shown) {

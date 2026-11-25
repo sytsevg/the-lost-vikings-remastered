@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -76,6 +77,14 @@ class NetGame {
     std::optional<int> network_ms(int player) const;
     std::optional<int> engine_ms(int player) const;
     int player() const noexcept { return player_; }
+    // This machine leaves the game: a client tells the host (and waits a moment for that to go); the host's leaving
+    // the others see as the host gone.
+    void quit();
+    // Where a log is written if the machines go out of step (a folder; none: not written): the game's start, every
+    // player's input for every confirmed step, and this machine's hashes, for `lv-replay --coop` to play again.
+    void set_log_folder(std::filesystem::path folder) { log_folder_ = std::move(folder); }
+    // The log as it would be written now.
+    std::string log() const;
     bool hosting() const noexcept { return transport_->hosting(); }
 
   private:
@@ -111,7 +120,10 @@ class NetGame {
     std::vector<std::optional<int>> engine_;
     std::array<std::uint16_t, net::kMostPlayers> host_network_{net::kUnknown, net::kUnknown, net::kUnknown};
     std::array<std::uint16_t, net::kMostPlayers> host_engine_{net::kUnknown, net::kUnknown, net::kUnknown};
-    std::uint32_t echoed_at_ = 0;  // when the last echoes went out
+    std::uint32_t echoed_at_ = 0;                                  // when the last echoes went out
+    std::vector<std::pair<std::uint32_t, std::uint64_t>> hashes_;  // this machine's, as they were sent
+    std::filesystem::path log_folder_;
+    bool logged_ = false;
 };
 
 }  // namespace lvr

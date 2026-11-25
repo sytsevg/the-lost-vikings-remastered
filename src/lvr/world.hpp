@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <ranges>
 #include <span>
 #include <vector>
 
@@ -101,6 +102,7 @@ struct PlayerInput {
     Pace pace;
     std::array<std::int16_t, 2> zoom{};
     std::array<std::int16_t, 2> view{};
+    bool gone = false;  // online: he left the game (from this step on)
 };
 
 // The keys the menus read as held, apart from the keyboard word: the first player's.
@@ -150,6 +152,8 @@ struct Player {
     // Remaster rules' zoom changed the view: the placements it shows are created at the next tick's start (set_view)
     bool view_to_fill = false;
     Inventory inventory;  // his, on his Viking's items (the HUD shows everyone's)
+    // Online: he is in the game. One who left keeps his place among the players, without a Viking or a view.
+    bool here = true;
     // Online: what was said to him alone (a hint, a remark, someone to talk to: World::Aside). The lines, the next
     // to show, those shown since the last clear (each view draws them where they are), and whether one waits for
     // his action key. It holds nobody: his Viking stands meanwhile.
@@ -483,6 +487,12 @@ class World : public WorldState {
     std::span<const Player> playing() const noexcept {
         return std::span{players}.first(static_cast<std::size_t>(player_count));
     }
+    // The players whose views make the active area: those still in the game.
+    auto views() noexcept { return playing() | std::views::filter(&Player::here); }
+    auto views() const noexcept { return playing() | std::views::filter(&Player::here); }
+    // Online: a player leaves the game. His Viking goes to the first in its line of viewers, or to nobody; his view
+    // no longer makes the active area.
+    void player_leaves(int player);
     // The player whose keys the Viking in `slot` goes by: his own, or the last one's who played him.
     const Player& keys_of(int slot) const {
         const bool viking = slot >= 0 && slot < kVikingSlots;

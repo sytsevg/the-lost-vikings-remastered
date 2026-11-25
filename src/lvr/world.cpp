@@ -124,7 +124,7 @@ void World::remove(int slot) {
     }
     if (!ending && entity->placement >= 0 && entity->has_flag(entity_flag::kCreatedAgainAtOnce)) {
         const Entity* again = nullptr;
-        for (const Player& player : playing()) {  // in any player's view
+        for (const Player& player : views()) {  // in any player's view
             const Camera& camera = player.camera;
             again = create_if_in(entity->placement, View{.left = wrapped(camera.x - kMargin),
                                                          .right = wrapped(camera.x + camera.view_width + kMargin),
@@ -184,7 +184,7 @@ Entity* World::create_if_in(int index, const View& view) {
 }
 
 void World::create_in_views() {
-    for (const Player& player : playing()) {
+    for (const Player& player : views()) {
         create_in_view(player, ViewPart::kWhole);
     }
 }
@@ -323,7 +323,7 @@ void World::hold_camera(int x, int y, int width, int height) {
 }
 
 void World::create_scrolled_in() {
-    for (Player& player : playing()) {
+    for (Player& player : views()) {
         const int across = cell_of(player.camera.x);
         if (across != player.strip_x) {
             const bool left = wrapped(across) < wrapped(player.strip_x);
@@ -504,6 +504,20 @@ void World::move_player(int who, int slot) {
     }
 }
 
+void World::player_leaves(int player) {
+    Player& gone = players.at(static_cast<std::size_t>(player));
+    if (!gone.here) {
+        return;
+    }
+    move_player(player, kNobody);  // (his Viking to the first in its line)
+    gone.here = false;
+    gone.held = gone.pressed = 0;
+    gone.lines.clear();
+    gone.next_line = 0;
+    gone.said.clear();
+    gone.waiting_for_key = false;
+}
+
 void World::choose_vikings() {
     for (int i = 0; i < player_count; ++i) {
         Player& player = players.at(static_cast<std::size_t>(i));
@@ -663,7 +677,7 @@ void World::tick_part(int part) {
     if (part == 0) {
         switch_viking();
         check_viking_in_view();
-        for (Player& player : playing()) {
+        for (Player& player : views()) {
             if (std::exchange(player.view_to_fill, false)) {
                 create_in_view(player, ViewPart::kWhole);
             }
@@ -749,7 +763,7 @@ void World::run(int part, bool starting) {
     // Vikings are taken moves its director to scroll.)
     // The tick's first picture measures how far the Viking is out of the box; the other two only move their share
     // of that, also when he died in between (the last Viking's death leaves nobody to follow).
-    for (Player& player : playing()) {  // each player's view his Viking
+    for (Player& player : views()) {  // each player's view his Viking
         Camera& camera = player.camera;
         if (camera_held) {
             camera.moved_x = camera.moved_y = 0;
@@ -1106,7 +1120,7 @@ void World::mark_outside_active_area() {
             continue;
         }
         if (std::ranges::all_of(
-                playing(), [entity](const Player& player) { return outside(*entity, active_area(player.camera)); })) {
+                views(), [entity](const Player& player) { return outside(*entity, active_area(player.camera)); })) {
             entity->set_flag(entity_flag::kLeftTheActiveArea);
         }
     }
@@ -1122,10 +1136,10 @@ bool World::at_edge_of_view(const Entity& entity, bool across, bool forwards, in
         return forwards ? at >= edge : at < edge;
     };
     const auto in_area = [&entity](const Player& player) { return !outside(entity, active_area(player.camera)); };
-    if (std::ranges::none_of(playing(), in_area)) {
-        return std::ranges::all_of(playing(), past);
+    if (std::ranges::none_of(views(), in_area)) {
+        return std::ranges::all_of(views(), past);
     }
-    return std::ranges::all_of(playing(), [&](const Player& player) { return !in_area(player) || past(player); });
+    return std::ranges::all_of(views(), [&](const Player& player) { return !in_area(player) || past(player); });
 }
 
 }  // namespace lvr

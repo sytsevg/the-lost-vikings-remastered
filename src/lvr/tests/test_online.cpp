@@ -7,6 +7,7 @@
 #include <memory>
 #include <thread>
 
+#include "lvr/coop.hpp"
 #include "lvr/online.hpp"
 #include "lvr/session.hpp"
 
@@ -124,4 +125,17 @@ TEST_CASE("real data: a host and a client play level 1 online, the same game", "
     CHECK((*client)->engine_ms(1).has_value());
     CHECK_FALSE(host->network_ms(0).has_value());
     CHECK_FALSE((*client)->network_ms(0).has_value());
+    // The game's log, as it would be written if the machines went out of step: played again it comes to the same
+    // states; one hash spoiled, the replay says at which step.
+    const std::string log = host->log();
+    REQUIRE(log.find("hash 7 ") != std::string::npos);
+    const auto replayed = replay_log(LVR_ORIGINAL_DIR, log);
+    REQUIRE(replayed);
+    CHECK_FALSE(replayed->has_value());
+    std::string spoiled = log;
+    const std::size_t at = spoiled.find("hash 15 ") + std::string_view{"hash 15 "}.size();
+    spoiled.at(at) = spoiled.at(at) == '0' ? '1' : '0';
+    const auto found = replay_log(LVR_ORIGINAL_DIR, spoiled);
+    REQUIRE(found);
+    CHECK(*found == std::optional<std::uint32_t>{15});
 }

@@ -352,3 +352,21 @@ TEST_CASE("players: the cue ledger plays what a step asks once, however often ro
     ledger.confirm(11);
     CHECK(ledger.steps_kept() == 1);
 }
+
+TEST_CASE("players: one who leaves hands his Viking to the first in its line, and his view keeps nothing active") {
+    Room room(3);
+    room.world.move_player(1, 0);  // the second watches Erik, whom the first plays
+    room.world.host().camera.x = 0;
+    room.world.players[1].camera.x = 0;
+    room.world.players[2].camera.x = 600;  // the third's view: far off, with something in it
+    Entity* there = room.world.create({.kind = 99, .x = 800, .y = 200});
+    REQUIRE(there != nullptr);
+    room.world.player_leaves(0);
+    CHECK_FALSE(room.world.host().here);
+    CHECK(room.world.host().viking == kNobody);
+    CHECK(room.world.player_of(0) == 1);  // Erik is the second's now
+    room.world.player_leaves(2);          // the third goes too: nobody's view has it any more
+    CHECK(room.world.player_of(2) == kNobody);
+    room.world.mark_outside_active_area();
+    CHECK(there->has_flag(entity_flag::kLeftTheActiveArea));
+}

@@ -361,9 +361,13 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   simulated network against one with every input (`test_coop.cpp`), a host and a client in one process through the
   real transport (`test_online.cpp`), and two `--dump` processes over 127.0.0.1 (stills in
   `gamedata/previews/coop/`). The bug they found: `Session::input_of` put this machine's keys in the first player's
-  place. Not yet: a player who leaves leaves his Viking standing (his inputs nothing; nobody takes him over), the
-  out-of-step logs and `lv-replay --coop`, a client's QUIT leaving cleanly (it closes the connection), the lobby in
-  the window.
+  place. A player who leaves (his QUIT, F10 or Alt+X, his window closed: `NetGame::quit` tells the host; or his
+  connection gone) is gone from a step the host decides (`net::Leave`): his input is `net::gone_input()` from then
+  on, which every machine turns into `World::player_leaves` at that step (his Viking to the first in its line, his
+  view out of the active area: `World::views()`, `Player::here`; state version 8). Out of step, each machine writes
+  the game's log beside the program (`logs/coop-BUILD-playerN.log`: the start, every confirmed step's inputs, its
+  hashes); `lv-replay --coop LOG` plays it again and names the first step whose state isn't the log's
+  (`replay_log`). Not yet: the lobby in the window (part 9), joining a game under way (part 8).
 - **Not checked by anything but the eye:** whatever the GPU renderer shows beyond the original's view, and
   whether a level still plays well zoomed out (enemies run for longer and further; nothing resets as often).
 - **The GPU renderer has run on one graphics card** (the user's) and the container's software driver. Vulkan

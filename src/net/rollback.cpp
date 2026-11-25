@@ -84,7 +84,7 @@ void Rollback::leave(int player, std::uint32_t from) {
     Known& known = players_.at(static_cast<std::size_t>(player));
     known.gone_from = std::min(known.gone_from.value_or(from), from);
     for (std::uint32_t step = from; step < step_ && step < known.used.size(); ++step) {
-        if (known.used.at(step) != Input{}) {  // run as if he were there: again, without him
+        if (known.used.at(step) != gone_input()) {  // run as if he were there: again, without him
             first_wrong_ = std::min(first_wrong_.value_or(step), step);
             break;
         }
@@ -94,7 +94,7 @@ void Rollback::leave(int player, std::uint32_t from) {
 std::optional<Input> Rollback::input_of(int player, std::uint32_t step) const {
     const Known& known = players_.at(static_cast<std::size_t>(player));
     if (known.gone_from && step >= *known.gone_from) {
-        return Input{};
+        return gone_input();
     }
     if (step < known.inputs.size()) {
         return known.inputs.at(step);

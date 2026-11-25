@@ -541,6 +541,9 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
     const auto menu_press = [&](Menu::Key key) {
         const Menu::Asked asked = menu->press(key);
         menu_changed();
+        if (net != nullptr && !net->hosting() && asked == Menu::Asked::kQuit) {
+            running = false;  // a client quitting leaves the game (the host's quit box is the host's)
+        }
         if (asked != Menu::Asked::kNothing) {
             give_up = asked == Menu::Asked::kGiveUp;
             quit_box = asked == Menu::Asked::kQuit;
@@ -804,6 +807,10 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
                                                .music = sound_keys.music,
                                                .previous_level = held[SDL_SCANCODE_F5],
                                                .next_level = held[SDL_SCANCODE_F6]};
+                if (net != nullptr && !net->hosting() && menu_keys.quit) {
+                    running = false;  // a client's F10 or Alt+X: he leaves the game
+                    continue;
+                }
                 if (net != nullptr) {
                     // Online: this machine's input when it can be given (in the menu: nothing held, the game goes
                     // on), and the next step when it can run; else the last picture again for this refresh.
@@ -926,6 +933,9 @@ int play(Session& session, input::Controls controls, SDL_Window* window, GpuRend
         close_menu();
     } else if (remaster) {
         remastered->settings = settings_now(session, gpu, remastered->settings);
+    }
+    if (net != nullptr) {
+        net->quit();  // (a client tells the host he goes)
     }
     for (SDL_Gamepad* pad : pads) {
         SDL_CloseGamepad(pad);
@@ -1192,6 +1202,9 @@ int main(int argc, char* argv[]) try {
     if (net != nullptr) {
         net->begin(**session);
         (*session)->set_player_names(joined.names);
+        if (const char* beside = SDL_GetBasePath()) {  // (what the game writes is beside it)
+            net->set_log_folder(std::filesystem::path{beside} / "logs");
+        }
     }
     if (cheat) {
         (*session)->cheat();

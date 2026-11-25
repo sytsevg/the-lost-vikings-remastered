@@ -444,6 +444,10 @@ void Play::take(const StepInput& input) {
     }
     for (int who = 0; who < world.player_count; ++who) {
         const PlayerInput& given = input.players.at(static_cast<std::size_t>(who));
+        if (given.gone) {
+            world.player_leaves(who);
+            continue;
+        }
         if (given.zoom[0] != 0 && given.zoom[1] != 0) {
             state_.views.at(static_cast<std::size_t>(who)) = {given.zoom[0], given.zoom[1]};
         }

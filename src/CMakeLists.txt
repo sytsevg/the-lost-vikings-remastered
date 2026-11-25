@@ -194,7 +194,7 @@ if(LVR_BUILD_APPS)
     lvr_target_defaults(lvr_gpu)
 
     add_executable(lv-replay replay/main.cpp)
-    target_link_libraries(lv-replay PRIVATE lvr::replay lvr::image lvr::gpu)
+    target_link_libraries(lv-replay PRIVATE lvr::replay lvr::session lvr::image lvr::gpu)
     lvr_target_defaults(lv-replay)
 
     # --- online: co-op online's front end, rollback over the session through the transport (ADR-0012) ---
