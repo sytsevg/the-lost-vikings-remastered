@@ -931,7 +931,7 @@ class HangingLedge : public Entity {
                 if (!saw.landed) {
                     break;
                 }
-                world.sound(*this, effect::kBurnt);
+                world.sound(*this, effect::kHeavyLanding);
                 clear_flag(entity_flag::kFalls);
                 stay_active(false);
                 speed_y = 0;
@@ -999,7 +999,7 @@ class Ball : public Entity {
                 stop_falling();
                 speed_x = px(2);
                 if (find_beside(world, *this, Side::kBelow, hole())) {
-                    world.sound(*this, effect::kBurnt);
+                    world.sound(*this, effect::kHeavyLanding);
                     if (Cell* cell = world.map.cell(cell_of(x), cell_of(y))) {
                         *cell = Cell{.metatile = 7, .tile_type = tile::kGround};
                     }

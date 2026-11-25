@@ -94,6 +94,9 @@ class Session {
     // Development tools' too (vikings-remaster --showcase). The view becomes `width` x `height` with its corner at
     // (x, y), with the HUD's rows under it, and stays there; Remaster rules, in a level being played.
     bool hold_view(int x, int y, int width, int height);
+    // And: the Viking in slot `viking` put at (x, y) in the level with `health` (x 2, as the world keeps it), to be
+    // seen dying there; Remaster rules, in a level being played, and only if he is in it.
+    bool put_viking(int viking, int x, int y, std::uint16_t health);
     // The level of scene `slot` is started at the next step, as the cheat's F5 and F6 do; from a level (not a menu).
     bool go_to(int slot);
     // The world holds until a key is pressed (a level's password, a text).

@@ -17,6 +17,7 @@ void Showcase::next(int by) {
     index_ = static_cast<std::size_t>((((static_cast<int>(index_) + by) % count) + count) % count);
     held_ = false;
     asked_ = false;
+    again_ = current().death.has_value();
 }
 
 std::uint16_t Showcase::before_step(Session& session, std::uint16_t keys) {
@@ -24,24 +25,33 @@ std::uint16_t Showcase::before_step(Session& session, std::uint16_t keys) {
     ++steps_;
     // What waits for a key gets F, pressed anew every second step.
     const std::uint16_t answer = steps_ % 2 != 0 ? key::kF : 0;
-    if (session.scene() != scenario.slot) {
+    if (session.scene_loaded()) {
+        asked_ = false;  // the level asked for has come (or another scene)
+    }
+    if (asked_ || session.scene() != scenario.slot || again_) {
         held_ = false;
         if (session.waiting_for_key()) {
             return answer;
         }
         if (!asked_) {
             asked_ = session.go_to(scenario.slot);
+            again_ = again_ && !asked_;
         }
         return 0;
     }
-    asked_ = false;
     if (session.waiting_for_key()) {
         return answer;
     }
     if (!held_) {
         held_ = session.hold_view(scenario.x, scenario.y, kShowcaseWidth, kShowcaseHeight);
+        held_for_ = 0;
         std::println(stderr, "showcase {}: {}: level {}, view {} at {}, {}", index_ + 1, scenario.name,
                      scenario.slot + 1, held_ ? "held" : "not held (yet)", scenario.x, scenario.y);
+    } else if (++held_for_ == 2 && scenario.death) {
+        const Death& death = *scenario.death;
+        if (!session.put_viking(death.viking, death.x, death.y, 1)) {
+            std::println(stderr, "showcase {}: the Viking in slot {} is not there to put", index_ + 1, death.viking);
+        }
     }
     return keys;
 }

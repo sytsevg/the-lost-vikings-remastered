@@ -2,18 +2,22 @@
 #include <algorithm>
 #include <array>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "lvr/names.hpp"
 #include "lvr/play.hpp"
 #include "lvr/render.hpp"
 #include "lvr/session.hpp"
+#include "lvr/showcase.hpp"
 
 using namespace lvr;
 
@@ -804,4 +808,72 @@ TEST_CASE("real data: Remaster rules' effects: lights, glowing colours, what sto
                   .back()
                   .lights.empty());
     }
+}
+
+TEST_CASE("real data: Remaster rules' effects: a Viking electrocuted or burning up gives off light while he dies",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    // The showcase's deaths: the same play twice, the Viking put there in the one. While he dies there is a light
+    // at him that the other play doesn't have (where the lights are doesn't hang on their flicker): blue for
+    // electricity, orange for fire. When he is dead it is gone.
+    int deaths = 0;
+    for (const Scenario& scenario : kScenarios) {
+        if (!scenario.death) {
+            continue;
+        }
+        ++deaths;
+        const Death& death = *scenario.death;
+        INFO(scenario.name);
+        auto dies = Session::open(LVR_ORIGINAL_DIR, scenario.slot, {}, Rules::kRemaster);
+        auto lives = Session::open(LVR_ORIGINAL_DIR, scenario.slot, {}, Rules::kRemaster);
+        REQUIRE(dies);
+        REQUIRE(lives);
+        (*dies)->set_effects(true);
+        (*lives)->set_effects(true);
+        // A light of `shown` at the Viking (in the level), at a place where `other` has none.
+        const auto his_light = [](const Screen& shown, const Screen& other, const Screen::Viking& viking) {
+            const auto at = [](const Light& light, float x, float y) {
+                return std::abs(light.x - x) < 1 && std::abs(light.y - y) < 1;
+            };
+            const auto found = std::ranges::find_if(shown.lights, [&](const Light& light) {
+                return std::abs(light.x - static_cast<float>(viking.x - shown.level_x)) < 24 &&
+                       std::abs(light.y - static_cast<float>(viking.y - shown.level_y)) < 24 &&
+                       std::ranges::none_of(
+                           other.lights, [&](const Light& their) { return at(their, light.x, light.y); });
+            });
+            return found == shown.lights.end() ? std::optional<Light>{} : std::optional<Light>{*found};
+        };
+        std::optional<Light> seen;
+        bool gone = false;
+        for (int step = 0; step < 90; ++step) {
+            const auto keys = static_cast<std::uint16_t>(step < 6 && step % 2 != 0 ? key::kF : 0);
+            if (step == 8) {
+                REQUIRE((*dies)->hold_view(scenario.x, scenario.y, kShowcaseWidth, kShowcaseHeight));
+                REQUIRE((*lives)->hold_view(scenario.x, scenario.y, kShowcaseWidth, kShowcaseHeight));
+            }
+            if (step == 10) {
+                REQUIRE((*dies)->put_viking(death.viking, death.x, death.y, 1));
+                CHECK_FALSE((*dies)->put_viking(3, death.x, death.y, 1));
+            }
+            const std::vector<Screen> shown = (*dies)->step(keys);
+            const std::vector<Screen> other = (*lives)->step(keys);
+            REQUIRE(shown.size() == other.size());
+            const Screen::Viking& viking = shown.back().vikings.at(static_cast<std::size_t>(death.viking));
+            const auto light = his_light(shown.back(), other.back(), viking);
+            if (step < 10) {
+                CHECK_FALSE(light);
+            } else if (!seen) {
+                seen = light;
+            } else if (step > 80) {
+                gone = !light;
+            }
+        }
+        REQUIRE(seen);
+        const bool fire = scenario.name.find("burning") != std::string_view::npos;
+        CHECK((fire ? seen->colour[0] > seen->colour[2] : seen->colour[2] > seen->colour[0]));
+        CHECK(gone);
+    }
+    CHECK(deaths == 5);
 }

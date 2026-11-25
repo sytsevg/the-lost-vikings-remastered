@@ -640,11 +640,11 @@ void Viking::land_hard(World& world) {
 
 void Viking::after_landing_hard(World& world) {
     if (health == 0) {
-        sound(world, effect::kBurnt);
+        sound(world, effect::kHeavyLanding);
         speed_x = speed_y = 0;
         set_falling(false);
         die(world);
-        world.play(*this, looks().burns);
+        world.play(*this, looks().dies_from_a_fall);
         return dying_on_the_ground(world);
     }
     sound(world, effect::kLandedHard);

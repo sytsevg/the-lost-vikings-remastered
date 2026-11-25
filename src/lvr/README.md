@@ -19,10 +19,10 @@ Target `lvr::engine`, plain C++ on `lvr::assets`.
   for a camera.
 - `minimap.*`: Remaster rules' minimap: the level small, by what its cells are, as far as it was seen.
 - `effects.*`: the Modern visuals' effects (Remaster rules): lights, glow and particles answering to what the
-  engine shows (a table of the animations that give them off, the colours that glow, the map's electricity), and
-  what stops light.
+  engine shows (a table of the animations that give them off, among them the Vikings' deaths by electricity and
+  fire; the colours that glow, the map's electricity), and what stops light.
 - `showcase.*`: a development tool, `vikings-remaster --showcase N`: spots in the levels where the effects are
-  seen, one after another, with the view held on each.
+  seen, one after another, with the view held on each (at the last ones a Viking is put where he dies).
 - `camera.*`: the camera: its limits, where it starts, how it follows the Viking being played; the size of the
   view (the original's, or a zoomed one).
 - `archive.hpp`: the game's state written out and read back: fixed-width, field by field (ADR-0020).

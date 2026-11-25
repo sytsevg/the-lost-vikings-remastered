@@ -159,6 +159,19 @@ class Entity : public EntityState {
         speed_y = 0;
     }
 
+    // Put at (x, y), its box with it: development tools' (a replay's `place`, the showcase's deaths). The game
+    // itself never moves anything so.
+    void move_to(int to_x, int to_y) noexcept {
+        const auto across = static_cast<std::int16_t>(to_x - x);
+        const auto down = static_cast<std::int16_t>(to_y - y);
+        x = static_cast<std::int16_t>(to_x);
+        y = static_cast<std::int16_t>(to_y);
+        box.left = static_cast<std::int16_t>(box.left + across);
+        box.right = static_cast<std::int16_t>(box.right + across);
+        box.top = static_cast<std::int16_t>(box.top + down);
+        box.bottom = static_cast<std::int16_t>(box.bottom + down);
+    }
+
     // True once, at its first turn: for what a kind sets up as it starts.
     bool first_turn() noexcept { return !std::exchange(had_first_turn, true); }
     bool started() const noexcept { return had_first_turn; }

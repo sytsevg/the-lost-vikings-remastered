@@ -42,7 +42,7 @@ class Effects {
         float fall = 0;  // what is added to speed_y a picture
         int age = 0;     // pictures
         int life = 0;
-        bool ember = false;  // else a spark
+        enum class Look : std::uint8_t { kSpark, kEmber, kSmoke } look = Look::kSpark;
     };
     std::vector<Particle> particles_;
     // A few sparks flying out from (x, y) in the level.

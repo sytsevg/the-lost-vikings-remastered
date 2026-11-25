@@ -10,7 +10,7 @@
 //       --slow-frames: a step or a picture's showing that takes long is reported on the error output
 //       --showcase N: under Remaster rules, the places where the Modern visuals' effects are seen (showcase.hpp),
 //       from the Nth on: each with the view held on it; PgDn or ] and PgUp or [ go to the next and the one before (with
-//       --dump: the Nth, as --whole writes it)
+//       --dump: the Nth, as --whole writes it); the last ones put a Viking where he dies, starting the level again
 //       --no-effects: under Remaster rules, the pictures without the Modern visuals' effects (effects.hpp)
 //       --cheat: the game's cheat on from the start, as if its password had been typed at the title: F5 and F6
 //       change the level, and under Remaster rules F7 and F8 are a quicksave and its load.

@@ -149,6 +149,19 @@ bool Session::hold_view(int x, int y, int width, int height) {
     return true;
 }
 
+bool Session::put_viking(int viking, int x, int y, std::uint16_t health) {
+    if (!takes_play_keys() || viking < 0 || viking >= kVikingSlots) {
+        return false;
+    }
+    Entity* entity = play_.world.entities.at(static_cast<std::size_t>(viking)).get();
+    if (entity == nullptr || entity->dead) {
+        return false;
+    }
+    entity->move_to(x, y);
+    entity->health = health;
+    return true;
+}
+
 bool Session::go_to(int slot) {
     if (!level_played() || slot < 0 || slot > scene::kLastLevel) {
         return false;

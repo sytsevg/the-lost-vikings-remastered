@@ -3,23 +3,40 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <span>
 
 #include "lvr/animations.hpp"
 #include "lvr/terrain.hpp"
+#include "lvr/viking_looks.hpp"
 #include "lvr/world.hpp"
 
 namespace lvr {
 
 namespace {
 
+// Which worlds a rule holds in: a bit for each database from the spaceship's. An animation named in one world is
+// found in another by the pairing of their programs (World::program_of), and a world without that death can have
+// another animation in its place (Egypt's dissolving is where the spaceship's electrocution is): a death's rule
+// names the worlds where the death happens.
+constexpr unsigned in(int database) noexcept {
+    return 1U << static_cast<unsigned>(database - database::kSpaceship);
+}
+constexpr unsigned kEveryWorld = 0xff;
+constexpr bool holds_in(unsigned worlds, int database) noexcept {
+    const int bit = database - database::kSpaceship;
+    return worlds == kEveryWorld || (bit >= 0 && bit < 8 && (worlds & (1U << static_cast<unsigned>(bit))) != 0);
+}
+
 // What an animation gives off while an entity plays it (from its start until another is started). What is there to
-// be seen (traps, fire and shots on their way); not a blow or a hit landing (the user, 2026-11-25).
-enum class Glow : std::uint8_t { kNone, kFire, kElectric, kBarrier, kShot, kShotBurst };
-enum class Emits : std::uint8_t { kNothing, kEmbers, kSparks };
+// be seen (traps, fire and shots on their way, a Viking electrocuted or burning up); not a blow or a hit landing
+// (the user, 2026-11-25).
+enum class Glow : std::uint8_t { kNone, kFire, kElectric, kBarrier, kShot, kShotBurst, kShocked };
+enum class Emits : std::uint8_t { kNothing, kEmbers, kSparks, kEmbersAndSmoke };
 struct Rule {
     Animation animation;
     Glow glow = Glow::kNone;
     Emits emits = Emits::kNothing;
+    unsigned worlds = kEveryWorld;
 };
 
 constexpr std::array kRules{
@@ -50,6 +67,33 @@ constexpr std::array kRules{
     Rule{.animation = anim::kTomatorShotFizzles, .glow = Glow::kShotBurst, .emits = Emits::kNothing},
 };
 
+// The Vikings' deaths by electricity and by fire (the user, 2026-11-25), each Viking's own; the other deaths give
+// off nothing. Each where it happens: a barrier's (or a bar's) everywhere but the prehistoric world and Egypt,
+// whose Vikings are taken away instead; the map's electricity's, named apart for the spaceship and for the factory
+// and the wacky world; burning up, everywhere but the spaceship.
+constexpr auto kVikingDeaths = [] {
+    constexpr std::array<const VikingLooks*, 3> kLooks{&kErikLooks, &kBaleogLooks, &kOlafLooks};
+    constexpr unsigned kBarriers = in(database::kSpaceship) | in(database::kFactory) | in(database::kWacky);
+    constexpr unsigned kSpaceship = in(database::kSpaceship);
+    constexpr unsigned kFactories = in(database::kFactory) | in(database::kWacky);
+    constexpr unsigned kFires = in(database::kPrehistoric) | in(database::kEgypt) | kFactories;
+    std::array<Rule, 6 * kLooks.size()> rules{};
+    std::size_t at = 0;
+    for (std::size_t who = 0; who < kLooks.size(); ++who) {
+        const VikingLooks& looks = *kLooks.at(who);
+        const auto add = [&rules, &at](Animation animation, Glow glow, Emits emits, unsigned worlds) {
+            rules.at(at++) = Rule{.animation = animation, .glow = glow, .emits = emits, .worlds = worlds};
+        };
+        add(looks.electrocuted, Glow::kShocked, Emits::kSparks, kBarriers);
+        add(looks.electrocuted_from_below, Glow::kShocked, Emits::kSparks, kSpaceship);
+        add(looks.electrocuted_from_above, Glow::kShocked, Emits::kSparks, kSpaceship);
+        add(anim::kVikingShockedFromBelow.at(who), Glow::kShocked, Emits::kSparks, kFactories);
+        add(anim::kVikingShockedFromAbove.at(who), Glow::kShocked, Emits::kSparks, kFactories);
+        add(anim::kVikingBurnsUp.at(who), Glow::kFire, Emits::kEmbersAndSmoke, kFires);
+    }
+    return rules;
+}();
+
 // The colours of the HUD and the text, the same in every level (palette.md): what particles are drawn in.
 constexpr std::uint8_t kWhite = 2;
 constexpr std::uint8_t kYellow = 8;
@@ -57,6 +101,9 @@ constexpr std::uint8_t kLightOrange = 11;
 constexpr std::uint8_t kRed = 9;
 constexpr std::uint8_t kDarkRed = 10;
 constexpr std::uint8_t kBlue = 15;
+constexpr std::uint8_t kLightGrey = 12;
+constexpr std::uint8_t kGrey = 4;
+constexpr std::uint8_t kDarkGrey = 14;
 constexpr std::size_t kMostParticles = 4000;
 
 // Where an entity's pieces are drawn, in the level: left, top, right, bottom. None shown: nothing.
@@ -149,7 +196,7 @@ void Effects::spark(float x, float y) {
                               .fall = 0.08F,
                               .age = 0,
                               .life = 4 + static_cast<int>(chance() * 8),
-                              .ember = false});
+                              .look = Particle::Look::kSpark});
     }
 }
 
@@ -234,11 +281,15 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
         make_ground(world);
         screen.ground = ground_;
     }
-    // What gives off light and particles: the entities playing an animation of the table.
+    // What gives off light and particles: the entities playing an animation of the tables, in this world.
     std::vector<std::pair<std::uint16_t, const Rule*>> rules;
-    rules.reserve(kRules.size());
-    for (const Rule& rule : kRules) {
-        rules.emplace_back(world.program_of(rule.animation), &rule);
+    rules.reserve(kRules.size() + kVikingDeaths.size());
+    for (const auto& table : {std::span<const Rule>{kRules}, std::span<const Rule>{kVikingDeaths}}) {
+        for (const Rule& rule : table) {
+            if (holds_in(rule.worlds, world.database)) {
+                rules.emplace_back(world.program_of(rule.animation), &rule);
+            }
+        }
     }
     for (const auto& owned : world.entities) {
         const Entity* entity = owned.get();
@@ -301,6 +352,13 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
                     light.reach = 10;
                     light.colour = {0.7F, 0.3F, 0.25F};
                     break;
+                case Glow::kShocked: {
+                    // A Viking electrocuted: a white-blue light around him that flashes.
+                    const float flicker = flickering(0.55F, 0.25F, 0.15F);
+                    light.reach = 18;
+                    light.colour = {0.55F * flicker, 0.7F * flicker, 1.0F * flicker};
+                    break;
+                }
                 case Glow::kNone:
                     break;
             }
@@ -313,7 +371,8 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
             return std::array<float, 2>{static_cast<float>(left) + (across * static_cast<float>(right - left)),
                                         static_cast<float>(top) + (down * static_cast<float>(bottom - top))};
         };
-        if (rule.emits == Emits::kEmbers && chance() < std::clamp(size / 36, 0.2F, 0.75F)) {
+        const bool embers = rule.emits == Emits::kEmbers || rule.emits == Emits::kEmbersAndSmoke;
+        if (embers && chance() < std::clamp(size / 36, 0.2F, 0.75F)) {
             const auto [x, y] = somewhere(chance(), chance() * 0.6F);
             particles_.push_back({.x = x,
                                   .y = y,
@@ -322,20 +381,38 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
                                   .fall = -0.005F,
                                   .age = 0,
                                   .life = 25 + static_cast<int>(chance() * 30),
-                                  .ember = true});
+                                  .look = Particle::Look::kEmber});
         } else if (rule.emits == Emits::kSparks && chance() < 0.16F) {
             const auto [x, y] = somewhere(chance(), chance());
             spark(x, y);
+        }
+        // Smoke: now and then a wisp from his upper half, rising slower than the embers and drifting, for longer.
+        if (rule.emits == Emits::kEmbersAndSmoke && chance() < 0.15F) {
+            const auto [x, y] = somewhere(0.2F + (chance() * 0.6F), chance() * 0.5F);
+            particles_.push_back({.x = x,
+                                  .y = y,
+                                  .speed_x = (chance() - 0.5F) * 0.3F,
+                                  .speed_y = -0.25F - (chance() * 0.2F),
+                                  .fall = 0.002F,
+                                  .age = 0,
+                                  .life = 35 + static_cast<int>(chance() * 25),
+                                  .look = Particle::Look::kSmoke});
         }
     }
     // The particles: drawn where they are, and on.
     for (const Particle& particle : particles_) {
         const float aged = static_cast<float>(particle.age) / static_cast<float>(std::max(particle.life, 1));
         std::uint8_t colour = kWhite;
-        if (particle.ember) {
-            colour = aged < 0.25F ? kYellow : (aged < 0.5F ? kLightOrange : (aged < 0.8F ? kRed : kDarkRed));
-        } else {
-            colour = aged < 0.5F ? kWhite : kBlue;
+        switch (particle.look) {
+            case Particle::Look::kSpark:
+                colour = aged < 0.5F ? kWhite : kBlue;
+                break;
+            case Particle::Look::kEmber:
+                colour = aged < 0.25F ? kYellow : (aged < 0.5F ? kLightOrange : (aged < 0.8F ? kRed : kDarkRed));
+                break;
+            case Particle::Look::kSmoke:
+                colour = aged < 0.3F ? kLightGrey : (aged < 0.7F ? kGrey : kDarkGrey);
+                break;
         }
         view.sprites.push_back(DrawnSprite{.image = &dots_.at(colour),
                                            .x = static_cast<int>(std::lround(particle.x)),

@@ -2,7 +2,8 @@
 
 // The Vikings' animations and each one's own numbers: where the animations are in the spaceship world's programs
 // (the addresses go when the animations have names: docs/ROADMAP.md, M8), and the speeds of what each can do.
-// Read by the Vikings' files only (through viking.hpp): the numbers are apart from the behaviour.
+// Read by the Vikings' files (through viking.hpp), and by the effects' table for his deaths (effects.cpp): the
+// numbers are apart from the behaviour.
 
 #include <array>
 #include <cstdint>
@@ -44,7 +45,7 @@ struct VikingLooks {
     // Dying.
     Animation dies;
     Animation drowns;
-    Animation burns;
+    Animation dies_from_a_fall;  // landing too hard
     Animation electrocuted;
     Animation electrocuted_from_below;
     Animation electrocuted_from_above;
@@ -83,7 +84,7 @@ inline constexpr VikingLooks kErikLooks{
     .stepped_off = {0x4e58},
     .dies = {0x6914},
     .drowns = {0x67d9},
-    .burns = {0x69a7},
+    .dies_from_a_fall = {0x69a7},
     .electrocuted = {0x6ae9},
     .electrocuted_from_below = {0x6afb},
     .electrocuted_from_above = {0x6b0d},
@@ -122,7 +123,7 @@ inline constexpr VikingLooks kBaleogLooks{
     .stepped_off = {0x41f1},
     .dies = {0x6945},
     .drowns = {0x67e6},
-    .burns = {0x69b7},
+    .dies_from_a_fall = {0x69b7},
     .electrocuted = {0x6aef},
     .electrocuted_from_below = {0x6b01},
     .electrocuted_from_above = {0x6b13},
@@ -162,7 +163,7 @@ inline constexpr VikingLooks kOlafLooks{
     .stepped_off = {0x5a1b},
     .dies = {0x6976},
     .drowns = {0x67f5},
-    .burns = {0x69c7},
+    .dies_from_a_fall = {0x69c7},
     .electrocuted = {0x6af5},
     .electrocuted_from_below = {0x6b07},
     .electrocuted_from_above = {0x6b19},

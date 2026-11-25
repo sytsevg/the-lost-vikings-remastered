@@ -82,13 +82,8 @@ The rest of the list is in [`ROADMAP.md`](ROADMAP.md): events in animations and 
 shaders, art packs, sound placed by position.
 
 ### Next
-- **Effects for two of the Vikings' deaths** (the user, 2026-11-25): electrocution and burning up; the other deaths
-  are left as they are. Each Viking's animations for them are in `viking_looks.hpp` (`electrocuted`,
-  `electrocuted_from_below`, `electrocuted_from_above`, `burns`, by Viking): add them to the table in
-  `effects.cpp` (it is keyed by `Animation`; the Vikings' are tables by Viking, so each Viking's three, or a rule
-  that looks them up), with a light and sparks for the one, a light and embers (and smoke?) for the other, in the
-  look the effects have (subtle, in the game's pixels). Not for a blow or a hit landing. Add a showcase spot for
-  each if one can be had (a Viking can be put where he dies: a barrier, a fire jet) or check them with a dump.
+- **The Vikings' deaths by electricity and fire (built, 2026-11-25; approved by the user on the host):** showcase
+  spots 17-21 ("Effects" below).
 - **After that the user picks the next M8 item.** The effects are built and approved (2026-11-25, "Effects"
   below); left on the roadmap's list: shaders (a CRT look), art packs, sound placed by position, the SNES sound.
   More effects can be added to the table any time (water and lava cross-fading between their colour steps was
@@ -166,6 +161,16 @@ pixel and in steps of brightness), subtle.
   that goes with them, and a small one where they burst. Not a blow or a hit landing, nor an impact's burst of
   fire (the user: on the fence, so none). The map's electricity cells: a light along each run of them, and sparks;
   the spaceship's turning colours (its screens and lights, not its electricity's): a glow around them.
+- **The Vikings' deaths** (the user, 2026-11-25: electrocution and burning up only; `kVikingDeaths`, each Viking's
+  own). Electrocuted (by a barrier or a bar: `electrocuted`; by the map's electricity: `electrocuted_from_below`
+  and `_from_above` in the spaceship, `kVikingShockedFromBelow` and `FromAbove` in the factory and the wacky
+  world): a white-blue light on him that flashes, and sparks. Burning up (`kVikingBurnsUp`, every world but the
+  spaceship, which has no such death): the fire's orange light, embers, and grey smoke rising slower. While he
+  dies only: when he is dead his pieces are hidden, and with them the light. Each death's rule names the worlds it
+  happens in, because an animation is found in another world by the pairing of the programs, and a world without
+  that death can have another animation in its place (Egypt's dissolving is where the spaceship's electrocution
+  is), or none (the place is then taken as it is). The animation that was called `burns` is the death from a long
+  fall (`dies_from_a_fall`; its sound, called `kBurnt`, is a ledge's or a ball's landing too: `kHeavyLanding`).
 - **How light is drawn** (`gpu_show.frag`): a light (`Screen::lights`, a box and a reach) casts: it brightens what
   it falls on, stopped by the ground (`Screen::ground`: the map's ground, walls and slopes pixel by pixel, made
   by `Effects` when the map changes), with a whiter highlight where it meets it; and its glow is laid over that,
@@ -173,9 +178,12 @@ pixel and in steps of brightness), subtle.
 - **Particles** are pixels of the colours 1-15 put after the view's sprites (`Effects::add`), moved a picture at
   a time, only while the play goes on (not over a fade, not going back); a rewind, a quickload or another scene
   lets them go. While a scene fades the lights darken with it and hold still.
-- **Checking them:** `vikings-remaster --rules remaster --showcase N` holds the view on spot N of 16
+- **Checking them:** `vikings-remaster --rules remaster --showcase N` holds the view on spot N of 21
   (`showcase.hpp`: laser shots, barriers, electricity, screens, fire in four worlds; PgDn or `]` on, PgUp or `[`
-  back; it goes to the level and answers what waits for a key itself). With `--dump STEPS FILE.png` it writes that
+  back; it goes to the level and answers what waits for a key itself). Spots 17-21 are the deaths: the level is
+  started again, and two steps after the view is held a Viking is put there with half a point of health
+  (`Session::put_viking`; `Entity::move_to`, which a replay's `place` uses too). A test plays each with and
+  without him and finds his light. With `--dump STEPS FILE.png` it writes that
   spot; `--whole AT_STEP` writes a whole level. Stills: `gamedata/previews/effects/` (not in the repository).
 
 ### Parallax (built, 2026-11-24)

@@ -130,7 +130,7 @@ inline constexpr std::uint16_t kToldOfSword = 0x4000;  // a sword's swing is tol
 // later ones carry theirs; numbers nobody had named are still bare where they are played.
 namespace effect {
 inline constexpr std::uint8_t kNothingToUse = 0x03;
-inline constexpr std::uint8_t kBurnt = 0x06;
+inline constexpr std::uint8_t kHeavyLanding = 0x06;  // a ledge or a ball landing; a Viking's deadly fall
 inline constexpr std::uint8_t kShot = 0x07;
 inline constexpr std::uint8_t kDrowned = 0x09;
 inline constexpr std::uint8_t kSplash = 0x0a;

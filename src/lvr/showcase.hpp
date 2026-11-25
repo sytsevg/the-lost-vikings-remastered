@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -14,11 +15,19 @@
 
 namespace lvr {
 
+// A Viking put where he dies, with half a point of health (a fire's touch is enough).
+struct Death {
+    int viking = 0;  // his slot: Erik, Baleog, Olaf
+    int x = 0;       // where he is put in the level
+    int y = 0;
+};
+
 struct Scenario {
     std::string_view name;
     int slot = 0;  // the level's scene
     int x = 0;     // the view's corner in the level
     int y = 0;
+    std::optional<Death> death{};  // seen from the level's start: it is started again for it
 };
 
 // The view a scenario is seen in: a little larger than the original's.
@@ -42,10 +51,37 @@ inline constexpr std::array kScenarios{
     Scenario{.name = "wacky world: fire jets", .slot = 25, .x = 824, .y = 192},
     Scenario{.name = "wacky world: flames", .slot = 28, .x = 980, .y = 184},
     Scenario{.name = "wacky world: an electric barrier", .slot = 29, .x = 0, .y = 24},
+    // The Vikings' deaths that give off light: electrocuted (by a barrier, by the map's electricity), burning up.
+    Scenario{.name = "spaceship: Baleog electrocuted by a barrier",
+             .slot = 3,
+             .x = 736,
+             .y = 328,
+             .death = Death{.viking = 1, .x = 928, .y = 440}},
+    Scenario{.name = "spaceship: Erik electrocuted on an electric floor",
+             .slot = 1,
+             .x = 768,
+             .y = 618,
+             .death = Death{.viking = 0, .x = 960, .y = 730}},
+    Scenario{.name = "factory: Olaf electrocuted by a barrier",
+             .slot = 21,
+             .x = 592,
+             .y = 264,
+             .death = Death{.viking = 2, .x = 784, .y = 376}},
+    Scenario{.name = "factory: Baleog electrocuted on an electric floor",
+             .slot = 22,
+             .x = 240,
+             .y = 442,
+             .death = Death{.viking = 1, .x = 432, .y = 554}},
+    Scenario{.name = "factory: Erik burning up in a fire jet",
+             .slot = 19,
+             .x = 616,
+             .y = 64,
+             .death = Death{.viking = 0, .x = 808, .y = 176}},
 };
 
 // Takes a session to the scenarios: to the level, past what waits for a key there (its password, a text: the
-// showcase presses F), and holds the view on the spot. Keys the player gives are passed on once it is there.
+// showcase presses F), and holds the view on the spot; puts a scenario's Viking where he dies two steps later,
+// when what the view shows is there. Keys the player gives are passed on once it is there.
 class Showcase {
   public:
     explicit Showcase(std::size_t first) : index_{first % kScenarios.size()} {}
@@ -61,6 +97,8 @@ class Showcase {
     std::size_t index_ = 0;
     bool held_ = false;
     bool asked_ = false;  // the level asked for: it is on its way
+    bool again_ = false;  // its level is to start again (a death, come to from another scenario)
+    int held_for_ = 0;    // steps the view has been held
     int steps_ = 0;
 };
 

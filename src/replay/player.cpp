@@ -112,14 +112,7 @@ void LvrPlayer::play_step() {
     if (const auto& place = replay_.steps[step_].place) {
         for (std::size_t viking = 0; viking < kVikingSlots; ++viking) {
             if (Entity* entity = play_.world.entities.at(viking).get()) {
-                const auto dx = static_cast<std::int16_t>((*place)[0] - entity->x);
-                const auto dy = static_cast<std::int16_t>((*place)[1] - entity->y);
-                entity->x = (*place)[0];
-                entity->y = (*place)[1];
-                entity->box.left = static_cast<std::int16_t>(entity->box.left + dx);
-                entity->box.right = static_cast<std::int16_t>(entity->box.right + dx);
-                entity->box.top = static_cast<std::int16_t>(entity->box.top + dy);
-                entity->box.bottom = static_cast<std::int16_t>(entity->box.bottom + dy);
+                entity->move_to((*place)[0], (*place)[1]);
             }
         }
     }
