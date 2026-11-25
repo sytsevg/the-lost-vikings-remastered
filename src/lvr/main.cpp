@@ -124,8 +124,8 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
     std::size_t refreshes = session.start_frames.size();
     std::vector<Screen> frames;
     for (int step = 0; step < steps && !session.quit(); ++step) {
-        if (step == options.zoom_at) {
-            session.zoom(options.zoom);
+        if (step == options.zoom_at && options.zoom != 0 && !session.zoom(options.zoom)) {
+            std::println(stderr, "--zoom: step {} is not in a level being played (Remaster rules): no zoom", step);
         }
         frames = session.step(step == options.tap_at ? options.tapped : options.held);
         refreshes += frames.size();
@@ -257,6 +257,26 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
         return held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT];
     };
     const auto key_bit = [&bindings](SDL_Scancode key) { return input::key_bits(bindings, SDL_GetScancodeName(key)); };
+    // Remaster rules' own keys, taken where they act (Session::takes_play_keys): - and = zoom out and in; with the
+    // cheat on, F7 keeps the play as it is and F8 brings it back. Elsewhere they are the game's like any other
+    // (and M, below, is its key too): nothing pressed in a scene or a menu is kept for later.
+    const auto remaster_key = [&session](const SDL_Event& event) {
+        if (event.type != SDL_EVENT_KEY_DOWN || event.key.repeat) {
+            return false;
+        }
+        switch (event.key.scancode) {
+            case SDL_SCANCODE_MINUS:
+                return session.zoom(1);
+            case SDL_SCANCODE_EQUALS:
+                return session.zoom(-1);
+            case SDL_SCANCODE_F7:
+                return session.quicksave();
+            case SDL_SCANCODE_F8:
+                return session.quickload();
+            default:
+                return false;
+        }
+    };
     while (running) {
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
@@ -270,19 +290,10 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
                 if (event.key.scancode == SDL_SCANCODE_M) {
                     session.key_pressed(input::typed_character(SDL_GetScancodeName(event.key.scancode)));
                 }
-            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-                       (event.key.scancode == SDL_SCANCODE_MINUS || event.key.scancode == SDL_SCANCODE_EQUALS)) {
-                session.zoom(event.key.scancode == SDL_SCANCODE_MINUS ? 1 : -1);  // Remaster rules: out, in
-            } else if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-                       (event.key.scancode == SDL_SCANCODE_F7 || event.key.scancode == SDL_SCANCODE_F8)) {
-                // Remaster rules, with the cheat on: F7 keeps the play as it is, F8 brings it back.
-                if (event.key.scancode == SDL_SCANCODE_F7) {
-                    session.quicksave();
-                } else {
-                    session.quickload();
-                }
+            } else if (remaster_key(event)) {
+                // (taken: see remaster_key)
             } else if (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y != 0) {
-                session.zoom(event.wheel.y < 0 ? 1 : -1);
+                (void)session.zoom(event.wheel.y < 0 ? 1 : -1);
             } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_F12 &&
                        !event.key.repeat) {
                 session.set_modern(!session.modern());  // the Classic / Modern switch (ADR-0015)
@@ -297,7 +308,7 @@ int play(Session& session, const input::Bindings& bindings, SDL_Window* window, 
                 session.key_pressed(input::typed_character(SDL_GetScancodeName(event.key.scancode)));
                 keyboard |= key_bit(event.key.scancode);
                 if (event.key.scancode == SDL_SCANCODE_M && !event.key.repeat) {
-                    session.toggle_minimap();  // Remaster rules, in a level: the minimap, shown or not
+                    (void)session.toggle_minimap();  // Remaster rules, in a level: the minimap, shown or not
                 }
                 if (session.demo()) {  // the keyboard handler: any key during a demo
                     keyboard = 0xFFFF;

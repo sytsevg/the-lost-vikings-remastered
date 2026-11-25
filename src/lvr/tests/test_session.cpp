@@ -140,7 +140,7 @@ TEST_CASE("real data: Remaster rules' zoom widens the view over a moment and clo
     };
     auto vanilla = Session::open(LVR_ORIGINAL_DIR, 1);
     REQUIRE(vanilla);
-    (*vanilla)->zoom(2);
+    CHECK_FALSE((*vanilla)->zoom(2));
     CHECK(part_after(**vanilla, 10) == original);
     CHECK((*vanilla)->minimap() == nullptr);  // nor a minimap
 
@@ -156,7 +156,7 @@ TEST_CASE("real data: Remaster rules' zoom widens the view over a moment and clo
     session.toggle_minimap();
     CHECK(session.minimap() == nullptr);
     session.toggle_minimap();
-    session.zoom(5);  // as far out as it goes: twice the original's view
+    CHECK(session.zoom(5));  // as far out as it goes: twice the original's view
     const Screen::Part opening = part_after(session, 2);
     CHECK(opening.width > original.width);
     CHECK(opening.width < 640);
@@ -310,17 +310,17 @@ TEST_CASE("real data: the quicksave keeps the play and brings it back, with the 
         ends.push_back(session.step(keys_of(step)).back().pixels);
     }
     // Without the cheat nothing is kept.
-    session.quicksave();
+    CHECK_FALSE(session.quicksave());
     ends.push_back(session.step(keys_of(20)).back().pixels);
     CHECK_FALSE(session.has_quicksave());
     // With it: kept before step 21, and brought back 20 steps later; the play goes on from there as it did.
     session.cheat();
-    session.quicksave();
+    CHECK(session.quicksave());
     for (int step = 21; step < 41; ++step) {
         ends.push_back(session.step(keys_of(step)).back().pixels);
     }
     CHECK(session.has_quicksave());
-    session.quickload();
+    CHECK(session.quickload());
     CHECK(session.step(keys_of(21)).back().pixels == ends.at(21));
     CHECK(session.step(keys_of(22)).back().pixels == ends.at(22));
     // What led up to the load isn't there to go back to.
@@ -335,7 +335,7 @@ TEST_CASE("real data: the quicksave keeps the play and brings it back, with the 
     auto vanilla = Session::open(LVR_ORIGINAL_DIR, 1);
     REQUIRE(vanilla);
     (*vanilla)->cheat();
-    (*vanilla)->quicksave();
+    CHECK_FALSE((*vanilla)->quicksave());
     (*vanilla)->step(0);
     CHECK_FALSE((*vanilla)->has_quicksave());
 }
@@ -574,4 +574,49 @@ TEST_CASE("real data: the village has no minimap, zoom or rewind: they are the l
     session.rewind(true);
     (void)session.step(0);
     CHECK_FALSE(session.rewinding());
+}
+
+TEST_CASE("real data: Remaster rules' own keys act only in a level being played; elsewhere nothing is kept of them",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    // The village: no zoom, minimap or quicksave; the keys are the game's.
+    auto village = Session::open(LVR_ORIGINAL_DIR, scene::kIntro, {}, Rules::kRemaster);
+    REQUIRE(village);
+    (*village)->cheat();
+    CHECK_FALSE((*village)->takes_play_keys());
+    CHECK_FALSE((*village)->zoom(2));
+    CHECK_FALSE((*village)->toggle_minimap());
+    CHECK_FALSE((*village)->quicksave());
+    CHECK_FALSE((*village)->quickload());  // (nothing kept to bring back)
+
+    // Level 2, its password's box answered: they act. In the pause menu they don't, and once the play goes on
+    // the view and the minimap are as they were.
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+    REQUIRE(opened);
+    Session& session = **opened;
+    for (int step = 0; step < 4; ++step) {
+        (void)session.step(step == 2 ? key::kF : std::uint16_t{0});
+    }
+    CHECK(session.takes_play_keys());
+    (void)session.step(key::kEnter);
+    CHECK_FALSE(session.takes_play_keys());
+    CHECK_FALSE(session.zoom(2));
+    CHECK_FALSE(session.toggle_minimap());
+    (void)session.step(0);
+    (void)session.step(key::kF);  // "no"
+    std::vector<Screen> shown;
+    for (int step = 0; step < 30; ++step) {
+        shown = session.step(0);
+    }
+    CHECK(session.takes_play_keys());
+    REQUIRE_FALSE(shown.empty());
+    CHECK(shown.back().motion.view == std::array<int, 2>{kScreenWidth, kPlayfieldHeight});
+    CHECK(session.minimap() != nullptr);
+
+    // Vanilla rules have none of them.
+    auto vanilla = Session::open(LVR_ORIGINAL_DIR, 1);
+    REQUIRE(vanilla);
+    CHECK_FALSE((*vanilla)->takes_play_keys());
 }

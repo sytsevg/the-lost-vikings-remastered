@@ -78,9 +78,14 @@ class Session {
     bool scene_loaded() const noexcept { return play_.scene_loaded; }
     int scene() const noexcept { return play_.world.scene; }
 
+    // Remaster rules' own keys (zoom, minimap, quicksave) are taken only where they act: in a level being played
+    // (not a scene, a demo, or the pause menu or quit box). Each says whether it took its key; one it didn't is a
+    // key like any other, for the game (the original's: any key ends a demo). So nothing pressed in a scene is
+    // kept for the next level.
+    bool takes_play_keys() const noexcept { return play_.world.rules == Rules::kRemaster && level_played(); }
     // Remaster rules' zoom (ADR-0011): a step out (`by` > 0) or back in, between the original's view and twice
     // it. The next step's world has the view; the pictures go from the one to the other over a moment.
-    void zoom(int by) noexcept;
+    bool zoom(int by) noexcept;
     // Remaster rules' minimap, as the last step left it: the level as far as a view has shown it since the game
     // was started. None in a scene that isn't a level, under Vanilla rules, or while it is switched off.
     const Minimap* minimap() const noexcept { return minimap_on_ && !minimap_.pixels.empty() ? &minimap_ : nullptr; }
@@ -92,10 +97,12 @@ class Session {
     // The quicksave as the profile's file: written when one is made, read when the profile is taken into use.
     std::expected<void, std::string> write_quicksave() const;
     std::expected<void, std::string> read_quicksave();
-    void toggle_minimap() noexcept {
-        if (!minimap_.pixels.empty()) {  // only where there is one: in a level
-            minimap_on_ = !minimap_on_;
+    bool toggle_minimap() noexcept {
+        if (!takes_play_keys() || minimap_.pixels.empty()) {  // only where there is one: in a level
+            return false;
         }
+        minimap_on_ = !minimap_on_;
+        return true;
     }
 
     // Remaster rules' rewind (ADR-0011): while it is held, every step goes two steps back instead of one on (time
@@ -106,10 +113,17 @@ class Session {
     void rewind(bool held) noexcept { rewind_held_ = held; }
     bool rewinding() const noexcept { return rewinding_; }
     // The quicksave, only with the game's cheat on (the title was given its password, or `cheat` below): the play
-    // as it is now is kept, in a level; and brought back, from wherever the game is by then. One is kept, until
-    // the game is closed. Acted on at the next step.
-    void quicksave() noexcept { save_wanted_ = true; }
-    void quickload() noexcept { load_wanted_ = true; }
+    // as it is now is kept, in a level; and brought back, from wherever the game is by then but a menu (the
+    // game-over scene, for one). One is kept, until the game is closed. Acted on at the next step.
+    bool quicksave() noexcept {
+        save_wanted_ = takes_play_keys() && play_.world.title.cheat;
+        return save_wanted_;
+    }
+    bool quickload() noexcept {
+        load_wanted_ =
+            play_.world.rules == Rules::kRemaster && play_.world.title.cheat && quick_.has_value() && !play_.in_menu();
+        return load_wanted_;
+    }
     bool has_quicksave() const noexcept { return quick_.has_value(); }
     // The cheat on without its password: F5 and F6 change the level, and under Remaster rules the quicksave.
     void cheat() noexcept { play_.world.title.cheat = true; }

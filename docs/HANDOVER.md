@@ -51,6 +51,11 @@ only under Remaster rules; Vanilla rules must stay exactly what they are, and th
   write and read all of it, fixed-width and field by field, with `kStateVersion` to tell versions apart.
 - **Quicksave** (F7 and F8, only with the game's cheat on: its password typed at the title, or `--cheat`): that
   written world as a file.
+- **Where their keys act** (2026-11-24): the zoom, the minimap's M and the quicksave's F7 act only in a level
+  being played (`Session::takes_play_keys`: not a scene, a demo, or the pause menu or quit box); F8 brings the
+  quicksave back from anywhere but a menu, and the rewind also goes from the game-over scene back into the level
+  just lost. A key that doesn't act is passed to the game like any other (any key ends a demo), so nothing
+  pressed in a scene is kept for the next level. The Classic/Modern sound switch (F12) works everywhere.
 - **The profile** (`profile.*`): the folder `profiles` beside the game's program, or `--profile DIR`. In it
   `minimap.txt` and `quicksave.bin`. What the game writes goes there, not into the user's home.
 

@@ -124,11 +124,13 @@ Screen::Part between(const Screen::Part& from, const Screen::Part& to, int pictu
 
 }  // namespace
 
-void Session::zoom(int by) noexcept {
-    if (play_.world.rules == Rules::kRemaster) {
-        zoom_ = std::clamp(zoom_ + by, 0, static_cast<int>(kZoomViews.size()) - 1);
-        play_.view = kZoomViews[static_cast<std::size_t>(zoom_)];  // (clamped above)
+bool Session::zoom(int by) noexcept {
+    if (!takes_play_keys()) {
+        return false;
     }
+    zoom_ = std::clamp(zoom_ + by, 0, static_cast<int>(kZoomViews.size()) - 1);
+    play_.view = kZoomViews[static_cast<std::size_t>(zoom_)];  // (clamped above)
+    return true;
 }
 
 // The view the zoom asks for here.
