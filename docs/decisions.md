@@ -439,11 +439,18 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   level, so going online is easier): under Remaster rules offline it has HOST GAME and JOIN GAME between PASSWORD
   and QUIT TO DOS (its five choices from row 12, the text layer ending at row 21; the pointer's choices further on
   placed from as many rows further down, `Title::animate_moved`, the camera not following). Each opens its page of
-  the Remaster menu over the title: a name, a port and a level's password (the first level's to start with); a
-  name and the host's IP:PORT; typed into, kept in the profile (`settings.txt`). A game hosted there starts at once
-  in that level, and the others join it under way; the level's opening box holds it until the host answers. When
-  a game online ends for this machine (left, or the host gone), the game offline is back at its title; why, if it
-  wasn't the player's wish, said on the page he went from.
+  the Remaster menu over the title: a name, a port and a level's password; a name and the host's IP:PORT; typed
+  into, kept in the profile (`settings.txt`). Either leads into the **lobby** (the user), over the title: who is
+  there and their round trips (the host's, the same on every screen: `net::Lobby`, now and then), and what the game
+  starts with: no password a new game (the user: "like it does irl"), from the intro, its recording played as the
+  title's NEW GAME plays it (only the first player's keys meanwhile), or the level a password names. The host types
+  the password there too (the others see what it names as he types) and starts the game when he likes (START GAME:
+  the delay from the round trips then); anyone can leave. One who comes later, the game going on, joins it under
+  way. In the game, the host's Escape menu has RETURN TO LOBBY (the user): everyone back in the lobby with the same
+  connections (`net::Back`; those who left closed up, each told his number again), for another level or a new
+  game. Each game has a number its Inputs, Status and Hash carry, so what is late of the one before isn't taken
+  into the next. When a game online ends for this machine (left, or the host gone), the game offline is back at
+  its title; why, if it wasn't the player's wish, said on the page he went from.
 - **Joining a game under way, and coming back.** An online world has a place for each of the three players there
   can be, those nobody has taken absent (`Player::here`); rollback has them too, away (`net::Rollback::leave`) and
   their input `net::gone_input()`. One who says hello while the game goes on is given a free place (the first left,

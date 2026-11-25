@@ -340,9 +340,8 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   the fast ones over TCP while no UDP gets through, pings for the round trip. Tests over 127.0.0.1
   (`src/net/tests/test_transport.cpp`).
 - **M9's state on 2026-11-25:** all nine parts committed on the branch `m9-coop-online` (the whole of M9 for one
-  review there: the user); main untouched. Not yet tried by hand: the title's HOST GAME and JOIN GAME in two
-  windows. Open: a game hosted from the title has no input delay (nobody to measure a round trip as it starts), so
-  a joiner over the internet rolls back more; a delay chosen as each joins, if it shows.
+  review there: the user); main untouched. Not yet tried by hand: the title's HOST GAME and JOIN GAME, the lobby
+  and RETURN TO LOBBY in two windows. A gamepad can't type into a page's lines (it chooses them).
 - **The front end** (M9's sixth part, built 2026-11-25): `src/net/protocol.*` (the messages: Hello, Welcome,
   Refused, Lobby, Start, Inputs, Status, Hash, Leave, Quit; the host in the middle passing each player's inputs on),
   `src/lvr/coop.*` (a step's input as 16 bytes a player; `CoopGame`: the session as `net::Game`, its snapshots,
@@ -381,9 +380,17 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   (part 9, ADR-0012): under Remaster rules offline the title's menu has HOST GAME and JOIN GAME (`Title`, the
   choice asked for one tick in `World::Title::online`, state version 10); the front end opens that page of the menu
   (`Menu::open_host`, `open_join`; lines typed into: `Menu::Waiting::kText`, SDL's text input), `play` ends with
-  the wish, and `main` opens the game online (`go_online`: hosting at once, or a box over the title while joining,
-  Escape giving up) and plays it, then goes back to the title's play. `--dump`'s `--menu` opens the pages with + and
-  *, and types what isn't one of its keys (stills: `gamedata/previews/coop/host-game.png`, `join-game.png`).
+  the wish, and `main` connects (`connect_online`: hosting at once, or a box over the title while joining, Escape
+  giving up), plays the lobby over the title (the user: a lobby to wait for players in; `play(..., lobby)`,
+  `Menu::open_lobby`, `NetGame::start` and `set_slot`, the host's `net::Lobby` now and then with everyone's round
+  trips), then the game (`open_game`), then the lobby again if the host said so (RETURN TO LOBBY, the user:
+  `NetGame::back_to_lobby`, `to_lobby`, `net::Back`; each game numbered, its Inputs, Status and Hash with it), and
+  the title's play once the lobby is left. No password: a new game from the intro, as the original's NEW GAME (the
+  user; `Play`'s first scene asks for the intro's recording and has `World::attract` as a scene started after
+  another does; a recording plays the first player's keys only). `--dump`'s `--menu` opens the pages with + and *,
+  the host's lobby with %, and types what isn't one of its keys (stills in `gamedata/previews/coop/`: `host-game`,
+  `join-game`, `lobby`, `lobby-new-game`). Tested: `test_online.cpp` (a lobby the host starts: the intro the same
+  on both; back to the lobby, level 1, the same on both), `test_menu.cpp` (the lobby's page, RETURN TO LOBBY).
 - **Not checked by anything but the eye:** whatever the GPU renderer shows beyond the original's view, and
   whether a level still plays well zoomed out (enemies run for longer and further; nothing resets as often).
 - **The GPU renderer has run on one graphics card** (the user's) and the container's software driver. Vulkan

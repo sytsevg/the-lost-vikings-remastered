@@ -45,8 +45,9 @@ class NetGame {
         std::string name;
     };
 
-    // Hosts on `port`; the game starts once `players` are there (the host one of them), at `slot`. `delay`: the input
-    // delay in steps; none: chosen from the round trips (under 50 ms none, under 150 one, else two).
+    // Hosts on `port`; the game starts once `players` are there (the host one of them), at `slot`; with 0 players
+    // when the host says so (start), with whoever is there. `delay`: the input delay in steps; none: chosen from the
+    // round trips (under 50 ms none, under 150 one, else two).
     static std::expected<std::unique_ptr<NetGame>, std::string> host(std::uint16_t port, int players, int slot,
                                                                      bool cheat, std::optional<int> delay,
                                                                      Identity identity);
@@ -54,10 +55,25 @@ class NetGame {
     static std::expected<std::unique_ptr<NetGame>, std::string> join(const std::string& address, std::uint16_t port,
                                                                      Identity identity);
 
-    // The lobby, a poll a call: once the game starts, what it is. An error: refused, or the host gone.
+    // The lobby, a poll a call: once the game starts, what it is. An error: refused, or the host gone. The host tells
+    // everyone now and then who is there, their round trips and the start (net::Lobby).
     std::expected<std::optional<Joined>, std::string> lobby();
     // Who has joined so far, by player (the lobby's).
     const std::vector<std::string>& names() const noexcept { return names_; }
+    // A client: the host has given him a place in the lobby (until then he is only connected).
+    bool welcomed() const noexcept { return hosting() || welcomed_; }
+    // The scene the game starts in: the host's choice (set_slot), as a client has it from the lobby.
+    int slot() const noexcept { return slot_; }
+    void set_slot(int slot) noexcept { slot_ = slot; }
+    // Host: the game starts with the next lobby(), with whoever is there.
+    void start() noexcept { start_wanted_ = true; }
+    // Host, in the game: everyone back to the lobby (net::Back), this machine at once (to_lobby). A client is told
+    // in a poll (back_asked; nothing after it is taken until he is in the lobby again).
+    void back_to_lobby();
+    bool back_asked() const noexcept { return back_; }
+    // The game over for this machine, the connections kept: the lobby again (the host's: those still there, in
+    // their order, the places left empty closed up).
+    void to_lobby();
 
     // The game: rollback over `session` (made for the Joined game), from step 0.
     void begin(Session& session);
@@ -102,11 +118,22 @@ class NetGame {
     void welcome_under_way(int peer, const net::Hello& hello);
     int peer_of(int player) const noexcept;  // the transport's number for a player (on a client, the host's: 0)
     int player_of(int peer) const noexcept;
+    // Host, in the lobby: who is there, their round trips and the start, to everyone (net::Lobby).
+    void send_lobby();
+    // The lobby's handling of one event: an error ends it.
+    std::expected<std::optional<Joined>, std::string> lobby_event(const net::Event& event);
 
     std::unique_ptr<net::Transport> transport_;
     Identity identity_;
     // The lobby.
-    int wanted_ = 1;  // host: how many players start the game
+    int wanted_ = 1;          // host: how many players start the game ...
+    bool auto_start_ = true;  // ... as they are there; else when the host says (start_wanted_)
+    bool start_wanted_ = false;
+    bool welcomed_ = false;
+    std::uint32_t lobby_sent_at_ = 0;  // host: when the lobby was last told
+    std::uint16_t game_number_ = 0;    // the game's number (net::Start): what a game's messages carry
+    bool back_ = false;                // a client: told to go back to the lobby
+    std::vector<net::Event> pending_;  // what came after that, for the lobby
     int slot_ = 0;
     bool cheat_ = false;
     std::optional<int> delay_;

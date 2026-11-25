@@ -8,6 +8,7 @@
 #include <thread>
 
 #include "lvr/coop.hpp"
+#include "lvr/names.hpp"
 #include "lvr/online.hpp"
 #include "lvr/session.hpp"
 
@@ -293,4 +294,97 @@ TEST_CASE("real data: one joins the game under way, and one who left comes back"
     CHECK_FALSE(replayed->has_value());
     // A late one's, from the state he was given, can't be.
     CHECK_FALSE(replay_log(LVR_ORIGINAL_DIR, late.net->log()).has_value());
+}
+
+TEST_CASE("real data: a lobby the host starts (a new game: the intro, the same on both); back to it, and another game",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    const NetGame::Identity identity{.build = "test", .game = 1, .name = "host"};
+    Machine host;
+    std::uint16_t port = kFirstPort + 40;
+    for (; port < kFirstPort + 60 && !host.net; ++port) {
+        if (auto opened =
+                NetGame::host(port, 0, scene::kIntro, false, std::nullopt, identity)) {  // (its word starts it)
+            host.net = std::move(*opened);
+        }
+    }
+    REQUIRE(host.net);
+    --port;
+    Machine guest;
+    auto client = NetGame::join("127.0.0.1", port, {.build = "test", .game = 1, .name = "guest"});
+    REQUIRE(client);
+    guest.net = std::move(*client);
+    // The lobby: until the guest is in it and has the host's word on the start and his own round trip; nothing starts
+    // meanwhile.
+    const auto in_lobby = [&](const auto& until) {
+        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+        std::optional<NetGame::Joined> at_host;
+        std::optional<NetGame::Joined> at_guest;
+        while (!until(at_host, at_guest) && std::chrono::steady_clock::now() < end) {
+            if (!at_host) {
+                auto lobby = host.net->lobby();
+                REQUIRE(lobby);
+                at_host = *lobby;
+            }
+            if (!at_guest) {
+                auto lobby = guest.net->lobby();
+                REQUIRE(lobby);
+                at_guest = *lobby;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        }
+        REQUIRE(until(at_host, at_guest));
+        return std::pair{at_host, at_guest};
+    };
+    in_lobby([&](const auto& at_host, const auto& at_guest) {
+        return guest.net->welcomed() && guest.net->slot() == scene::kIntro && guest.net->network_ms(1).has_value() &&
+               !at_host && !at_guest;
+    });
+    CHECK(guest.net->names() == std::vector<std::string>{"HOST", "GUEST"});
+    CHECK(guest.net->player() == 1);
+
+    // Started by the host's word: a new game, the intro played from its recording on both.
+    const auto start = [&](int slot) {
+        host.net->start();
+        const auto [at_host, at_guest] =
+            in_lobby([](const auto& at_host, const auto& at_guest) { return at_host && at_guest; });
+        REQUIRE(at_guest->slot == slot);
+        for (Machine* one : {&host, &guest}) {
+            auto opened = Session::open(LVR_ORIGINAL_DIR, slot, {}, Rules::kRemaster, draw,
+                                        Online{.on = true, .players = 2}, one->net->player());
+            REQUIRE(opened);
+            one->session = std::move(*opened);
+            one->steps = 0;
+            one->delay = at_host->delay;
+            one->net->begin(*one->session);
+        }
+    };
+    start(scene::kIntro);
+    CHECK(host.session->demo());
+    run_until({&host, &guest}, 60);
+    settle({&host, &guest});
+    CHECK(guest.session->state_hash() == host.session->state_hash());
+    CHECK(guest.session->scene() == scene::kIntro);
+
+    // Back to the lobby: the guest is told, and both are there again, the same two.
+    host.net->back_to_lobby();
+    const auto told = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+    while (!guest.net->back_asked() && std::chrono::steady_clock::now() < told) {
+        REQUIRE(guest.net->poll());
+        std::this_thread::sleep_for(std::chrono::milliseconds{2});
+    }
+    REQUIRE(guest.net->back_asked());
+    guest.net->to_lobby();
+    host.net->set_slot(0);  // level 1 this time
+    in_lobby([&](const auto& /*at_host*/, const auto& /*at_guest*/) { return guest.net->slot() == 0; });
+    CHECK(guest.net->names() == std::vector<std::string>{"HOST", "GUEST"});
+
+    // Another game, from its step 0: the same on both (what was late of the one before not taken).
+    start(0);
+    run_until({&host, &guest}, 120);
+    settle({&host, &guest});
+    CHECK(guest.session->scene() == 0);
+    CHECK(guest.session->state_hash() == host.session->state_hash());
 }

@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -15,7 +16,7 @@ using input::Action;
 namespace {
 
 Menu::Choices all_choices() {
-    return {.has_modern = true, .screens = {"none", "crt", "xbr"}, .online = false, .passwords = {}};
+    return {.has_modern = true, .screens = {"none", "crt", "xbr"}, .online = false, .hosting = false, .passwords = {}};
 }
 
 // To line `line` of the page, from its first.
@@ -124,7 +125,8 @@ TEST_CASE("menu: the options change the settings") {
     // Without a SoundFont there is only the Classic sound.
     Settings modern;
     modern.modern_sound = true;
-    Menu without{modern, {.has_modern = false, .screens = {"none"}, .online = false, .passwords = {}}};
+    Menu without{modern,
+                 {.has_modern = false, .screens = {"none"}, .online = false, .hosting = false, .passwords = {}}};
     go_to(without, 0);
     (void)without.press(Key::kChoose);
     CHECK(without.lines().at(0).value == "CLASSIC");
@@ -253,13 +255,17 @@ TEST_CASE("menu: HOST GAME and JOIN GAME, from the title: lines typed into, chec
     Settings settings;
     settings.host_password.clear();
     Menu menu{settings,
-              {.has_modern = false, .screens = {"none"}, .online = false, .passwords = {"AAAA", "BBBB", "CCCC"}}};
+              {.has_modern = false,
+               .screens = {"none"},
+               .online = false,
+               .hosting = false,
+               .passwords = {"AAAA", "BBBB", "CCCC"}}};
     menu.open_host();
     CHECK(menu.title() == "HOST GAME");
     CHECK(labels(menu) == std::vector<std::string>{"NAME", "PORT", "PASSWORD", "START HOSTING", "BACK"});
     CHECK(menu.lines()[0].value == "PLAYER 1");  // (no name yet: the one the game gives)
     CHECK(menu.lines()[1].value == "47230");
-    CHECK(menu.lines()[2].value == "AAAA");  // the first level's, to start with
+    CHECK(menu.lines()[2].value == "NEW GAME");  // no password: a new game, from the intro
 
     // The name: typed (letters made capitals, what the font hasn't left out), at most 8; erased; done with Enter.
     CHECK(menu.press(Key::kChoose) == Menu::Asked::kNothing);
@@ -297,10 +303,12 @@ TEST_CASE("menu: HOST GAME and JOIN GAME, from the title: lines typed into, chec
     menu.stop_waiting();
     CHECK(menu.settings().host_port == 4000);
 
-    // The password: a level's, or nothing starts.
+    // The password: a level's, or none (a new game: level -1); another, and nothing starts.
+    go_to(menu, 3);
+    CHECK(menu.press(Key::kChoose) == Menu::Asked::kHost);
+    CHECK(menu.level() == -1);
     go_to(menu, 2);
     (void)menu.press(Key::kChoose);
-    menu.erase();
     menu.take_text("x");
     menu.stop_waiting();
     go_to(menu, 3);
@@ -347,4 +355,53 @@ TEST_CASE("menu: HOST GAME and JOIN GAME, from the title: lines typed into, chec
     CHECK(join.press(Key::kChoose) == Menu::Asked::kResume);
     join.tell("THE HOST LEFT");
     CHECK(join.note().front() == "THE HOST LEFT");
+}
+
+TEST_CASE("menu: the lobby: the host's password and START GAME, a client's waiting; RETURN TO LOBBY in a game") {
+    const Menu::Choices choices{
+        .has_modern = false, .screens = {"none"}, .online = false, .hosting = false, .passwords = {"AAAA", "BBBB"}};
+    Menu host{Settings{}, choices};
+    host.open_lobby(true);
+    CHECK(host.in_lobby());
+    CHECK(host.title() == "LOBBY");
+    CHECK(labels(host) == std::vector<std::string>{"PASSWORD", "START GAME", "LEAVE"});
+    CHECK(host.lines()[0].value == "NONE");
+    CHECK(host.level_typed() == std::optional<int>{-1});
+    // A password typed: the level it names, as it is typed (the front end tells the others).
+    (void)host.press(Key::kChoose);
+    host.take_text("bbb");
+    CHECK_FALSE(host.level_typed().has_value());
+    host.take_text("b");
+    CHECK(host.level_typed() == std::optional<int>{1});
+    host.stop_waiting();
+    go_to(host, 1);
+    CHECK(host.press(Key::kChoose) == Menu::Asked::kStart);
+    CHECK(host.level() == 1);
+    // What it starts with, and who is there, under its lines.
+    CHECK_FALSE(host.shows_players());
+    host.set_players(
+        {{.name = "HOST", .network = "-", .engine = "-"}, {.name = "GUEST", .network = "20 MS", .engine = "36 MS"}});
+    host.set_start("LEVEL 2, BBBB");
+    CHECK(host.shows_players());
+    const std::vector<std::uint8_t> picture = menu_picture(host, {});
+    CHECK(picture.size() == std::size_t{kScreenWidth} * kScreenHeight * 4);
+    // Back leaves it.
+    CHECK(host.press(Key::kBack) == Menu::Asked::kLeave);
+
+    Menu client{Settings{}, choices};
+    client.open_lobby(false);
+    CHECK(labels(client) == std::vector<std::string>{"LEAVE"});
+    CHECK(client.note().front() == "WAITING FOR THE HOST TO START");
+    CHECK(client.press(Key::kChoose) == Menu::Asked::kLeave);
+
+    // In a game online, the host's first page goes back to the lobby; a client's has no such line.
+    Menu playing{Settings{},
+                 {.has_modern = false, .screens = {"none"}, .online = true, .hosting = true, .passwords = {}}};
+    CHECK(labels(playing) ==
+          std::vector<std::string>{"OPTIONS", "KEYBOARD", "GAMEPAD", "RETURN TO LOBBY", "GIVE UP LEVEL", "QUIT GAME"});
+    go_to(playing, 3);
+    CHECK(playing.press(Key::kChoose) == Menu::Asked::kLobby);
+    Menu guest{Settings{},
+               {.has_modern = false, .screens = {"none"}, .online = true, .hosting = false, .passwords = {}}};
+    CHECK(labels(guest) == std::vector<std::string>{"OPTIONS", "KEYBOARD", "GAMEPAD", "GIVE UP LEVEL", "QUIT GAME"});
 }

@@ -99,8 +99,9 @@ Tab for the inventory, Esc to pause, F10 to quit. A gamepad works as well.
 Co-op online, still being built: one player hosts and the others join, each with a Viking of their own on a screen
 of their own. Everyone needs the same build and the same game files, and the host's port must be reachable (a
 LAN, a forwarded port, or a VPN such as Tailscale). Under Remaster rules the title's menu has HOST GAME (a name, a
-port, the password of the level to start in) and JOIN GAME (a name, the host's IP:PORT). The host's game starts at
-once, and the others join it while it goes on. Or from the command line:
+port, a level's password, or none for a new game) and JOIN GAME (a name, the host's IP:PORT). Everyone waits in the
+lobby until the host starts the game; the host can bring everyone back there from the game, to start another.
+Who comes later joins the game while it goes on. Or from the command line:
 
 ```sh
 ./build/release/bin/vikings-remaster --rules remaster   # then HOST GAME or JOIN GAME in the title's menu

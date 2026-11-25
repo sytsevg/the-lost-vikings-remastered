@@ -137,10 +137,14 @@ void use_settings(Session& session, GpuRenderer* gpu, const Settings& settings) 
     }
 }
 
-// What the menu has to choose from: the Modern sound if there is one, and the screen's looks.
-Menu::Choices menu_choices(const Session& session) {
-    Menu::Choices choices{
-        .has_modern = session.has_modern(), .screens = {}, .online = session.online(), .passwords = {}};
+// What the menu has to choose from: the Modern sound if there is one, and the screen's looks; online, whether this
+// machine hosts a game from the title's lobby (RETURN TO LOBBY).
+Menu::Choices menu_choices(const Session& session, bool hosting = false) {
+    Menu::Choices choices{.has_modern = session.has_modern(),
+                          .screens = {},
+                          .online = session.online(),
+                          .hosting = hosting,
+                          .passwords = {}};
     for (const GpuRenderer::Look look : GpuRenderer::kLooks) {
         choices.screens.emplace_back(GpuRenderer::name_of(look));
     }
@@ -184,8 +188,38 @@ CoopOverlay coop_overlay(const NetGame& net) {
 
 // Online: the menu's players: each one's name and his round trips to the host, the network's and the game's, as the
 // host measures them (the same on every machine; the host's own: none).
+// A round trip as the menu shows it.
+std::string round_trip_words(std::optional<int> ms) {
+    return ms ? std::format("{} MS", *ms) : std::string{"-"};
+}
+
+// The lobby's players: each one there, and his round trips to the host as the host measures them.
+std::vector<Menu::PlayerLine> lobby_lines(const NetGame& net) {
+    std::vector<Menu::PlayerLine> lines;
+    for (int who = 0; std::cmp_less(who, net.names().size()); ++who) {
+        lines.push_back({.name = net.names().at(static_cast<std::size_t>(who)),
+                         .network = round_trip_words(net.network_ms(who)),
+                         .engine = round_trip_words(net.engine_ms(who))});
+    }
+    return lines;
+}
+
+// What a game online starts with, as the lobby says it: a new game (the intro, as the title's NEW GAME), or a level
+// and its password.
+std::string start_words(const Session& session, int slot) {
+    if (slot == scene::kIntro) {
+        return "NEW GAME";
+    }
+    const auto& passwords = session.world().passwords;
+    if (slot >= 0 && std::cmp_less(slot, passwords.size())) {
+        const auto& password = passwords.at(static_cast<std::size_t>(slot));
+        return std::format("LEVEL {}, {}", slot + 1, std::string(password.begin(), password.end()));
+    }
+    return std::format("SCENE {}", slot);
+}
+
 std::vector<Menu::PlayerLine> player_lines(const Session& session, const NetGame& net) {
-    const auto shown = [](std::optional<int> ms) { return ms ? std::format("{} MS", *ms) : std::string{"-"}; };
+    const auto shown = round_trip_words;
     std::vector<Menu::PlayerLine> lines;
     for (int who = 0; who < session.world().player_count && std::cmp_less(who, net.names().size()); ++who) {
         if (!session.world().players.at(static_cast<std::size_t>(who)).here) {
@@ -233,8 +267,8 @@ struct DumpOptions {
     Showcase* showcase = nullptr;                     // its place, written as --whole writes the whole level
     int moments = 0;
     // The menu over the last picture (Remaster rules), with these of its keys pressed: u, d, l, r (up, down, left,
-    // right), c (choose), b (back), x (clear); + and * open HOST GAME and JOIN GAME (as the title does); anything
-    // else is typed into the line being typed into. None: as it opens.
+    // right), c (choose), b (back), x (clear); + and * open HOST GAME and JOIN GAME (as the title does), % the host's
+    // lobby (with this machine in it); anything else is typed into the line being typed into. None: as it opens.
     std::optional<std::string> menu;
 };
 
@@ -325,9 +359,16 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
                     (void)menu.press(static_cast<Menu::Key>(at));
                 } else if (key == '+' || key == '*') {
                     key == '+' ? menu.open_host() : menu.open_join();
+                } else if (key == '%') {
+                    menu.open_lobby(true);
                 } else {
                     menu.take_text(std::string_view{&key, 1});
                 }
+            }
+            if (menu.in_lobby()) {  // (who is there: this machine; what it starts with: as typed)
+                const int level = menu.level_typed().value_or(-1);
+                menu.set_start(start_words(session, level < 0 ? scene::kIntro : level));
+                menu.set_players({{.name = net::shown_name(menu.settings().name, 0), .network = "-", .engine = "-"}});
             }
             // What it changed, as the game holds (a zoom's change of view all the way, a third of a second).
             use_settings(session, gpu, menu.settings());
@@ -450,21 +491,25 @@ struct Played {
     bool done = false;
     Screen last;
     std::string why;
+    std::optional<NetGame::Joined> started;  // the lobby's game started: what it is
+    bool lobby = false;                      // a game online's host said: back to the lobby
 };
 
 // The game in a window. With `gpu` (and its window), the pictures are the ones it kept and it shows them;
 // without, they are the Classic renderer's and a window is made here. With `remastered` (Remaster rules): the
 // player's controls and settings, the menu, Remaster's own keys and buttons, walking as fast as a stick is pushed.
 // With `wish` (Remaster rules, offline, in a window) the title's HOST GAME and JOIN GAME open their pages, and the play
-// ends with what one asked for in it; given with `tell`, the play opens on that page saying it.
+// ends with what one asked for in it; given with `tell`, the play opens on that page saying it. With `lobby`, over the
+// game held, the lobby of that game online, until it starts (or is left). A game online `from_lobby` has the host's
+// RETURN TO LOBBY.
 Played play(Session& session, input::Controls controls, SDL_Window* window, GpuRenderer* gpu, bool report_slow,
             Showcase* showcase, Remastered* remastered, NetGame* net, std::optional<OnlineWish>* wish = nullptr,
-            std::string_view tell = {}) {
+            std::string_view tell = {}, NetGame* lobby = nullptr, bool from_lobby = false) {
     using input::Action;
     using input::bit;
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
         std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
-        return {.status = EXIT_FAILURE, .done = true, .last = {}, .why = {}};
+        return {.status = EXIT_FAILURE, .done = true, .last = {}, .why = {}, .started = {}, .lobby = false};
     }
     SDL_Renderer* renderer = nullptr;
     SDL_Texture* texture = nullptr;
@@ -473,7 +518,7 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
                                          SDL_WINDOW_RESIZABLE, &window, &renderer)) {
             std::println(stderr, "SDL_CreateWindowAndRenderer failed: {}", SDL_GetError());
             SDL_Quit();
-            return {.status = EXIT_FAILURE, .done = true, .last = {}, .why = {}};
+            return {.status = EXIT_FAILURE, .done = true, .last = {}, .why = {}, .started = {}, .lobby = false};
         }
         SDL_SetRenderVSync(renderer, 1);
         SDL_SetRenderLogicalPresentation(renderer, kWidth, kHeight, SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
@@ -503,8 +548,10 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
     std::uint16_t keyboard = 0;  // the keyboard word, as the original's handler keeps it
     int status = EXIT_SUCCESS;
     bool running = true;
-    bool over = false;  // the window closed, or the game quit: not back to the title
-    std::string why;    // online: what ended it
+    bool over = false;                       // the window closed, or the game quit: not back to the title
+    std::string why;                         // online: what ended it
+    std::optional<NetGame::Joined> started;  // the lobby's game, started
+    bool back = false;                       // the game online's host: back to the lobby
     std::vector<SDL_Gamepad*> pads;
     input::PadReading pads_before{};  // as the last pass of the loop read them
     input::PadReading quiet{};        // held as the menu closed: not the game's until let go
@@ -564,7 +611,8 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
         draw_menu();
     };
     const auto open_menu = [&] {
-        menu.emplace(settings_now(session, gpu, remastered->settings), menu_choices(session));
+        menu.emplace(settings_now(session, gpu, remastered->settings),
+                     menu_choices(session, net != nullptr && net->hosting() && from_lobby));
         menu->set_has_pad(!pads.empty());
         keyboard = 0;  // what is held now is let go in the menu
         session.rewind(false);
@@ -591,6 +639,19 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
         if ((asked == Menu::Asked::kHost || asked == Menu::Asked::kJoin) && wish != nullptr) {
             *wish = OnlineWish{.host = asked == Menu::Asked::kHost, .level = menu->level()};
             running = false;  // (the front end opens the game online, and comes back here after it)
+        }
+        if (asked == Menu::Asked::kStart && lobby != nullptr) {  // the lobby's host: it starts (the menu until then)
+            lobby->set_slot(menu->level() < 0 ? scene::kIntro : menu->level());
+            lobby->start();
+            return;
+        }
+        if (asked == Menu::Asked::kLeave) {
+            running = false;  // (the front end drops the connection: the title again)
+        }
+        if (asked == Menu::Asked::kLobby && net != nullptr) {  // the host: everyone back to the lobby
+            net->back_to_lobby();
+            back = true;
+            running = false;
         }
         if (asked != Menu::Asked::kNothing) {
             give_up = asked == Menu::Asked::kGiveUp;
@@ -674,6 +735,9 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
                 menu->stop_waiting();
                 return menu_changed();
             }
+            if (menu->in_lobby()) {
+                return;  // (the lobby isn't closed, only left)
+            }
             return close_menu();
         }
         if (menu->waiting() == Menu::Waiting::kText) {  // (typed on the keyboard: A or B ends it)
@@ -727,8 +791,13 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
             return menu_press(Menu::Key::kClear);
         }
     };
-    if (wish != nullptr && *wish && !tell.empty() && gpu != nullptr) {  // back from a game online: why it ended
+    if (wish != nullptr && *wish && !tell.empty() && gpu != nullptr && remastered != nullptr) {  // why it ended
         open_online_page((*wish)->host, tell);
+    }
+    if (lobby != nullptr && gpu != nullptr && remastered != nullptr) {  // the lobby, over the game held
+        open_menu();
+        menu->open_lobby(lobby->hosting());
+        menu_changed();
     }
     if (wish != nullptr) {
         wish->reset();
@@ -826,11 +895,36 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
             }
         }
         pads_before = reading;
+        if (lobby != nullptr) {  // the lobby: who is there, what the game starts with; until it starts
+            if (auto polled = lobby->lobby(); !polled) {
+                std::println(stderr, "vikings-remaster: {}", polled.error());
+                why = polled.error();
+                running = false;
+            } else if (*polled) {
+                started = **polled;
+                running = false;
+            }
+            if (menu && menu->in_lobby()) {
+                if (const std::optional<int> level = menu->level_typed(); level && lobby->hosting()) {
+                    lobby->set_slot(*level < 0 ? scene::kIntro : *level);  // (the others see it as it is typed)
+                }
+                std::vector<Menu::PlayerLine> lines = lobby_lines(*lobby);
+                std::string start_with = start_words(session, lobby->slot());
+                if (lines != menu->players() || start_with != menu->start()) {
+                    menu->set_players(std::move(lines));
+                    menu->set_start(std::move(start_with));
+                    draw_menu();
+                }
+            }
+        }
         if (net != nullptr) {  // what came, and what is due to be sent
             if (const auto polled = net->poll(); !polled) {
                 std::println(stderr, "vikings-remaster: {}", polled.error());
                 status = EXIT_FAILURE;
                 why = polled.error();
+                running = false;
+            } else if (net->back_asked()) {  // the host: back to the lobby
+                back = true;
                 running = false;
             }
             if (menu) {  // its page of the players, as they are now
@@ -1025,7 +1119,7 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
     } else if (remaster) {
         remastered->settings = settings_now(session, gpu, remastered->settings);
     }
-    if (net != nullptr) {
+    if (net != nullptr && !back) {
         net->quit();  // (a client tells the host he goes)
     }
     for (SDL_Gamepad* pad : pads) {
@@ -1040,7 +1134,7 @@ Played play(Session& session, input::Controls controls, SDL_Window* window, GpuR
         SDL_DestroyWindow(window);
         SDL_Quit();
     }
-    return {.status = status, .done = over, .last = last_shown, .why = why};
+    return {.status = status, .done = over, .last = last_shown, .why = why, .started = started, .lobby = back};
 }
 
 std::optional<int> parse_number(std::string_view text) {
@@ -1083,102 +1177,109 @@ std::string said(std::string_view text) {
     return out;
 }
 
-// A game online opened from the title (ADR-0012): its connection and its session, under way. Neither: given up.
-struct OnlineGame {
+// A connection the title asked for (ADR-0012): to the lobby; or, the game being under way already, into it
+// (`joined`). None: given up (or the window closed: `closed`).
+struct Connected {
     std::unique_ptr<NetGame> net;
-    std::unique_ptr<Session> session;
-    bool closed = false;  // the window was closed meanwhile
+    std::optional<NetGame::Joined> joined;
+    bool closed = false;
 };
 
-// The game online the title's HOST GAME or JOIN GAME asked for, as the settings say: hosted at once, in the level its
-// password named (the others join it under way, part of ADR-0012); or joined: a box over `behind` until the host has
-// said where his game is (Escape gives up; ten seconds without an answer, the same). Why not, as the menu says it.
-std::expected<OnlineGame, std::string> go_online(const OnlineWish& wish, const Settings& settings,
-                                                 const std::filesystem::path& dir, const SessionSound& sound,
-                                                 const Draw& draw, GpuRenderer& gpu, const Screen& behind,
-                                                 const std::vector<assets::IndexedImage>& font) {
+// The connection the title's HOST GAME or JOIN GAME asked for, as the settings say: hosting on the port at once, the
+// lobby waiting for the host's word (its game a new one from the intro, or the level its password named); joining,
+// a box over `behind` until the host has given a place in his lobby, or the game under way. Escape gives up; ten
+// seconds without an answer, the same. Why not, as the menu says it.
+std::expected<Connected, std::string> connect_online(const OnlineWish& wish, const Settings& settings,
+                                                     const std::filesystem::path& dir, GpuRenderer& gpu,
+                                                     const Screen& behind,
+                                                     const std::vector<assets::IndexedImage>& font) {
     auto identity = identity_of(dir, settings.name);
     if (!identity) {
         return std::unexpected{said(identity.error())};
     }
-    OnlineGame game;
-    const auto [address, port] = split_address(settings.join_address);
-    const std::string where = std::format("{}:{}", address, port);
-    const auto show = [&](std::string_view text) {
-        gpu.set_overlay(coop_picture(CoopOverlay{.waiting = std::string{text}}, font));
-        (void)gpu.show(behind, nullptr, 0);
-    };
     if (wish.host) {
-        auto hosted = NetGame::host(static_cast<std::uint16_t>(settings.host_port), 1, wish.level, false, std::nullopt,
-                                    *identity);
+        auto hosted = NetGame::host(static_cast<std::uint16_t>(settings.host_port), 0,
+                                    wish.level < 0 ? scene::kIntro : wish.level, false, std::nullopt, *identity);
         if (!hosted) {
             std::println(stderr, "vikings-remaster: {}", hosted.error());
             return std::unexpected{std::format("CAN'T HOST ON PORT {}", settings.host_port)};
         }
-        game.net = std::move(*hosted);
-    } else {
-        show(said(std::format("JOINING {}", where)));  // (joining waits for the connection)
-        auto joined = NetGame::join(address, port, *identity);
-        if (!joined) {
-            std::println(stderr, "vikings-remaster: {}", joined.error());
-            gpu.set_overlay({});
-            return std::unexpected{said(std::format("NO GAME AT {}", where))};
-        }
-        game.net = std::move(*joined);
+        std::println("vikings-remaster: hosting on port {}", settings.host_port);
+        return Connected{.net = std::move(*hosted), .joined = std::nullopt, .closed = false};
     }
-    // The lobby: hosting, at once (he is the one it waits for); joining, as long as the host takes to answer.
+    const auto [address, port] = split_address(settings.join_address);
+    const std::string where = std::format("{}:{}", address, port);
+    const auto show = [&] {
+        gpu.set_overlay(coop_picture(CoopOverlay{.waiting = said(std::format("JOINING {}", where))}, font));
+        (void)gpu.show(behind, nullptr, 0);
+    };
+    show();  // (joining waits for the connection)
+    auto joining = NetGame::join(address, port, *identity);
+    if (!joining) {
+        std::println(stderr, "vikings-remaster: {}", joining.error());
+        gpu.set_overlay({});
+        return std::unexpected{said(std::format("NO GAME AT {}", where))};
+    }
+    Connected connected{.net = std::move(*joining), .joined = std::nullopt, .closed = false};
     constexpr std::uint64_t kPatienceMs = 10000;
     const std::uint64_t began = SDL_GetTicks();
-    std::optional<NetGame::Joined> joined;
-    while (!joined) {
+    while (!connected.net->welcomed()) {
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
-                game.closed = true;
-            } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE) {
                 gpu.set_overlay({});
-                return OnlineGame{};  // given up
+                return Connected{.net = nullptr, .joined = std::nullopt, .closed = true};
+            }
+            if (event.type == SDL_EVENT_KEY_DOWN && event.key.scancode == SDL_SCANCODE_ESCAPE) {
+                gpu.set_overlay({});
+                return Connected{};  // given up
             }
         }
-        if (game.closed) {
-            gpu.set_overlay({});
-            return OnlineGame{.net = nullptr, .session = nullptr, .closed = true};
-        }
-        auto lobby = game.net->lobby();
+        auto lobby = connected.net->lobby();
         if (!lobby) {
             std::println(stderr, "vikings-remaster: {}", lobby.error());
             gpu.set_overlay({});
             return std::unexpected{said(lobby.error())};
         }
-        joined = *lobby;
-        if (!joined && SDL_GetTicks() - began > kPatienceMs) {
+        if (*lobby) {  // the game is under way: into it
+            connected.joined = *lobby;
+            break;
+        }
+        if (SDL_GetTicks() - began > kPatienceMs) {
             gpu.set_overlay({});
             return std::unexpected{said(std::format("NO ANSWER FROM {}", where))};
         }
-        if (!joined && !wish.host) {
-            show(said(std::format("JOINING {}", where)));
-        }
+        show();
     }
     gpu.set_overlay({});
-    auto opened = Session::open(dir, joined->slot, sound, Rules::kRemaster, draw,
-                                Online{.on = true, .players = joined->players}, joined->player);
+    std::println("vikings-remaster: joined {}", where);
+    return connected;
+}
+
+// A game online's session, as the lobby started it (or as the game under way was given): rollback over it begun.
+std::expected<std::unique_ptr<Session>, std::string> open_game(NetGame& net, const NetGame::Joined& joined,
+                                                               const std::filesystem::path& dir,
+                                                               const SessionSound& sound, const Draw& draw) {
+    auto opened = Session::open(dir, joined.slot, sound, Rules::kRemaster, draw,
+                                Online{.on = true, .players = joined.players}, joined.player);
     if (!opened) {
-        return std::unexpected{said(opened.error())};
+        return std::unexpected{opened.error()};
     }
-    if (!joined->state.empty()) {  // a game under way: its state as the host gave it
-        if (const auto taken = (*opened)->take_state(joined->state); !taken) {
-            return std::unexpected{said(taken.error())};
+    if (!joined.state.empty()) {  // a game under way: its state as the host gave it
+        if (const auto taken = (*opened)->take_state(joined.state); !taken) {
+            return std::unexpected{taken.error()};
         }
     }
-    game.session = std::move(*opened);
-    game.net->begin(*game.session);
-    if (const char* beside = SDL_GetBasePath()) {  // (what the game writes is beside it)
-        game.net->set_log_folder(std::filesystem::path{beside} / "logs");
+    if (joined.cheat) {
+        (*opened)->cheat();
     }
-    std::println("vikings-remaster: {}: player {}, {} step(s) of input delay",
-                 wish.host ? std::format("hosting on port {}", settings.host_port) : std::format("joined {}", where),
-                 joined->player + 1, joined->delay);
-    return game;
+    net.begin(**opened);
+    if (const char* beside = SDL_GetBasePath()) {  // (what the game writes is beside it)
+        net.set_log_folder(std::filesystem::path{beside} / "logs");
+    }
+    std::println("vikings-remaster: the game starts: player {}, {} step(s) of input delay", joined.player + 1,
+                 joined.delay);
+    return opened;
 }
 
 }  // namespace
@@ -1494,20 +1595,48 @@ int main(int argc, char* argv[]) try {
                          remastered ? &*remastered : nullptr, net.get(), may_go_online ? &wish : nullptr);
     while (may_go_online && !played.done && wish) {
         std::string tell;
-        auto online =
-            go_online(*wish, remastered->settings, dir, sound, draw_with, *gpu, played.last, (*session)->font());
-        if (!online) {
-            tell = online.error();
-        } else if (online->closed) {
+        auto connected = connect_online(*wish, remastered->settings, dir, *gpu, played.last, (*session)->font());
+        if (!connected) {
+            tell = connected.error();
+        } else if (connected->closed) {
             break;
-        } else if (online->session != nullptr) {
-            use_settings(*online->session, gpu.get(), remastered->settings);
-            const Played there = play(*online->session, remastered->settings.controls, window, gpu.get(), report_slow,
-                                      nullptr, &*remastered, online->net.get());
-            if (there.done) {
+        } else if (connected->net != nullptr) {
+            // The lobby (over the title, held) and its games, until it is left; a game's host may bring everyone
+            // back to it, for another.
+            NetGame& lobby = *connected->net;
+            std::optional<NetGame::Joined> started = connected->joined;
+            while (true) {
+                if (!started) {
+                    const Played waited = play(**session, remastered->settings.controls, window, gpu.get(), report_slow,
+                                               nullptr, &*remastered, nullptr, nullptr, {}, &lobby);
+                    played.done = waited.done;
+                    if (waited.done || !waited.started) {
+                        tell = said(waited.why);
+                        break;
+                    }
+                    started = waited.started;
+                }
+                auto game = open_game(lobby, *started, dir, sound, draw_with);
+                if (!game) {
+                    tell = said(game.error());
+                    break;
+                }
+                use_settings(**game, gpu.get(), remastered->settings);
+                const Played there = play(**game, remastered->settings.controls, window, gpu.get(), report_slow,
+                                          nullptr, &*remastered, &lobby, nullptr, {}, nullptr, true);
+                played.done = there.done;
+                if (there.done || !there.lobby) {
+                    tell = said(there.why);
+                    break;
+                }
+                if (!lobby.hosting()) {
+                    lobby.to_lobby();  // (the host is there already)
+                }
+                started.reset();
+            }
+            if (played.done) {
                 break;
             }
-            tell = said(there.why);
         }
         if (tell.empty()) {
             wish.reset();  // (given up, or left: the title as it was)

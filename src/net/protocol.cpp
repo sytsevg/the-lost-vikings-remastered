@@ -117,6 +117,7 @@ void fields(Io& io, auto& message) {
     } else if constexpr (std::is_same_v<M, Welcome>) {
         io(message.player);
     } else if constexpr (std::is_same_v<M, Hash>) {
+        io(message.game);
         io(message.player);
         io(message.step);
         io(message.hash);
@@ -124,6 +125,7 @@ void fields(Io& io, auto& message) {
         io(message.player);
         io(message.from);
     } else if constexpr (std::is_same_v<M, Status>) {
+        io(message.game);
         io(message.player);
         io(message.step);
         io(message.advantage);
@@ -142,7 +144,7 @@ void fields(Io& io, auto& message) {
         io(message.player);
         io(message.at);
         io(message.name);
-    } else if constexpr (std::is_same_v<M, Quit>) {
+    } else if constexpr (std::is_same_v<M, Quit> || std::is_same_v<M, Back>) {
         // nothing more
     }
 }
@@ -181,13 +183,22 @@ std::vector<std::uint8_t> encode(const Message& message) {
             using M = std::remove_cvref_t<decltype(one)>;
             if constexpr (std::is_same_v<M, Lobby>) {
                 write_names(out, one.names);
+                for (const std::uint16_t network : one.network) {
+                    out(network);
+                }
+                for (const std::uint16_t engine : one.engine) {
+                    out(engine);
+                }
+                out(one.slot);
             } else if constexpr (std::is_same_v<M, Start>) {
+                out(one.game);
                 out(one.players);
                 out(one.delay);
                 out(one.slot);
                 out(static_cast<std::uint8_t>(one.cheat ? 1 : 0));
                 write_names(out, one.names);
             } else if constexpr (std::is_same_v<M, Joining>) {
+                out(one.game);
                 out(one.player);
                 out(one.step);
                 out(one.arrives);
@@ -195,6 +206,7 @@ std::vector<std::uint8_t> encode(const Message& message) {
                 write_names(out, one.names);
                 out(one.state);
             } else if constexpr (std::is_same_v<M, Inputs>) {
+                out(one.game);
                 out(one.player);
                 out(one.first);
                 out(static_cast<std::uint8_t>(std::min(one.inputs.size(), kMostInputs)));
@@ -220,7 +232,15 @@ std::optional<Message> read_one(In& in) {
         if (!read_names(in, message.names)) {
             return std::nullopt;
         }
+        for (std::uint16_t& network : message.network) {
+            in(network);
+        }
+        for (std::uint16_t& engine : message.engine) {
+            in(engine);
+        }
+        in(message.slot);
     } else if constexpr (std::is_same_v<M, Start>) {
+        in(message.game);
         in(message.players);
         in(message.delay);
         in(message.slot);
@@ -229,6 +249,7 @@ std::optional<Message> read_one(In& in) {
             return std::nullopt;
         }
     } else if constexpr (std::is_same_v<M, Joining>) {
+        in(message.game);
         in(message.player);
         in(message.step);
         in(message.arrives);
@@ -239,6 +260,7 @@ std::optional<Message> read_one(In& in) {
         in(message.state);
     } else if constexpr (std::is_same_v<M, Inputs>) {
         std::uint8_t count = 0;
+        in(message.game);
         in(message.player);
         in(message.first);
         in(count);

@@ -13,8 +13,9 @@ namespace lvr {
 
 namespace {
 
-constexpr int kWindow = 8;                 // the steps rollback can run ahead (ADR-0012)
-constexpr std::uint32_t kEchoEvery = 500;  // milliseconds
+constexpr int kWindow = 8;                  // the steps rollback can run ahead (ADR-0012)
+constexpr std::uint32_t kEchoEvery = 500;   // milliseconds
+constexpr std::uint32_t kLobbyEvery = 500;  // milliseconds
 
 // Milliseconds on a clock of this machine's own (only differences are sent back to it).
 std::uint32_t now_ms() {
@@ -38,7 +39,9 @@ int delay_for(int round_trip_ms) {
 }  // namespace
 
 NetGame::NetGame(std::unique_ptr<net::Transport> transport, Identity identity)
-    : transport_{std::move(transport)}, identity_{std::move(identity)} {}
+    : transport_{std::move(transport)}, identity_{std::move(identity)} {
+    engine_.assign(net::kMostPlayers, std::nullopt);
+}
 
 std::expected<std::unique_ptr<NetGame>, std::string> NetGame::host(std::uint16_t port, int players, int slot,
                                                                    bool cheat, std::optional<int> delay,
@@ -48,7 +51,8 @@ std::expected<std::unique_ptr<NetGame>, std::string> NetGame::host(std::uint16_t
         return std::unexpected{transport.error()};
     }
     std::unique_ptr<NetGame> game{new NetGame{std::move(*transport), std::move(identity)}};
-    game->wanted_ = std::clamp(players, 1, net::kMostPlayers);
+    game->auto_start_ = players > 0;
+    game->wanted_ = players > 0 ? std::clamp(players, 1, net::kMostPlayers) : net::kMostPlayers;
     game->slot_ = slot;
     game->cheat_ = cheat;
     game->delay_ = delay;
@@ -107,103 +111,44 @@ int NetGame::player_of(int peer) const noexcept {
 }
 
 std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby() {
-    for (const net::Event& event : transport_->poll()) {
-        if (event.kind == net::Event::Kind::kLeft) {
-            if (!hosting()) {
-                return std::unexpected{"the host is gone"};
+    std::vector<net::Event> events = std::exchange(pending_, {});  // (what came with the way back here first)
+    for (net::Event& event : transport_->poll()) {
+        events.push_back(std::move(event));
+    }
+    for (std::size_t i = 0; i < events.size(); ++i) {
+        auto taken = lobby_event(events[i]);
+        if (!taken || *taken) {
+            if (taken && *taken) {
+                pending_.assign(events.begin() + static_cast<std::ptrdiff_t>(i) + 1, events.end());  // (the game's)
             }
-            if (const int left = player_of(event.peer); left > 0) {  // the ones after him move up
-                peers_.erase(peers_.begin() + left);
-                names_.erase(names_.begin() + left);
-                for (std::size_t player = 1; player < peers_.size(); ++player) {
-                    send(peers_[player], net::Welcome{.player = static_cast<std::uint8_t>(player)},
-                         net::Channel::kReliable);
-                }
-                broadcast(net::Lobby{.names = names_}, net::Channel::kReliable);
-            }
-            continue;
-        }
-        if (event.kind != net::Event::Kind::kMessage) {
-            continue;
-        }
-        const std::optional<net::Message> message = net::decode(event.bytes);
-        if (!message) {
-            continue;
-        }
-        if (hosting()) {
-            const auto* hello = std::get_if<net::Hello>(&*message);
-            if (hello == nullptr || player_of(event.peer) >= 0) {
-                continue;
-            }
-            std::string refused;
-            if (hello->protocol != net::kProtocol || hello->state_version != kStateVersion) {
-                refused = "another version of the game";
-            } else if (hello->build != identity_.build) {
-                refused = std::format("another build ({}; the host's is {})", hello->build, identity_.build);
-            } else if (hello->game != identity_.game) {
-                refused = "other game files";
-            } else if (std::cmp_greater_equal(names_.size(), wanted_)) {
-                refused = "the game is full";
-            }
-            if (!refused.empty()) {
-                send(event.peer, net::Refused{.why = refused}, net::Channel::kReliable);
-                transport_->drop(event.peer);
-                continue;
-            }
-            const auto player = static_cast<std::uint8_t>(names_.size());
-            peers_.push_back(event.peer);
-            names_.push_back(net::shown_name(hello->name, player));
-            send(event.peer, net::Welcome{.player = player}, net::Channel::kReliable);
-            broadcast(net::Lobby{.names = names_}, net::Channel::kReliable);
-            continue;
-        }
-        if (const auto* welcome = std::get_if<net::Welcome>(&*message)) {
-            player_ = welcome->player;
-        } else if (const auto* lobby = std::get_if<net::Lobby>(&*message)) {
-            names_ = lobby->names;
-        } else if (const auto* refused = std::get_if<net::Refused>(&*message)) {
-            return std::unexpected{std::format("refused: {}", refused->why)};
-        } else if (const auto* joining = std::get_if<net::Joining>(&*message)) {  // a game under way
-            player_ = joining->player;
-            names_ = joining->names;
-            joined_ = Joined{.player = joining->player,
-                             .players = net::kMostPlayers,
-                             .delay = joining->delay,
-                             .slot = Session::scene_of(joining->state).value_or(0),
-                             .cheat = false,  // (the state has it)
-                             .names = joining->names,
-                             .state = joining->state,
-                             .first_step = joining->step,
-                             .arrives = joining->arrives};
-            return joined_;
-        } else if (const auto* start = std::get_if<net::Start>(&*message)) {
-            names_ = start->names;
-            joined_ = Joined{.player = player_,
-                             .players = start->players,
-                             .delay = start->delay,
-                             .slot = start->slot,
-                             .cheat = start->cheat,
-                             .names = start->names,
-                             .state = {},
-                             .first_step = 0,
-                             .arrives = 0};
-            return joined_;
+            return taken;
         }
     }
-    if (!hosting() || std::cmp_less(names_.size(), wanted_)) {
+    if (!hosting()) {
         return std::nullopt;
     }
-    // Everyone is there: the delay from the longest round trip, once each has one.
+    if (const std::uint32_t now = now_ms(); now - lobby_sent_at_ >= kLobbyEvery) {  // now and then, to everyone
+        lobby_sent_at_ = now;
+        send_lobby();
+        broadcast(net::Echo{.sent = now}, net::Channel::kFast);
+    }
+    if (auto_start_ ? std::cmp_less(names_.size(), wanted_) : !start_wanted_) {
+        return std::nullopt;
+    }
+    // The delay from the longest round trip: once each has one (started by the host's word: as far as known).
     int longest = 0;
     for (std::size_t player = 1; player < peers_.size(); ++player) {
         const std::optional<int> round_trip = transport_->round_trip_ms(peers_[player]);
-        if (!round_trip && !delay_) {
+        if (!round_trip && !delay_ && auto_start_) {
             return std::nullopt;
         }
         longest = std::max(longest, round_trip.value_or(0));
     }
+    start_wanted_ = false;
+    ++game_number_;
     const int delay = delay_.value_or(delay_for(longest));
-    broadcast(net::Start{.players = static_cast<std::uint8_t>(names_.size()),
+    broadcast(net::Start{.game = game_number_,
+                         .players = static_cast<std::uint8_t>(names_.size()),
                          .delay = static_cast<std::uint8_t>(delay),
                          .slot = static_cast<std::uint16_t>(slot_),
                          .cheat = cheat_,
@@ -219,6 +164,162 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby() {
                      .first_step = 0,
                      .arrives = 0};
     return joined_;
+}
+
+std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby_event(const net::Event& event) {
+    if (event.kind == net::Event::Kind::kLeft) {
+        if (!hosting()) {
+            return std::unexpected{"the host is gone"};
+        }
+        if (const int left = player_of(event.peer); left > 0) {  // the ones after him move up
+            const auto at = static_cast<std::ptrdiff_t>(left);
+            peers_.erase(peers_.begin() + at);
+            names_.erase(names_.begin() + at);
+            engine_.erase(engine_.begin() + at);
+            engine_.emplace_back();
+            for (std::size_t player = 1; player < peers_.size(); ++player) {
+                send(peers_[player], net::Welcome{.player = static_cast<std::uint8_t>(player)},
+                     net::Channel::kReliable);
+            }
+            send_lobby();
+        }
+        return std::nullopt;
+    }
+    if (event.kind != net::Event::Kind::kMessage) {
+        return std::nullopt;
+    }
+    const std::optional<net::Message> message = net::decode(event.bytes);
+    if (!message) {
+        return std::nullopt;
+    }
+    if (const auto* echo = std::get_if<net::Echo>(&*message)) {  // the game's round trip, in the lobby too
+        send(event.peer, net::Echoed{.sent = echo->sent}, net::Channel::kFast);
+        return std::nullopt;
+    }
+    if (hosting()) {
+        if (const auto* echoed = std::get_if<net::Echoed>(&*message)) {
+            if (const int player = player_of(event.peer); player > 0) {
+                engine_.at(static_cast<std::size_t>(player)) = static_cast<int>(now_ms() - echoed->sent);
+            }
+            return std::nullopt;
+        }
+        const auto* hello = std::get_if<net::Hello>(&*message);
+        if (hello == nullptr || player_of(event.peer) >= 0) {
+            return std::nullopt;
+        }
+        std::string refused;
+        if (hello->protocol != net::kProtocol || hello->state_version != kStateVersion) {
+            refused = "another version of the game";
+        } else if (hello->build != identity_.build) {
+            refused = std::format("another build ({}; the host's is {})", hello->build, identity_.build);
+        } else if (hello->game != identity_.game) {
+            refused = "other game files";
+        } else if (std::cmp_greater_equal(names_.size(), wanted_)) {
+            refused = "the game is full";
+        }
+        if (!refused.empty()) {
+            send(event.peer, net::Refused{.why = refused}, net::Channel::kReliable);
+            transport_->drop(event.peer);
+            return std::nullopt;
+        }
+        const auto player = static_cast<std::uint8_t>(names_.size());
+        peers_.push_back(event.peer);
+        names_.push_back(net::shown_name(hello->name, player));
+        send(event.peer, net::Welcome{.player = player}, net::Channel::kReliable);
+        send_lobby();
+        return std::nullopt;
+    }
+    if (const auto* welcome = std::get_if<net::Welcome>(&*message)) {
+        player_ = welcome->player;
+        welcomed_ = true;
+    } else if (const auto* lobby = std::get_if<net::Lobby>(&*message)) {
+        names_ = lobby->names;
+        host_network_ = lobby->network;
+        host_engine_ = lobby->engine;
+        slot_ = lobby->slot;
+    } else if (const auto* refused = std::get_if<net::Refused>(&*message)) {
+        return std::unexpected{std::format("refused: {}", refused->why)};
+    } else if (const auto* joining = std::get_if<net::Joining>(&*message)) {  // a game under way
+        player_ = joining->player;
+        names_ = joining->names;
+        game_number_ = joining->game;
+        joined_ = Joined{.player = joining->player,
+                         .players = net::kMostPlayers,
+                         .delay = joining->delay,
+                         .slot = Session::scene_of(joining->state).value_or(0),
+                         .cheat = false,  // (the state has it)
+                         .names = joining->names,
+                         .state = joining->state,
+                         .first_step = joining->step,
+                         .arrives = joining->arrives};
+        return joined_;
+    } else if (const auto* start = std::get_if<net::Start>(&*message)) {
+        names_ = start->names;
+        game_number_ = start->game;
+        joined_ = Joined{.player = player_,
+                         .players = start->players,
+                         .delay = start->delay,
+                         .slot = start->slot,
+                         .cheat = start->cheat,
+                         .names = start->names,
+                         .state = {},
+                         .first_step = 0,
+                         .arrives = 0};
+        return joined_;
+    }
+    return std::nullopt;
+}
+
+void NetGame::send_lobby() {
+    net::Lobby message{.names = names_, .network = {}, .engine = {}, .slot = static_cast<std::uint16_t>(slot_)};
+    for (int player = 0; player < net::kMostPlayers; ++player) {
+        message.network.at(static_cast<std::size_t>(player)) = as_sent(network_ms(player));
+        message.engine.at(static_cast<std::size_t>(player)) = as_sent(engine_ms(player));
+    }
+    broadcast(message, net::Channel::kReliable);
+}
+
+void NetGame::back_to_lobby() {
+    if (hosting()) {
+        broadcast(net::Back{}, net::Channel::kReliable);
+        to_lobby();
+    }
+}
+
+void NetGame::to_lobby() {
+    game_.reset();
+    rollback_.reset();
+    session_ = nullptr;
+    acked_.clear();
+    hashes_.clear();
+    logged_ = false;
+    waited_ = 0;
+    back_ = false;
+    joined_.reset();
+    host_network_.fill(net::kUnknown);
+    host_engine_.fill(net::kUnknown);
+    if (hosting()) {
+        // Those still there, in their order: each told his number again, and everyone who is there.
+        std::vector<int> peers{-1};
+        std::vector<std::string> names{names_.empty() ? net::shown_name(identity_.name, 0) : names_.front()};
+        std::vector<std::optional<int>> engine{std::nullopt};
+        for (std::size_t player = 1; player < peers_.size(); ++player) {
+            if (peers_[player] >= 0 && (gone_.size() <= player || !gone_.at(player))) {
+                peers.push_back(peers_[player]);
+                names.push_back(player < names_.size() ? names_.at(player) : std::string{});
+                engine.push_back(player < engine_.size() ? engine_.at(player) : std::nullopt);
+            }
+        }
+        peers_ = std::move(peers);
+        names_ = std::move(names);
+        engine_ = std::move(engine);
+        engine_.resize(net::kMostPlayers);
+        for (std::size_t player = 1; player < peers_.size(); ++player) {
+            send(peers_[player], net::Welcome{.player = static_cast<std::uint8_t>(player)}, net::Channel::kReliable);
+        }
+        send_lobby();
+    }
+    gone_.clear();
 }
 
 void NetGame::begin(Session& session) {
@@ -293,7 +394,8 @@ void NetGame::welcome_under_way(int peer, const net::Hello& hello) {
     acked_.at(at) = {from, from, from};
     engine_.at(at) = std::nullopt;
     send(peer,
-         net::Joining{.player = static_cast<std::uint8_t>(place),
+         net::Joining{.game = game_number_,
+                      .player = static_cast<std::uint8_t>(place),
                       .step = from,
                       .arrives = arrives,
                       .delay = static_cast<std::uint8_t>(delay_steps_),
@@ -335,13 +437,13 @@ std::expected<void, std::string> NetGame::take(int peer, const net::Message& mes
             }
         }
     } else if (const auto* inputs = std::get_if<net::Inputs>(&message)) {
-        if (std::cmp_not_equal(inputs->player, player_)) {
+        if (std::cmp_not_equal(inputs->player, player_) && inputs->game == game_number_) {  // (not a game before)
             for (std::size_t i = 0; i < inputs->inputs.size(); ++i) {
                 rollback_->add_remote(inputs->player, inputs->first + static_cast<std::uint32_t>(i), inputs->inputs[i]);
             }
         }
     } else if (const auto* status = std::get_if<net::Status>(&message)) {
-        if (sender >= 0 && std::cmp_less(sender, acked_.size())) {
+        if (sender >= 0 && std::cmp_less(sender, acked_.size()) && status->game == game_number_) {
             auto& acked = acked_.at(static_cast<std::size_t>(sender));
             for (std::size_t player = 0; player < acked.size(); ++player) {
                 // (Known for ever: that player away; it says nothing of what he gives once he comes.)
@@ -365,7 +467,9 @@ std::expected<void, std::string> NetGame::take(int peer, const net::Message& mes
             engine_.at(static_cast<std::size_t>(sender)) = static_cast<int>(now_ms() - echoed->sent);
         }
     } else if (const auto* hash = std::get_if<net::Hash>(&message)) {
-        rollback_->add_remote_hash(hash->player, hash->step, hash->hash);
+        if (hash->game == game_number_) {
+            rollback_->add_remote_hash(hash->player, hash->step, hash->hash);
+        }
     } else if (const auto* leave = std::get_if<net::Leave>(&message)) {
         if (!hosting() && std::cmp_not_equal(leave->player, player_) && std::cmp_less(leave->player, gone_.size())) {
             rollback_->leave(leave->player, leave->from);
@@ -381,7 +485,15 @@ std::expected<void, std::string> NetGame::take(int peer, const net::Message& mes
 }
 
 std::expected<void, std::string> NetGame::poll() {
-    for (const net::Event& event : transport_->poll()) {
+    if (back_) {
+        return {};  // (going back to the lobby: what comes is the lobby's)
+    }
+    std::vector<net::Event> events = std::exchange(pending_, {});  // (what came with the Start first)
+    for (net::Event& event : transport_->poll()) {
+        events.push_back(std::move(event));
+    }
+    for (std::size_t i = 0; i < events.size(); ++i) {
+        const net::Event& event = events[i];
         if (event.kind == net::Event::Kind::kLeft) {
             if (!hosting()) {
                 return std::unexpected{"the host left the game"};
@@ -393,6 +505,11 @@ std::expected<void, std::string> NetGame::poll() {
             continue;
         }
         if (const std::optional<net::Message> message = net::decode(event.bytes)) {
+            if (std::holds_alternative<net::Back>(*message) && !hosting()) {  // the game is over: the lobby again
+                back_ = true;
+                pending_.assign(events.begin() + static_cast<std::ptrdiff_t>(i) + 1, events.end());
+                return {};
+            }
             if (auto taken = take(event.peer, *message); !taken) {
                 return taken;
             }
@@ -419,14 +536,17 @@ std::expected<void, std::string> NetGame::flush() {
             if (unsent.empty()) {
                 continue;
             }
-            net::Inputs message{
-                .player = static_cast<std::uint8_t>(whose), .first = unsent.front().first, .inputs = {}};
+            net::Inputs message{.game = game_number_,
+                                .player = static_cast<std::uint8_t>(whose),
+                                .first = unsent.front().first,
+                                .inputs = {}};
             for (const auto& [step, input] : unsent) {
                 message.inputs.push_back(input);
             }
             send(peer, message, net::Channel::kFast);
         }
-        net::Status status{.player = static_cast<std::uint8_t>(player_),
+        net::Status status{.game = game_number_,
+                           .player = static_cast<std::uint8_t>(player_),
                            .step = rollback_->step(),
                            .advantage = static_cast<std::int16_t>(rollback_->advantage(to)),
                            .knows = {}};
@@ -444,8 +564,10 @@ std::expected<void, std::string> NetGame::flush() {
         broadcast(net::Echo{.sent = now}, net::Channel::kFast);
     }
     while (const std::optional<std::uint64_t> hash = rollback_->hash_at(hash_sent_)) {
-        broadcast(net::Hash{.player = static_cast<std::uint8_t>(player_), .step = hash_sent_, .hash = *hash},
-                  net::Channel::kReliable);
+        broadcast(
+            net::Hash{
+                .game = game_number_, .player = static_cast<std::uint8_t>(player_), .step = hash_sent_, .hash = *hash},
+            net::Channel::kReliable);
         hashes_.emplace_back(hash_sent_, *hash);
         hash_sent_ += 8;
     }

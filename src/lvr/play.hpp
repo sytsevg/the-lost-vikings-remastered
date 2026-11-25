@@ -84,7 +84,11 @@ class Play {
         : world{start_world(*first, rules, online)}, files_{&files}, loaded_{first.get()}, owned_{std::move(first)} {
         world.scene = slot;
         world.next_scene = loaded_->level.next_slot;
+        // The intro is only ever reached as a new game, the title's NEW GAME asking for its recording: started there
+        // (a new game online, ADR-0012), it is played the same.
+        state_.demo_wanted = slot == scene::kIntro;
         start_demo(slot);
+        world.attract = state_.playback;  // (as a scene started after another has it)
     }
 
     // What the world shown now was loaded from.
@@ -345,8 +349,12 @@ class Play {
     // One pass: three refreshes. True when a choice closed the menu.
     bool menu_pass(const StepInput& input, const std::function<void()>& picture, int& refreshes);
     // The input with a recording's keys (a demo's) as the first player's too.
-    StepInput with_demo(StepInput input) const noexcept {
+    // A recording plays the first player's keys; online the others' are nothing meanwhile (the intro: they watch).
+    StepInput with_demo(StepInput input) const {
         input.players[0].keys = static_cast<std::uint16_t>(input.players[0].keys | state_.demo_keys);
+        for (std::size_t other = 1; state_.playback && other < input.players.size(); ++other) {
+            input.players.at(other).keys = 0;
+        }
         return input;
     }
     void menu_text(int number, int column);

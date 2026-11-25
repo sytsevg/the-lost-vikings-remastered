@@ -5,9 +5,10 @@
 // options, the keyboard's and the gamepad's controls, giving up the level, quitting), the options (the sound and
 // its two volumes, the screen's look, the zoom, the minimap, the visual effects), and the controls, where an action is
 // bound to the next key or button pressed. And at the title, under Remaster rules offline, HOST GAME and JOIN GAME
-// (ADR-0012): opened by the title's own menu, their lines typed into, closed again by going back. It works on a
-// copy of the player's settings (profile.hpp), which the front end takes into use as they change. Nothing here knows
-// about windows or devices: the front end gives it the keys (Key) and the names of what is pressed, and lays its
+// (ADR-0012): opened by the title's own menu, their lines typed into, closed again by going back; and the LOBBY of a
+// game online, where everyone waits for the host to start it (the host's in a game online: RETURN TO LOBBY). It works
+// on a copy of the player's settings (profile.hpp), which the front end takes into use as they change. Nothing here
+// knows about windows or devices: the front end gives it the keys (Key) and the names of what is pressed, and lays its
 // picture (menu_picture) over the screen.
 
 #include <array>
@@ -30,7 +31,8 @@ class Menu {
     struct Choices {
         bool has_modern = false;
         std::vector<std::string> screens{"none"};
-        bool online = false;  // co-op online (ADR-0012): the players and their latency, under the first page's lines
+        bool online = false;   // co-op online (ADR-0012): the players and their latency, under the first page's lines
+        bool hosting = false;  // online, this machine hosts a game from the title's lobby: RETURN TO LOBBY
         // Every level's password, in order: what HOST GAME's is checked against (the level the host starts in).
         std::vector<std::string> passwords;
     };
@@ -48,6 +50,9 @@ class Menu {
         kQuit,    // closed, and the original's quit box is opened
         kHost,    // closed: host a game online, as the settings say, in the level of `level()`
         kJoin,    // closed: join the game at the settings' address
+        kStart,   // the lobby's host: the game starts, in the level of `level()` (the menu stays until it does)
+        kLeave,   // the lobby left
+        kLobby,   // the host in a game online: everyone back to the lobby
     };
     Asked press(Key key);
 
@@ -67,8 +72,17 @@ class Menu {
     // Opens on HOST GAME or JOIN GAME (the title's menu asked for it): going back from it closes the menu.
     void open_host() noexcept;
     void open_join() noexcept;
-    // The level the host starts in, by its password (Asked::kHost): its scene's slot.
+    // Opens on the lobby: the host's has the password to start with and START GAME; going back leaves it.
+    void open_lobby(bool hosting);
+    bool in_lobby() const noexcept { return page_ == Page::kLobby; }
+    // What the lobby's game starts with, as the front end words it (NEW GAME, or a level and its password).
+    void set_start(std::string start) { start_ = std::move(start); }
+    const std::string& start() const noexcept { return start_; }
+    // The level the host starts in, by its password (Asked::kHost, kStart): its scene's slot; -1: no password, a
+    // new game (from the intro, as the title's NEW GAME).
     int level() const noexcept { return level_; }
+    // The level the password typed so far names, as level() would be: none while it names none.
+    std::optional<int> level_typed() const;
 
     const Settings& settings() const noexcept { return settings_; }
     // Whether a gamepad is there, as it is plugged in and out: the gamepad's page says so ("found", or flashing
@@ -86,7 +100,9 @@ class Menu {
     };
     void set_players(std::vector<PlayerLine> players) { players_ = std::move(players); }
     const std::vector<PlayerLine>& players() const noexcept { return players_; }
-    bool shows_players() const noexcept { return page_ == Page::kFirst && choices_.online && !players_.empty(); }
+    bool shows_players() const noexcept {
+        return ((page_ == Page::kFirst && choices_.online) || page_ == Page::kLobby) && !players_.empty();
+    }
 
     // What is shown, for menu_picture (and a test): the page's title, its lines, the one chosen, and a note.
     struct Line {
@@ -104,8 +120,14 @@ class Menu {
     bool note_flashes() const noexcept;     // its first line comes and goes (no gamepad)
 
   private:
-    enum class Page : std::uint8_t { kFirst, kOptions, kKeyboard, kGamepad, kHost, kJoin };
-    static constexpr std::size_t kPages = 6;
+    enum class Page : std::uint8_t { kFirst, kOptions, kKeyboard, kGamepad, kHost, kJoin, kLobby };
+    static constexpr std::size_t kPages = 7;
+    // The first page's lines, as there are now.
+    enum class First : std::uint8_t { kOptions, kKeyboard, kGamepad, kLobby, kGiveUp, kQuit };
+    std::vector<First> first_lines() const;
+    // What a line typed into holds.
+    enum class Field : std::uint8_t { kNone, kName, kPort, kPassword, kAddress };
+    Field field_of(std::size_t line) const noexcept;
     // The text a line of HOST GAME or JOIN GAME holds; none: it isn't one.
     std::string* text_of(std::size_t line);
     const std::string* text_of(std::size_t line) const;
@@ -122,7 +144,9 @@ class Menu {
     bool has_pad_ = false;
     std::vector<PlayerLine> players_;
     std::string port_;  // HOST GAME's port, as typed (into the settings as a number)
-    int level_ = 0;
+    int level_ = -1;
+    bool lobby_host_ = false;
+    std::string start_;
 };
 
 // The menu's picture, the original's screen's size (kScreenWidth x kScreenHeight, render.hpp): red, green, blue and
