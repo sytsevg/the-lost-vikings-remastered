@@ -23,10 +23,17 @@ TEST_CASE("protocol: every message comes back as it was written") {
         Lobby{.names = {"PLAYER 1", "PLAYER 2"}},
         Start{.players = 3, .delay = 1, .slot = 39, .cheat = true, .names = {"A", "B", "C"}},
         Inputs{.player = 1, .first = 1234, .inputs = {input, Input{}, input}},
-        Status{.player = 0, .step = 99, .advantage = -3, .knows = {10, 11, 12}},
+        Status{.player = 0,
+               .step = 99,
+               .advantage = -3,
+               .knows = {10, 11, 12},
+               .network = {0, 3, kUnknown},
+               .engine = {0, 20, 37}},
         Hash{.player = 1, .step = 103, .hash = 0xfeedfacecafebeefULL},
         Leave{.player = 2, .from = 500},
         Quit{},
+        Echo{.sent = 123456},
+        Echoed{.sent = 654321},
     };
     for (const Message& message : all) {
         const std::vector<std::uint8_t> bytes = encode(message);

@@ -125,8 +125,8 @@ void draw_hud(Screen& screen, const HudView& hud, const SharedGraphics& shared) 
                  kPlayfieldHeight + kHealthAt.at(who)[1]);
         }
     }
-    for (std::size_t who = 0; who < hud.names.size(); ++who) {  // the letters of each name, not their cells
-        const std::string& name = hud.names.at(who);
+    // The letters of a name, not their cells, in the middle of a portrait's column; grey for one watching.
+    const auto name_at = [&](const std::string& name, std::size_t who, int row, bool grey) {
         int x = kPortraitAt.at(who)[0] + kPortraitMiddle - (static_cast<int>(name.size()) * kTileSize / 2);
         for (const char each : name) {
             const auto character = static_cast<std::uint8_t>(each);
@@ -135,13 +135,19 @@ void draw_hud(Screen& screen, const HudView& hud, const SharedGraphics& shared) 
                 for (std::size_t gy = 0; gy < glyph.height; ++gy) {
                     for (std::size_t gx = 0; gx < glyph.width; ++gx) {
                         if (const std::uint8_t colour = glyph.at(gx, gy); colour == 1 || colour == 2) {
-                            put(screen, x + static_cast<int>(gx), kPlayfieldHeight + kNameRow + static_cast<int>(gy),
-                                colour, kScreenHeight);
+                            put(screen, x + static_cast<int>(gx), kPlayfieldHeight + row + static_cast<int>(gy),
+                                grey && colour == 2 ? kNameGrey : colour, kScreenHeight);
                         }
                     }
                 }
             }
             x += kTileSize;
+        }
+    };
+    for (std::size_t who = 0; who < hud.names.size(); ++who) {
+        name_at(hud.names.at(who), who, kNameRow, false);
+        for (std::size_t place = 0; place < hud.watching.at(who).size(); ++place) {
+            name_at(hud.watching.at(who).at(place), who, kWatchingRow - (static_cast<int>(place) * kNameLine), true);
         }
     }
     for (std::size_t square = 0; square < kSquares; ++square) {

@@ -61,11 +61,16 @@ struct Inputs {
     std::vector<Input> inputs;
     bool operator==(const Inputs&) const = default;
 };
+inline constexpr std::uint16_t kUnknown = 0xffff;  // a round trip not measured (yet)
 struct Status {
     std::uint8_t player = 0;                          // the sender
     std::uint32_t step = 0;                           // the next step he runs
     std::int16_t advantage = 0;                       // his frame advantage over the one he sends it to
     std::array<std::uint32_t, kMostPlayers> knows{};  // by player: how far he has that one's inputs, without a gap
+    // The host's: his round trips to each player, in milliseconds: the network's (the transport's pings) and the
+    // game's (Echo); a client sees the other clients' so.
+    std::array<std::uint16_t, kMostPlayers> network{kUnknown, kUnknown, kUnknown};
+    std::array<std::uint16_t, kMostPlayers> engine{kUnknown, kUnknown, kUnknown};
     bool operator==(const Status&) const = default;
 };
 struct Hash {
@@ -82,8 +87,18 @@ struct Leave {
 struct Quit {
     bool operator==(const Quit&) const = default;
 };
+// The game's round trip: an Echo is answered (Echoed) by the other machine's game as it next takes what came, once a
+// refresh; so it is the network's round trip and both games' rhythm.
+struct Echo {
+    std::uint32_t sent = 0;  // the sender's milliseconds
+    bool operator==(const Echo&) const = default;
+};
+struct Echoed {
+    std::uint32_t sent = 0;
+    bool operator==(const Echoed&) const = default;
+};
 
-using Message = std::variant<Hello, Refused, Welcome, Lobby, Start, Inputs, Status, Hash, Leave, Quit>;
+using Message = std::variant<Hello, Refused, Welcome, Lobby, Start, Inputs, Status, Hash, Leave, Quit, Echo, Echoed>;
 
 std::vector<std::uint8_t> encode(const Message& message);
 // None if the bytes aren't a whole message, or one this protocol doesn't know.

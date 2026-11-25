@@ -25,7 +25,8 @@ constexpr int kCharacter = 8;
 constexpr int kLabelColumns = 15;
 constexpr int kValueColumns = 21;
 constexpr int kColumns = kLabelColumns + 1 + kValueColumns;
-constexpr int kMostLines = 15;  // a longer page shows this many around the chosen line
+constexpr int kMostLines = 15;         // a longer page shows this many around the chosen line
+constexpr int kRoundTripColumns = 10;  // the players' network round trip, before the game's
 
 std::string upper(std::string_view text) {
     std::string out{text};
@@ -483,7 +484,7 @@ std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<asset
     const int width = (kColumns * kCharacter) + (2 * kPadding);
     // Online, under the first page's lines: a divider, and each player's name and round trip.
     const int players = menu.shows_players() ? static_cast<int>(menu.players().size()) : 0;
-    const int players_height = players > 0 ? 6 + (players * kLine) : 0;
+    const int players_height = players > 0 ? 6 + ((players + 1) * kLine) : 0;  // (and a line above them)
     const int height =
         6 + kCharacter + 6 + (shown * kLine) + players_height + 6 + (static_cast<int>(note.size()) * kNoteLine) + 4;
     const int x = (kScreenWidth - width) / 2;
@@ -539,11 +540,17 @@ std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<asset
     if (players > 0) {
         const int divider_y = lines_y + (shown * kLine) + 3;
         canvas.fill(text_x, divider_y, kColumns * kCharacter, 1, kDimmed);
+        // Two columns of round trips: the network's, and the game's (the network's and both games' rhythm).
+        const int network_x = text_x + ((kLabelColumns + 1) * kCharacter);
+        const int engine_x = network_x + (kRoundTripColumns * kCharacter);
+        canvas.text(network_x, divider_y + 4, "NETWORK", kDimmed, font);
+        canvas.text(engine_x, divider_y + 4, "GAME", kDimmed, font);
         for (int i = 0; i < players; ++i) {
             const Menu::PlayerLine& player = menu.players().at(static_cast<std::size_t>(i));
-            const int top = divider_y + 3 + (i * kLine);
+            const int top = divider_y + 3 + ((i + 1) * kLine);
             canvas.text(text_x, top + 1, player.name, kGrey, font);
-            canvas.text(text_x + ((kLabelColumns + 1) * kCharacter), top + 1, player.latency, kGrey, font);
+            canvas.text(network_x, top + 1, player.network, kGrey, font);
+            canvas.text(engine_x, top + 1, player.engine, kGrey, font);
         }
     }
     const int note_y = lines_y + (shown * kLine) + players_height + 6;

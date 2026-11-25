@@ -179,17 +179,15 @@ CoopOverlay coop_overlay(const NetGame& net) {
     return overlay;
 }
 
-// Online: the menu's players: each one's name and his round trip.
+// Online: the menu's players: each one's name and his round trips, the network's and the game's.
 std::vector<Menu::PlayerLine> player_lines(const Session& session, const NetGame& net) {
+    const auto shown = [](std::optional<int> ms) { return ms ? std::format("{} MS", *ms) : std::string{"-"}; };
     std::vector<Menu::PlayerLine> lines;
     for (int who = 0; who < session.world().player_count && std::cmp_less(who, net.names().size()); ++who) {
-        std::string latency = "-";
-        if (who == session.player()) {
-            latency = "YOU";
-        } else if (const std::optional<int> ms = net.latency_ms(who)) {
-            latency = std::format("{} MS", *ms);
-        }
-        lines.push_back({.name = net.names().at(static_cast<std::size_t>(who)), .latency = latency});
+        const bool you = who == session.player();
+        lines.push_back({.name = net.names().at(static_cast<std::size_t>(who)),
+                         .network = you ? std::string{"YOU"} : shown(net.network_ms(who)),
+                         .engine = you ? std::string{} : shown(net.engine_ms(who))});
     }
     return lines;
 }

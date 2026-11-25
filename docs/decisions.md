@@ -428,6 +428,8 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   screen; said to one player alone, only on his.
 - **The active area** is every player's view together (ADR-0011); a player's zoom is part of his input.
 - **Names** under the portraits of the Vikings their players play, in the HUD (the user; first tried under the
-  Vikings in the level): PLAYER 1 to 3 at first, at most 8 letters. Every player's name and latency in the menu's
-  first page, under a divider (the user: not a page of its own). No rewind online, and so no rewind bar (the user). Hosting and joining from the command line first, then from the menu (a port, a
+  Vikings in the level), and above a portrait, grey, those watching him in their line's order: PLAYER 1 to 3 at
+  first, at most 8 letters. Every player's name and two round trips in the menu's first page, under a divider (the
+  user: not a page of its own): the network's (answered at once by the transport's own thread) and the game's (an
+  Echo answered by the other game's loop, once a refresh). No rewind online, and so no rewind bar (the user). Hosting and joining from the command line first, then from the menu (a port, a
   level's password and a name; an address and a name), kept in the profile.

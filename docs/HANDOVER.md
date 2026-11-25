@@ -350,9 +350,12 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   name under the portrait of the Viking he plays (`HudView::names`, letters only: `see_through` 2 in
   `gpu_quad.frag`), a box at the top while it waits for someone's input, the Escape menu over the running game with
   the players and their latency under its first page's lines; no rewind and no rewind bar online. This machine's
-  input is sent as soon as a step took it (`NetGame::flush`), not at the next refresh's poll. The latency shown is
-  the round trip as the two games answer each other, once a refresh each: on one machine 17 or 33 ms (two windows
-  on one monitor refresh together), not the network's. A step that changes the scene waits for every
+  input is sent as soon as a step took it (`NetGame::flush`), not at the next refresh's poll. Above a portrait, grey,
+  the names of those watching him (`HudView::watching`; `see_through` 3 makes the letters colour 12). The menu
+  shows two round trips (the user): NETWORK, the transport's pings, answered at once by its own thread
+  (`Transport::Inner::pump_once`, every millisecond, every socket under one lock; `SDL_CleanupTLS` at its end), and
+  GAME, an `Echo` the other game's loop answers once a refresh (on one machine 17 or 33 ms: two windows on one
+  monitor refresh together); a client has the host's to the other clients through `Status`. A step that changes the scene waits for every
   input (`net::Game::waits_for_inputs`). Tested: a real-data test of two sessions under rollback over a lossy
   simulated network against one with every input (`test_coop.cpp`), a host and a client in one process through the
   real transport (`test_online.cpp`), and two `--dump` processes over 127.0.0.1 (stills in

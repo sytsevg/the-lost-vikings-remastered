@@ -793,19 +793,25 @@ void GpuRenderer::State::list_hud(const Page& on, const HudView& hud, const Shar
             whole(graphics.health[health], on.health[health], kHealthAt.at(who)[0], top + kHealthAt.at(who)[1]);
         }
     }
-    for (std::size_t who = 0; who < hud.names.size(); ++who) {  // the letters of each name, not their cells
-        const std::string& name = hud.names.at(who);
+    // The letters of a name, not their cells, in the middle of a portrait's column; grey for one watching.
+    const auto name_at = [&](const std::string& name, std::size_t who, int row, bool grey) {
         int x = kPortraitAt.at(who)[0] + kPortraitMiddle - (static_cast<int>(name.size()) * kTileSize / 2);
         for (const char each : name) {
             const auto character = static_cast<std::uint8_t>(each);
             if (character >= kFirstGlyph && std::size_t{character} - kFirstGlyph < graphics.font.size()) {
                 const std::size_t glyph = std::size_t{character} - kFirstGlyph;
-                Quad letter = quad(on.font[glyph], x, top + kNameRow, static_cast<int>(graphics.font[glyph].width),
+                Quad letter = quad(on.font[glyph], x, top + row, static_cast<int>(graphics.font[glyph].width),
                                    static_cast<int>(graphics.font[glyph].height));
-                letter.see_through = 2;
+                letter.see_through = grey ? 3 : 2;
                 add(letter);
             }
             x += kTileSize;
+        }
+    };
+    for (std::size_t who = 0; who < hud.names.size(); ++who) {
+        name_at(hud.names.at(who), who, kNameRow, false);
+        for (std::size_t place = 0; place < hud.watching.at(who).size(); ++place) {
+            name_at(hud.watching.at(who).at(place), who, kWatchingRow - (static_cast<int>(place) * kNameLine), true);
         }
     }
     for (std::size_t square = 0; square < kSquares; ++square) {

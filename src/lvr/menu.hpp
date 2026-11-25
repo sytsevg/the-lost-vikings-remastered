@@ -61,7 +61,10 @@ class Menu {
     // the first page's lines.
     struct PlayerLine {
         std::string name;
-        std::string latency;  // his round trip ("23 MS"), "YOU", or "-" where it isn't known
+        // His round trips ("23 MS"; "-" where it isn't known): the network's ("YOU" for this machine's player) and
+        // the game's.
+        std::string network;
+        std::string engine;
         bool operator==(const PlayerLine&) const = default;
     };
     void set_players(std::vector<PlayerLine> players) { players_ = std::move(players); }

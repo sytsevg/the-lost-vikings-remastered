@@ -1,6 +1,7 @@
 #include "lvr/online.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <format>
 #include <utility>
@@ -11,7 +12,19 @@ namespace lvr {
 
 namespace {
 
-constexpr int kWindow = 8;  // the steps rollback can run ahead (ADR-0012)
+constexpr int kWindow = 8;                 // the steps rollback can run ahead (ADR-0012)
+constexpr std::uint32_t kEchoEvery = 500;  // milliseconds
+
+// Milliseconds on a clock of this machine's own (only differences are sent back to it).
+std::uint32_t now_ms() {
+    return static_cast<std::uint32_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+}
+
+std::uint16_t as_sent(std::optional<int> ms) {
+    return ms ? static_cast<std::uint16_t>(std::clamp(*ms, 0, int{net::kUnknown} - 1)) : net::kUnknown;
+}
 constexpr double kStepMilliseconds = 1000.0 * 3.0 / kDisplayHz;
 
 // The input delay for these round trips: none under 50 ms, a step under 150, else two.
@@ -197,6 +210,7 @@ void NetGame::begin(Session& session) {
     rollback_ = std::make_unique<net::Rollback>(*game_, settings);
     acked_.assign(static_cast<std::size_t>(joined.players), {});
     gone_.assign(static_cast<std::size_t>(joined.players), false);
+    engine_.assign(static_cast<std::size_t>(joined.players), std::nullopt);
 }
 
 void NetGame::leaves(int player) {
@@ -227,6 +241,16 @@ std::expected<void, std::string> NetGame::take(int peer, const net::Message& mes
             const int one_way = transport_->round_trip_ms(peer).value_or(0) / 2;
             const auto later = static_cast<std::uint32_t>(std::lround(one_way / kStepMilliseconds));
             rollback_->report(sender, status->step + later, status->advantage);
+            if (!hosting()) {  // the host's round trips, to the other clients too
+                host_network_ = status->network;
+                host_engine_ = status->engine;
+            }
+        }
+    } else if (const auto* echo = std::get_if<net::Echo>(&message)) {
+        send(peer, net::Echoed{.sent = echo->sent}, net::Channel::kFast);
+    } else if (const auto* echoed = std::get_if<net::Echoed>(&message)) {
+        if (sender >= 0 && std::cmp_less(sender, engine_.size())) {
+            engine_.at(static_cast<std::size_t>(sender)) = static_cast<int>(now_ms() - echoed->sent);
         }
     } else if (const auto* hash = std::get_if<net::Hash>(&message)) {
         rollback_->add_remote_hash(hash->player, hash->step, hash->hash);
@@ -296,8 +320,16 @@ std::expected<void, std::string> NetGame::flush() {
                            .knows = {}};
         for (int player = 0; player < players; ++player) {
             status.knows.at(static_cast<std::size_t>(player)) = rollback_->known(player);
+            if (hosting()) {
+                status.network.at(static_cast<std::size_t>(player)) = as_sent(network_ms(player));
+                status.engine.at(static_cast<std::size_t>(player)) = as_sent(engine_ms(player));
+            }
         }
         send(peer, status, net::Channel::kFast);
+    }
+    if (const std::uint32_t now = now_ms(); now - echoed_at_ >= kEchoEvery) {  // the game's round trips
+        echoed_at_ = now;
+        broadcast(net::Echo{.sent = now}, net::Channel::kFast);
     }
     while (const std::optional<std::uint64_t> hash = rollback_->hash_at(hash_sent_)) {
         broadcast(net::Hash{.player = static_cast<std::uint8_t>(player_), .step = hash_sent_, .hash = *hash},
@@ -351,9 +383,28 @@ std::optional<std::string> NetGame::waiting_for() const {
                : std::nullopt;
 }
 
-std::optional<int> NetGame::latency_ms(int player) const {
-    const int peer = peer_of(player);
-    return peer >= 0 && player != player_ ? transport_->round_trip_ms(peer) : std::nullopt;
+std::optional<int> NetGame::network_ms(int player) const {
+    if (player == player_) {
+        return std::nullopt;
+    }
+    if (const int peer = peer_of(player); peer >= 0) {
+        return transport_->round_trip_ms(peer);
+    }
+    const std::uint16_t reported =
+        player >= 0 && player < net::kMostPlayers ? host_network_.at(static_cast<std::size_t>(player)) : net::kUnknown;
+    return reported != net::kUnknown ? std::optional<int>{reported} : std::nullopt;
+}
+
+std::optional<int> NetGame::engine_ms(int player) const {
+    if (player == player_ || player < 0) {
+        return std::nullopt;
+    }
+    if (peer_of(player) >= 0) {
+        return std::cmp_less(player, engine_.size()) ? engine_.at(static_cast<std::size_t>(player)) : std::nullopt;
+    }
+    const std::uint16_t reported =
+        player < net::kMostPlayers ? host_engine_.at(static_cast<std::size_t>(player)) : net::kUnknown;
+    return reported != net::kUnknown ? std::optional<int>{reported} : std::nullopt;
 }
 
 }  // namespace lvr

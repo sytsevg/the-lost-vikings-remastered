@@ -113,6 +113,14 @@ void fields(Io& io, auto& message) {
         for (auto& knows : message.knows) {
             io(knows);
         }
+        for (auto& network : message.network) {
+            io(network);
+        }
+        for (auto& engine : message.engine) {
+            io(engine);
+        }
+    } else if constexpr (std::is_same_v<M, Echo> || std::is_same_v<M, Echoed>) {
+        io(message.sent);
     } else if constexpr (std::is_same_v<M, Quit>) {
         // nothing more
     }

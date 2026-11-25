@@ -5,8 +5,12 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <format>
+#include <mutex>
 #include <random>
+#include <thread>
 #include <utility>
 
 namespace lvr::net {
@@ -77,6 +81,13 @@ struct Transport::Inner {
         bool gone = false;
     };
 
+    // The network's own thread (pump): it reads every millisecond, answers pings at once, and keeps what came for
+    // poll. Every socket is used under `lock`, by it or by the game's thread (send, poll).
+    std::mutex lock;
+    std::vector<Event> gathered;
+    std::atomic<bool> stopping{false};
+    std::thread pumping;
+
     bool hosting = false;
     std::uint16_t port = 0;
     NET_Server* server = nullptr;
@@ -92,6 +103,10 @@ struct Transport::Inner {
     Inner(Inner&&) = delete;
     Inner& operator=(Inner&&) = delete;
     ~Inner() {
+        stopping = true;
+        if (pumping.joinable()) {
+            pumping.join();
+        }
         for (Peer& peer : peers) {
             close(peer);
         }
@@ -209,6 +224,73 @@ struct Transport::Inner {
         peer.read.erase(peer.read.begin(), peer.read.begin() + static_cast<std::ptrdiff_t>(at));
     }
 
+    // A pass of the network's thread: who connected, what came, and the pings and introductions due.
+    void pump_once() {
+        std::vector<Event>& events = gathered;
+        const std::uint64_t now = SDL_GetTicks();
+        if (hosting) {
+            NET_StreamSocket* stream = nullptr;
+            while (NET_AcceptClient(server, &stream) && stream != nullptr) {
+                Peer peer;
+                peer.number = next_number++;
+                peer.stream = stream;
+                peer.token = static_cast<std::uint32_t>(tokens());
+                std::vector<std::uint8_t> token;
+                put32(token, peer.token);
+                write_tcp(peer, kToken, token);
+                events.push_back({.kind = Event::Kind::kJoined, .peer = peer.number, .bytes = {}});
+                peers.push_back(peer);
+                stream = nullptr;
+            }
+        }
+        for (Peer& peer : peers) {
+            if (!peer.gone) {
+                read_stream(peer, events);
+            }
+        }
+        read_datagrams(events, now);
+        for (Peer& peer : peers) {
+            if (peer.gone) {
+                continue;
+            }
+            if (peer.udp_ok && now - peer.udp_last > kQuietUdp) {
+                peer.udp_ok = false;  // the fast messages over TCP until UDP comes through again
+            }
+            if (!hosting && !peer.udp_ok && peer.token != 0 && now - peer.hello_last >= kHelloEvery) {
+                write_udp(peer, kHello, {});
+                peer.hello_last = now;
+            }
+            if (now - peer.ping_last >= kPingEvery) {
+                std::vector<std::uint8_t> sent;
+                put32(sent, static_cast<std::uint32_t>(now));
+                write_fast(peer, kPing, sent);
+                if (peer.udp_ok) {
+                    write_tcp(peer, kPing, sent);  // (the TCP connection too, so it is known to be there)
+                }
+                peer.ping_last = now;
+            }
+        }
+        for (Peer& peer : peers) {
+            if (peer.gone && peer.stream != nullptr) {
+                events.push_back({.kind = Event::Kind::kLeft, .peer = peer.number, .bytes = {}});
+                close(peer);
+            }
+        }
+    }
+
+    void start_pumping() {
+        pumping = std::thread{[this] {
+            while (!stopping) {
+                {
+                    const std::scoped_lock held{lock};
+                    pump_once();
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds{1});
+            }
+            SDL_CleanupTLS();  // (what SDL kept for this thread, as for one of its own: the errors' text)
+        }};
+    }
+
     void read_datagrams(std::vector<Event>& events, std::uint64_t now) {
         NET_Datagram* datagram = nullptr;
         while (datagrams != nullptr && NET_ReceiveDatagram(datagrams, &datagram) && datagram != nullptr) {
@@ -240,7 +322,9 @@ struct Transport::Inner {
     }
 };
 
-Transport::Transport(std::unique_ptr<Inner> inner) : inner_{std::move(inner)} {}
+Transport::Transport(std::unique_ptr<Inner> inner) : inner_{std::move(inner)} {
+    inner_->start_pumping();
+}
 
 Transport::~Transport() = default;
 
@@ -297,61 +381,13 @@ std::expected<std::unique_ptr<Transport>, std::string> Transport::join(const std
 
 std::vector<Event> Transport::poll() {
     Inner& in = *inner_;
-    std::vector<Event> events;
-    const std::uint64_t now = SDL_GetTicks();
-    if (in.hosting) {
-        NET_StreamSocket* stream = nullptr;
-        while (NET_AcceptClient(in.server, &stream) && stream != nullptr) {
-            Inner::Peer peer;
-            peer.number = in.next_number++;
-            peer.stream = stream;
-            peer.token = static_cast<std::uint32_t>(in.tokens());
-            std::vector<std::uint8_t> token;
-            put32(token, peer.token);
-            in.write_tcp(peer, kToken, token);
-            events.push_back({.kind = Event::Kind::kJoined, .peer = peer.number, .bytes = {}});
-            in.peers.push_back(peer);
-            stream = nullptr;
-        }
-    }
-    for (Inner::Peer& peer : in.peers) {
-        if (!peer.gone) {
-            in.read_stream(peer, events);
-        }
-    }
-    in.read_datagrams(events, now);
-    for (Inner::Peer& peer : in.peers) {
-        if (peer.gone) {
-            continue;
-        }
-        if (peer.udp_ok && now - peer.udp_last > kQuietUdp) {
-            peer.udp_ok = false;  // the fast messages over TCP until UDP comes through again
-        }
-        if (!in.hosting && !peer.udp_ok && peer.token != 0 && now - peer.hello_last >= kHelloEvery) {
-            in.write_udp(peer, kHello, {});
-            peer.hello_last = now;
-        }
-        if (now - peer.ping_last >= kPingEvery) {
-            std::vector<std::uint8_t> sent;
-            put32(sent, static_cast<std::uint32_t>(now));
-            in.write_fast(peer, kPing, sent);
-            if (peer.udp_ok) {
-                in.write_tcp(peer, kPing, sent);  // (the TCP connection too, so it is known to be there)
-            }
-            peer.ping_last = now;
-        }
-    }
-    for (Inner::Peer& peer : in.peers) {
-        if (peer.gone) {
-            events.push_back({.kind = Event::Kind::kLeft, .peer = peer.number, .bytes = {}});
-            Inner::close(peer);
-        }
-    }
-    std::erase_if(in.peers, [](const Inner::Peer& peer) { return peer.gone; });
-    return events;
+    const std::scoped_lock held{in.lock};
+    std::erase_if(in.peers, [](const Inner::Peer& peer) { return peer.gone && peer.stream == nullptr; });
+    return std::exchange(in.gathered, {});
 }
 
 void Transport::send(int peer, std::span<const std::uint8_t> bytes, Channel channel) {
+    const std::scoped_lock held{inner_->lock};
     if (Inner::Peer* to = inner_->find(peer)) {
         if (channel == Channel::kReliable) {
             inner_->write_tcp(*to, kMessage, bytes);
@@ -362,22 +398,26 @@ void Transport::send(int peer, std::span<const std::uint8_t> bytes, Channel chan
 }
 
 void Transport::drop(int peer) {
+    const std::scoped_lock held{inner_->lock};
     if (Inner::Peer* gone = inner_->find(peer)) {
         gone->gone = true;
     }
 }
 
 std::optional<int> Transport::round_trip_ms(int peer) const {
+    const std::scoped_lock held{inner_->lock};
     const auto found = std::ranges::find(inner_->peers, peer, &Inner::Peer::number);
     return found != inner_->peers.end() ? found->round_trip : std::nullopt;
 }
 
 bool Transport::fast_link(int peer) const {
+    const std::scoped_lock held{inner_->lock};
     const auto found = std::ranges::find(inner_->peers, peer, &Inner::Peer::number);
     return found != inner_->peers.end() && found->udp_ok;
 }
 
 void Transport::simulate_loss(int percent) {
+    const std::scoped_lock held{inner_->lock};
     inner_->loss = percent;
     if (inner_->datagrams != nullptr) {
         NET_SimulateDatagramPacketLoss(inner_->datagrams, percent);

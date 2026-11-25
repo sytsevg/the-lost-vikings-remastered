@@ -400,10 +400,24 @@ Screen Session::picture(bool dimmed) {
     // unpacked into, so a piece that hasn't had a frame of its own yet shows what the last one left there.)
     const World& world = play_.shown();
     View view = view_of(world, loaded, painter_, pictures_, player_);
-    if (view.hud && world.online) {  // under each portrait the name of the player who plays him (ADR-0012)
+    if (view.hud && world.online) {
+        // Under each portrait the name of the player who plays him; above it those watching, in their line's order
+        // (ADR-0012).
         for (int viking = 0; viking < kVikingSlots; ++viking) {
             if (const int who = world.player_of(viking); who >= 0 && std::cmp_less(who, player_names_.size())) {
                 view.hud->names.at(static_cast<std::size_t>(viking)) = player_names_.at(static_cast<std::size_t>(who));
+            }
+            std::vector<std::pair<std::uint16_t, int>> line;
+            for (int who = 0; who < world.player_count; ++who) {
+                const Player& player = world.players.at(static_cast<std::size_t>(who));
+                if (!player.controls && player.viking == viking && std::cmp_less(who, player_names_.size())) {
+                    line.emplace_back(player.in_line, who);
+                }
+            }
+            std::ranges::sort(line);
+            for (const auto& [place, who] : line) {
+                view.hud->watching.at(static_cast<std::size_t>(viking))
+                    .push_back(player_names_.at(static_cast<std::size_t>(who)));
             }
         }
     }

@@ -5,6 +5,7 @@
 // passes every player's inputs on to the others. Joining is checked: the same protocol, the same version of the
 // game's state, the same build, the same game files.
 
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <memory>
@@ -68,7 +69,11 @@ class NetGame {
     // Since when it has been waiting for a player's input (refreshes), and for whom (his name); none: it isn't.
     std::optional<std::string> waiting_for() const;
     int waited() const noexcept { return waited_; }
-    std::optional<int> latency_ms(int player) const;
+    // The round trip to a player, in milliseconds: the network's (answered at once by the transport's thread) and
+    // the game's (answered by his game as it next takes what came, once a refresh). A client has the host's to the
+    // other clients from the host. None: not measured yet, or this machine's own player.
+    std::optional<int> network_ms(int player) const;
+    std::optional<int> engine_ms(int player) const;
     int player() const noexcept { return player_; }
     bool hosting() const noexcept { return transport_->hosting(); }
 
@@ -101,6 +106,11 @@ class NetGame {
     std::vector<bool> gone_;       // by player
     int waited_ = 0;
     int delay_steps_ = 0;  // the game's input delay
+    // The game's round trips: this machine's, by player; and on a client the host's, as his Status says.
+    std::vector<std::optional<int>> engine_;
+    std::array<std::uint16_t, net::kMostPlayers> host_network_{net::kUnknown, net::kUnknown, net::kUnknown};
+    std::array<std::uint16_t, net::kMostPlayers> host_engine_{net::kUnknown, net::kUnknown, net::kUnknown};
+    std::uint32_t echoed_at_ = 0;  // when the last echoes went out
 };
 
 }  // namespace lvr
