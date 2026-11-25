@@ -15,9 +15,9 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
 - **M7, the Remaster rules, is built** (`--rules remaster`): the GPU renderer, zoom-out, no limit on entities,
   a minimap, rewind, a quicksave, a profile on disk, and the game's state written out and read back. What each
   is and where it lives is in the next section.
-- **M8, Modern visuals and sound**, is nearly done, before co-op (M9): smooth movement, parallax, the effects
-  (light, glow, particles), the screen's looks (Hyllian's CRT and xBR) and the Modern sound's effects placed by
-  position are built (below, "M8"); only the extra sound effects are left on its list.
+- **M8, Modern visuals and sound, is done** (2026-11-25, the user): smooth movement, parallax, the effects (light,
+  glow, particles), the screen's looks (Hyllian's CRT and xBR) and the Modern sound's effects placed by position
+  (below, "M8"). The extra sound effects are a milestone of their own, M10, after co-op (M9).
 - **Remaster rules have a menu** (Escape or a gamepad's Start in a level): the sound and its volumes, the screen's
   look, zoom, minimap, visual effects, and the keyboard's and gamepad's controls, kept in the profile; a gamepad's
   stick walks and climbs as fast as it is pushed (next section, "The menu, the settings and the controls").
@@ -105,12 +105,12 @@ The rest of the list is in [`ROADMAP.md`](ROADMAP.md): sound placed by position 
 were dropped by the user, 2026-11-25). The screen's look is built ("Screen look" below).
 
 ### Next
-The state at the end of 2026-11-25: M8 has everything on its list but the extra sound effects. What the user still
-has to judge on the host, and what is open:
+The state at the end of 2026-11-25: M8 is done (the user). What is next, what the user still has to judge on the
+host, and what is open:
 
-- **Next to pick (the user):** the extra sound effects (footsteps by surface, the bow, Olaf's shield, an electric
-  buzz; ROADMAP.md, "Extra sound effects"), which want a decision on where the sounds come from and a surface for
-  every tile; or M9, co-op, whose first decision is the active area with several views (ADR-0011, ADR-0012).
+- **Next: M9, co-op** (ROADMAP.md): its first decision is the active area with several views, every view's
+  together or everything running (ADR-0011, ADR-0012). The extra sound effects (footsteps by surface, the bow,
+  Olaf's shield, an electric buzz) are M10, after it.
 - **The Modern sound's effects placed by position (built and checked 2026-11-25; being heard on the host):**
   ADR-0015. To judge by ear: how far to the sides the view's edges are (`kEdge`, 48 of 63, in `Session::placed`)
   and how fast an effect fades outside the view (silent half a view away). The fire jets' roar, one sound for every
