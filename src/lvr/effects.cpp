@@ -6,6 +6,7 @@
 #include <span>
 
 #include "lvr/animations.hpp"
+#include "lvr/names.hpp"
 #include "lvr/terrain.hpp"
 #include "lvr/viking_looks.hpp"
 #include "lvr/world.hpp"
@@ -13,6 +14,10 @@
 namespace lvr {
 
 namespace {
+
+// How strongly the game-over scene's colours glow (its water: the spaceship's database, its colour cycles), of 255:
+// less than the spaceship's screens (the user, 2026-11-26).
+constexpr std::uint8_t kGameOverGlow = 128;
 
 // Which worlds a rule holds in: a bit for each database from the spaceship's. An animation named in one world is
 // found in another by the pairing of their programs (World::program_of), and a world without that death can have
@@ -323,7 +328,8 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
             const int high = std::max(cycle.from, cycle.to);
             for (int colour = low; colour <= high && colour < 128; ++colour) {
                 if (!electric_colours_.at(static_cast<std::size_t>(colour))) {
-                    screen.glow.at(static_cast<std::size_t>(colour)) = 255;
+                    screen.glow.at(static_cast<std::size_t>(colour)) =
+                        world.scene == scene::kGameOver ? kGameOverGlow : std::uint8_t{255};
                 }
             }
         }

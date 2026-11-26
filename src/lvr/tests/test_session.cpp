@@ -882,7 +882,7 @@ TEST_CASE("real data: Remaster rules' effects: lights, glowing colours, what sto
     }
     const Screen& shown = lit.back();
     CHECK_FALSE(shown.lights.empty());
-    CHECK(std::ranges::any_of(shown.glow, [](std::uint8_t glow) { return glow != 0; }));  // the screens' colours
+    CHECK(std::ranges::max(shown.glow) == 255);  // the screens' colours, in full
     REQUIRE(shown.ground != nullptr);
     CHECK(std::ranges::any_of(shown.ground->solid, [](std::uint8_t solid) { return solid != 0; }));
     CHECK(sparks);
@@ -890,6 +890,18 @@ TEST_CASE("real data: Remaster rules' effects: lights, glowing colours, what sto
     CHECK(plain.back().lights.empty());
     CHECK(std::ranges::none_of(plain.back().glow, [](std::uint8_t glow) { return glow != 0; }));
     CHECK(plain.back().ground == nullptr);
+    // The game-over scene's water (its colour cycles: the spaceship's database) glows, less (the user, 2026-11-26).
+    auto over = Session::open(LVR_ORIGINAL_DIR, scene::kGameOver, {}, Rules::kRemaster);
+    REQUIRE(over);
+    (*over)->set_effects(true);
+    Screen sea;
+    for (int step = 0; step < 20; ++step) {
+        if (const std::vector<Screen> now = (*over)->step(0); !now.empty()) {
+            sea = now.back();
+        }
+    }
+    CHECK(std::ranges::max(sea.glow) > 0);
+    CHECK(std::ranges::max(sea.glow) < 255);
     // Vanilla rules have none, asked for or not.
     auto vanilla = Session::open(LVR_ORIGINAL_DIR, 3);
     REQUIRE(vanilla);
