@@ -21,6 +21,14 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
 - **Remaster rules have a menu** (Escape or a gamepad's Start in a level): the sound and its volumes, the screen's
   look, zoom, minimap, visual effects, and the keyboard's and gamepad's controls, kept in the profile; a gamepad's
   stick walks and climbs as fast as it is pushed (next section, "The menu, the settings and the controls").
+- **M9, co-op online, is built** (2026-11-25 and 26; on main, 14 commits ahead of origin/main: the user pushes):
+  up to three players, each on his own machine, by rollback after GGPO's design (ADR-0012). Under Remaster rules
+  the title's menu has HOST GAME and JOIN GAME; everyone waits in a lobby (round trips, what the game starts with:
+  a level's password, or none for a new game from the intro) until the host starts it after a countdown; the host
+  can bring everyone back there for another; who comes later joins the game under way. The game's messages go by
+  UDP and TCP both, numbered, the newest taken. Reviewed by an ultrareview of its code (ten findings, all fixed).
+  What each part is and where it lives: "Open", the M9 entries. Not yet tried by the user: the lobby and the
+  title's pages in two windows, and a game over a real network.
 
 ## What the Remaster rules have
 
@@ -108,10 +116,11 @@ were dropped by the user, 2026-11-25). The screen's look is built ("Screen look"
 The state at the end of 2026-11-25: M8 is done (the user). What is next, what the user still has to judge on the
 host, and what is open:
 
-- **Next: M9, co-op online** (planned with the user 2026-11-25: ADR-0012, and the parts in ROADMAP.md, a commit
-  each on the user's word): rollback after GGPO's design, the active area every player's view together. The first
-  in code: players in the world, with one player exactly as before (all 119 goldens). The extra sound effects
-  (footsteps by surface, the bow, Olaf's shield, an electric buzz) are M10, after it.
+- **Next (2026-11-26): the user tries M9** in two windows (`vikings-remaster --rules remaster`, and a second with
+  `--profile build/release/bin/profiles-guest`: HOST GAME, JOIN GAME at 127.0.0.1), then over a real network; what
+  he finds is fixed before anything else. Then the tests are to be cut back a lot (the user: "WAY too many": a
+  proposal first, "Open"). Then M10, the extra sound effects (footsteps by surface, the bow, Olaf's shield, an
+  electric buzz).
 - **The Modern sound's effects placed by position (built and checked 2026-11-25; being heard on the host):**
   ADR-0015. To judge by ear: how far to the sides the view's edges are (`kEdge`, 48 of 63, in `Session::placed`)
   and how fast an effect fades outside the view (silent half a view away). The fire jets' roar, one sound for every

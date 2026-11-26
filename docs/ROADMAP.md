@@ -40,7 +40,7 @@ rewind, a quicksave, and the player's profile on disk that keeps the last two ar
 
 ## M9: Co-op online
 [`decisions.md`](decisions.md), ADR-0012. Online only (the user, 2026-11-25: no local co-op); up to three, by
-rollback. In this order, a commit each:
+rollback. All built (2026-11-26), being tried by the user. In this order, a commit each:
 - Players in the world: keys, a camera and a Viking each; one player exactly as before (built, 2026-11-25:
   HANDOVER.md, "Players in the world")
 - Several views and the rules of play online: the active area every view's together, a Viking's player and
@@ -52,7 +52,8 @@ rollback. In this order, a commit each:
 - The transport: SDL3_net, UDP with TCP behind it
 - The front end: hosting and joining, the names under the Vikings, the latency in the menu, a mark while waiting
 - Joining a game under way, and joining again (built, 2026-11-25: ADR-0012)
-- Hosting and joining from the title's menu (built, 2026-11-25: ADR-0012)
+- Hosting and joining from the title's menu, a lobby the host starts, back to it from a game (built, 2026-11-25:
+  ADR-0012)
 
 ## M10: Extra sound effects (Modern sound)
 - **What:** new effects on top of the original's: an electric buzz near the electric traps, the bow drawn and
