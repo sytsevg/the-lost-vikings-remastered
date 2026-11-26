@@ -188,8 +188,12 @@ How the visuals work so far:
   the `Screen` only says which one (`Screen::kept`, of the last 512), with the palette and the `Motion`; the
   window shows one a refresh of its own (`gpu_show.frag` looks up the palette and scales, then the minimap and
   the rewind's mark go over it). It fills the window, the 4:3 shape kept (the user, 2026-11-26, not only whole
-  times the original's pixels): drawn the next whole number of times as large, a pixel of the window the mean of
-  what it covers (`GpuRenderer::shown_in` reads back a window's size).
+  times the original's pixels), in whole pixels where they fill 90% of that (the user: they match): else drawn the
+  next whole number of times as large, a pixel of the window the mean of what it covers (`GpuRenderer::shown_in` reads back a window's size). Resizing under Wayland is slow while the
+  window is dragged (the user's --slow-frames log, 2026-11-26): each new size has SDL rebuild the swapchain (100-270
+  ms waiting for the window) and the compositor gives images back slowly meanwhile (~40 ms); left as it is. Under
+  Windows or macOS (not built for now) polling would stop for the whole drag: there the loop would draw from
+  SDL_EVENT_WINDOW_EXPOSED or SDL's main callbacks (wiki.libsdl.org/SDL3/AppFreezeDuringDrag).
 - **The atlas** has pages (`GpuRenderer::State::Page`): the shared pictures, the scene's (tileset, the tiles'
   masks, its full pictures) and the sprites' pieces, each put there the first time it is shown and found again
   by a hash of its pixels. A kept picture is drawn from one page; a page is used again only when no kept

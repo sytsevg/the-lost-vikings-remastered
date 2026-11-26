@@ -1358,10 +1358,13 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         screen.ground != nullptr && (screen.ground->id == ground_id || upload_ground(commands, *screen.ground));
 
     // The original's screen as large as the window holds it, its shape kept (the user, 2026-11-26: not only as large
-    // as whole pixels allow, with black around it). Shown at a size not a whole number of times its own, it is drawn
-    // the next whole number of times and shown a little smaller: a pixel of the window is the mean of what it covers.
-    const float scale =
+    // as whole pixels allow, with black around it); but in whole pixels where they come near that (the user: they
+    // match). Shown at a size not a whole number of times its own, it is drawn the next whole number of times and
+    // shown a little smaller: a pixel of the window is the mean of what it covers.
+    constexpr float kWholeIfNear = 0.9F;  // of the size it would fill
+    const float fills =
         std::max(1.0F, std::min(static_cast<float>(width) / kScreenWidth, static_cast<float>(height) / kScreenHeight));
+    const float scale = std::floor(fills) >= fills * kWholeIfNear ? std::floor(fills) : fills;
     const auto left = static_cast<int>(std::round((static_cast<float>(width) - (kScreenWidth * scale)) / 2));
     const auto top = static_cast<int>(std::round((static_cast<float>(height) - (kScreenHeight * scale)) / 2));
     // The playfield's part with the HUD under it, both at one scale: as large as the original's screen's place

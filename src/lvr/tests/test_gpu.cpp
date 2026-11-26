@@ -266,6 +266,26 @@ TEST_CASE("gpu: a kept picture is shown with its colours looked up") {
         }
         CHECK(unlike == 0);
     }
+    // Where whole pixels come near filling it, in whole pixels: 1000 x 750 holds 3.125 times, shown 3 times.
+    {
+        const auto in = gpu.shown_in(first, 1000, 750);
+        const auto three = gpu.shown(first, 3);
+        REQUIRE(in);
+        REQUIRE(three);
+        std::size_t unlike = 0;
+        for (int y = 0; y < 720; ++y) {
+            for (int x = 0; x < 960; ++x) {
+                const auto i = static_cast<std::size_t>((((y + 15) * 1000) + x + 20) * 4);
+                const auto j = static_cast<std::size_t>(((y * 960) + x) * 4);
+                unlike +=
+                    in->at(i) != three->at(j) || in->at(i + 1) != three->at(j + 1) || in->at(i + 2) != three->at(j + 2)
+                        ? 1U
+                        : 0U;
+            }
+        }
+        CHECK(unlike == 0);
+        CHECK(in->at(((375 * 1000) + 19) * 4) == 0);  // black around it
+    }
 
     // The minimap: a square of it (64 cells a side: 256 of its pixels) in the bottom left corner, 64 pixels a
     // side, with a frame; the HUD moved 33 pixels right to make room, and the playfield as it was.
