@@ -1,7 +1,7 @@
 # The Windows build (x86-64), cross-built with llvm-mingw: the same LLVM, with libc++ and mingw-w64's headers and
 # libraries for Windows (the dev container has it in /opt/llvm-mingw, dev-env/Dockerfile). The `windows` preset uses
-# this file; scripts/windows.sh builds with it and runs the checks. What runs during the build (glslc) is the
-# container's own; the tests and the replays run under Wine (wine.sh, beside this file).
+# this file; scripts/windows.sh builds the game with it. What runs during the build (glslc) is the container's own;
+# nothing of the Windows build is run here (the user, 2026-11-26: it worked on Windows as it was built).
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR x86_64)
 
@@ -16,4 +16,3 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
-set(CMAKE_CROSSCOMPILING_EMULATOR ${CMAKE_CURRENT_LIST_DIR}/wine.sh)

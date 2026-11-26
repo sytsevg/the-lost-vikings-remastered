@@ -34,9 +34,10 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
   the M9 entries. Tried by the user over a real network (2026-11-26): a Linux and a Windows machine over wireless,
   the lobby, a game and back to the lobby.
 - **A Windows build** (2026-11-26, ADR-0021): cross-built in the container with llvm-mingw, one `.exe` for
-  Windows 10 and later (`scripts/windows.sh`, `docs/development.md`); its unit tests and every replay pass under
+  Windows 10 and later (`scripts/windows.sh`, `docs/development.md`); its unit tests and every replay passed under
   Wine. Tried on a Windows PC by the user (2026-11-26): both rules (Remaster's GPU window on Vulkan), the sound,
-  and co-op with a Linux machine over wireless. Not yet: a gamepad on Windows.
+  and co-op with a Linux machine over wireless. Not yet: a gamepad on Windows. Since then only built (the user:
+  "it's just the build that's required"): no tests or replays under Wine, and no Wine in the container.
 
 ## What the Remaster rules have
 

@@ -220,12 +220,12 @@ publishing: its author asks not to link his download files directly.
   stdout and stderr with nowhere to go are sent to NUL (`std::print` throws when it can't write). Its
   manifest (`src/lvr/windows.manifest`) makes its strings of `char` UTF-8, so paths from SDL and
   `std::filesystem` are what they are on Linux.
-- Checked under Wine in the container (`cmake/wine.sh`): the unit tests, and every replay against its golden. The
-  game's logic is in whole numbers (floating point only in what is shown, and in a stick's reading before it is a
-  whole pace), so the Windows build plays as the Linux one does, and the same sources give the same build ID: the
-  two play co-op together. What Wine can't show is tried on a Windows PC: the GPU window, the gamepad, the sound,
-  the firewall when hosting, and a program without a console (Wine writes its output somewhere all the same). The
-  user, 2026-11-26: both rules, the sound, and co-op with a Linux machine over wireless work.
+- Only built: nothing of the Windows build runs in the container. The game's logic is in whole numbers (floating
+  point only in what is shown, and in a stick's reading before it is a whole pace), so the Windows build plays as
+  the Linux one does, and the same sources give the same build ID: the two play co-op together. Its unit tests
+  and every replay passed under Wine when it was first made; then the user tried it on a Windows PC (2026-11-26:
+  both rules, the sound, and co-op with a Linux machine over wireless work) and decided that the build is all
+  that is needed: the tests and the replays are the Linux build's, and Wine left the container.
 - The GPU renderer's shaders are SPIR-V only, so on Windows SDL_GPU draws with Vulkan, never Direct3D 12. DXIL
   shaders would add it, if Vulkan turns out to be missing too often.
 - SDL3_net's patch has one more change, for mingw-w64: its `read()` and `write()` for sockets collide with
