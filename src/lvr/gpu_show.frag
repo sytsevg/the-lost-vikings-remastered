@@ -115,7 +115,7 @@ vec3 glow_at(vec2 spot) {
             }
         }
     }
-    return stepped(glow * 0.05);
+    return stepped(glow * 0.065);  // (the user, 2026-11-26: the spaceship's screens a little brighter)
 }
 
 void main() {
