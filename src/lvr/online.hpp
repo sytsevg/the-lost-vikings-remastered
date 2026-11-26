@@ -47,15 +47,13 @@ class NetGame {
         std::string name;
     };
 
-    // Hosts on `port`; the game starts once `players` are there (the host one of them), at `slot`; with 0 players
-    // when the host says so (start), with whoever is there. `delay`: the input delay in steps; none: chosen from the
-    // round trips (under 50 ms none, under 150 one, else two).
-    static std::expected<std::unique_ptr<NetGame>, std::string> host(std::uint16_t port, int players, int slot,
-                                                                     bool cheat, std::optional<int> delay,
-                                                                     Identity identity);
-    // Joins the game hosted at `address`.
-    static std::expected<std::unique_ptr<NetGame>, std::string> join(const std::string& address, std::uint16_t port,
-                                                                     Identity identity);
+    // Hosts through `transport` (a host's); the game starts once `players` are there (the host one of them), at
+    // `slot`; with 0 players when the host says so (start), with whoever is there. `delay`: the input delay in steps;
+    // none: chosen from the round trips (under 50 ms none, under 150 one, else two).
+    static std::unique_ptr<NetGame> host(std::unique_ptr<net::Transport> transport, int players, int slot, bool cheat,
+                                         std::optional<int> delay, Identity identity);
+    // Joins the game hosted at the other end of `transport` (a guest's): says hello.
+    static std::unique_ptr<NetGame> join(std::unique_ptr<net::Transport> transport, Identity identity);
 
     // The lobby, a poll a call: once the game starts, what it is. An error: refused, or the host gone. The host tells
     // everyone now and then who is there, their round trips and the start (net::Lobby).
@@ -153,18 +151,18 @@ class NetGame {
     std::filesystem::path log_folder_;
     Identity identity_;
     std::optional<Joined> joined_;
-    int wanted_ = 1;                   // host: how many players start the game, as they are there (auto_start_)
-    int countdown_sent_ = 0;           // host: the seconds the lobby was last told
-    int countdown_ = 0;                // a client: the host's countdown, as the lobby says
-    std::uint32_t lobby_sent_at_ = 0;  // host: when the lobby was last told
-    std::uint32_t catch_up_to_ = 0;    // joining under way: the steps before his arrival, run unseen at once
-    std::uint32_t decided_sent_ = 0;   // host: the step before which presence was last said to be decided
+    int wanted_ = 1;          // host: how many players start the game, as they are there (auto_start_)
+    int countdown_sent_ = 0;  // host: the seconds the lobby was last told
+    int countdown_ = 0;       // a client: the host's countdown, as the lobby says
+    std::optional<std::uint32_t> lobby_sent_at_;  // host: when the lobby was last told
+    std::uint32_t catch_up_to_ = 0;               // joining under way: the steps before his arrival, run unseen at once
+    std::uint32_t decided_sent_ = 0;              // host: the step before which presence was last said to be decided
     int slot_ = 0;
     int player_ = 0;
     std::uint32_t hash_sent_ = 7;  // the next step whose hash is still to be sent
     int waited_ = 0;
     int delay_steps_ = 0;                          // the game's input delay
-    std::uint32_t echoed_at_ = 0;                  // when the last echoes went out
+    std::optional<std::uint32_t> echoed_at_;       // when the last echoes went out
     std::optional<std::uint32_t> counting_until_;  // host: when the countdown ends
     std::optional<int> delay_;
     std::uint16_t game_number_ = 0;  // the game's number (net::Start): what a game's messages carry

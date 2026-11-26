@@ -1,7 +1,6 @@
 #include "lvr/online.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <format>
 #include <fstream>
@@ -16,13 +15,6 @@ namespace {
 constexpr int kWindow = 8;                  // the steps rollback can run ahead (ADR-0012)
 constexpr std::uint32_t kEchoEvery = 500;   // milliseconds
 constexpr std::uint32_t kLobbyEvery = 500;  // milliseconds
-
-// Milliseconds on a clock of this machine's own (only differences are sent back to it).
-std::uint32_t now_ms() {
-    return static_cast<std::uint32_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
-            .count());
-}
 
 std::uint16_t as_sent(std::optional<int> ms) {
     return ms ? static_cast<std::uint16_t>(std::clamp(*ms, 0, int{net::kUnknown} - 1)) : net::kUnknown;
@@ -54,14 +46,9 @@ NetGame::NetGame(std::unique_ptr<net::Transport> transport, Identity identity)
     engine_.assign(net::kMostPlayers, std::nullopt);
 }
 
-std::expected<std::unique_ptr<NetGame>, std::string> NetGame::host(std::uint16_t port, int players, int slot,
-                                                                   bool cheat, std::optional<int> delay,
-                                                                   Identity identity) {
-    auto transport = net::Transport::host(port);
-    if (!transport) {
-        return std::unexpected{transport.error()};
-    }
-    std::unique_ptr<NetGame> game{new NetGame{std::move(*transport), std::move(identity)}};
+std::unique_ptr<NetGame> NetGame::host(std::unique_ptr<net::Transport> transport, int players, int slot, bool cheat,
+                                       std::optional<int> delay, Identity identity) {
+    std::unique_ptr<NetGame> game{new NetGame{std::move(transport), std::move(identity)}};
     game->auto_start_ = players > 0;
     game->wanted_ = players > 0 ? std::clamp(players, 1, net::kMostPlayers) : net::kMostPlayers;
     game->slot_ = slot;
@@ -72,13 +59,8 @@ std::expected<std::unique_ptr<NetGame>, std::string> NetGame::host(std::uint16_t
     return game;
 }
 
-std::expected<std::unique_ptr<NetGame>, std::string> NetGame::join(const std::string& address, std::uint16_t port,
-                                                                   Identity identity) {
-    auto transport = net::Transport::join(address, port);
-    if (!transport) {
-        return std::unexpected{transport.error()};
-    }
-    std::unique_ptr<NetGame> game{new NetGame{std::move(*transport), std::move(identity)}};
+std::unique_ptr<NetGame> NetGame::join(std::unique_ptr<net::Transport> transport, Identity identity) {
+    std::unique_ptr<NetGame> game{new NetGame{std::move(transport), std::move(identity)}};
     game->send(0,
                net::Hello{.protocol = net::kProtocol,
                           .state_version = kStateVersion,
@@ -162,7 +144,7 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby_pass()
     if (!hosting()) {
         return std::nullopt;
     }
-    if (const std::uint32_t now = now_ms(); now - lobby_sent_at_ >= kLobbyEvery) {  // now and then, to everyone
+    if (const std::uint32_t now = transport_->now_ms(); !lobby_sent_at_ || now - *lobby_sent_at_ >= kLobbyEvery) {
         lobby_sent_at_ = now;
         send_lobby();
         broadcast(net::Echo{.sent = now}, net::Channel::kFast);
@@ -256,7 +238,7 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby_messag
     if (hosting()) {
         if (const auto* echoed = std::get_if<net::Echoed>(&one)) {
             if (const int player = player_of(peer); player > 0) {
-                engine_.at(static_cast<std::size_t>(player)) = static_cast<int>(now_ms() - echoed->sent);
+                engine_.at(static_cast<std::size_t>(player)) = static_cast<int>(transport_->now_ms() - echoed->sent);
             }
             return std::nullopt;
         }
@@ -338,7 +320,7 @@ void NetGame::start(bool at_once) {
     if (at_once) {
         start_wanted_ = true;
     } else if (!counting_until_) {
-        counting_until_ = now_ms() + kCountdownMs;
+        counting_until_ = transport_->now_ms() + kCountdownMs;
         countdown_sent_ = countdown();
         send_lobby();
     }
@@ -360,7 +342,7 @@ int NetGame::countdown() const {
         return 0;
     }
     constexpr int kSecond = 1000;
-    const auto left = static_cast<std::int32_t>(*counting_until_ - now_ms());
+    const auto left = static_cast<std::int32_t>(*counting_until_ - transport_->now_ms());
     return left <= 0 ? 0 : static_cast<int>((left + kSecond - 1) / kSecond);
 }
 
@@ -581,7 +563,7 @@ std::expected<void, std::string> NetGame::take(int peer, const net::Message& mes
         send(peer, net::Echoed{.sent = echo->sent}, net::Channel::kFast);
     } else if (const auto* echoed = std::get_if<net::Echoed>(&message)) {
         if (sender >= 0 && std::cmp_less(sender, engine_.size())) {
-            engine_.at(static_cast<std::size_t>(sender)) = static_cast<int>(now_ms() - echoed->sent);
+            engine_.at(static_cast<std::size_t>(sender)) = static_cast<int>(transport_->now_ms() - echoed->sent);
         }
     } else if (const auto* decided = std::get_if<net::Decided>(&message)) {
         if (!hosting() && decided->game == game_number_) {
@@ -698,7 +680,7 @@ std::expected<void, std::string> NetGame::flush() {
                                .presence = presence_from(*rollback_, decided_sent_ - std::min(decided_sent_, kRecent))},
                   net::Channel::kFast);
     }
-    if (const std::uint32_t now = now_ms(); now - echoed_at_ >= kEchoEvery) {  // the game's round trips
+    if (const std::uint32_t now = transport_->now_ms(); !echoed_at_ || now - *echoed_at_ >= kEchoEvery) {
         echoed_at_ = now;
         broadcast(net::Echo{.sent = now}, net::Channel::kFast);
     }

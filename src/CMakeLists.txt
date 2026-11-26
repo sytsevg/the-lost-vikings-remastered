@@ -32,10 +32,12 @@ add_library(lvr::input ALIAS lvr_input)
 target_include_directories(lvr_input PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 lvr_target_defaults(lvr_input)
 
-# Co-op online (ADR-0012): rollback, plain C++ (the sockets are lvr_transport's).
+# Co-op online (ADR-0012): rollback, the protocol and the simulated network, plain C++ (the sockets are
+# lvr_transport's).
 add_library(lvr_net STATIC
     net/protocol.cpp
-    net/rollback.cpp)
+    net/rollback.cpp
+    net/simulated.cpp)
 add_library(lvr::net ALIAS lvr_net)
 target_include_directories(lvr_net PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 lvr_target_defaults(lvr_net)
@@ -245,6 +247,7 @@ if(LVR_BUILD_TESTS)
         input/tests/test_input.cpp
         net/tests/test_protocol.cpp
         net/tests/test_rollback.cpp
+        net/tests/test_simulated.cpp
         replay/tests/test_golden.cpp
         replay/tests/test_replay.cpp
         lvr/tests/test_archive.cpp

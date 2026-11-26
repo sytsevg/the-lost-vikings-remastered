@@ -1239,14 +1239,16 @@ std::expected<Connected, std::string> connect_online(const OnlineWish& wish, con
         return std::unexpected{said(identity.error())};
     }
     if (wish.host) {
-        auto hosted = NetGame::host(static_cast<std::uint16_t>(settings.host_port), 0,
-                                    wish.level < 0 ? scene::kIntro : wish.level, false, std::nullopt, *identity);
+        auto hosted = net::SdlTransport::host(static_cast<std::uint16_t>(settings.host_port));
         if (!hosted) {
             std::println(stderr, "vikings-remaster: {}", hosted.error());
             return std::unexpected{std::format("CAN'T HOST ON PORT {}", settings.host_port)};
         }
         std::println("vikings-remaster: hosting on port {}", settings.host_port);
-        return Connected{.net = std::move(*hosted), .joined = std::nullopt, .closed = false};
+        return Connected{.net = NetGame::host(std::move(*hosted), 0, wish.level < 0 ? scene::kIntro : wish.level, false,
+                                              std::nullopt, *identity),
+                         .joined = std::nullopt,
+                         .closed = false};
     }
     const auto [address, port] = split_address(settings.join_address);
     const std::string where = std::format("{}:{}", address, port);
@@ -1255,13 +1257,13 @@ std::expected<Connected, std::string> connect_online(const OnlineWish& wish, con
         (void)gpu.show(behind, nullptr, 0);
     };
     show();  // (joining waits for the connection)
-    auto joining = NetGame::join(address, port, *identity);
+    auto joining = net::SdlTransport::join(address, port);
     if (!joining) {
         std::println(stderr, "vikings-remaster: {}", joining.error());
         gpu.set_overlay({});
         return std::unexpected{said(std::format("NO GAME AT {}", where))};
     }
-    Connected connected{.net = std::move(*joining), .joined = std::nullopt, .closed = false};
+    Connected connected{.net = NetGame::join(std::move(*joining), *identity), .joined = std::nullopt, .closed = false};
     constexpr std::uint64_t kPatienceMs = 10000;
     const std::uint64_t began = SDL_GetTicks();
     while (!connected.net->welcomed()) {
@@ -1465,13 +1467,14 @@ int main(int argc, char* argv[]) try {
         const NetGame::Identity identity{.build = std::string{kBuild},
                                          .game = files->release().exe_hash ^ files->release().data_content_hash,
                                          .name = name};
-        auto opened = host_port ? NetGame::host(*host_port, players, slot, cheat, delay, identity)
-                                : NetGame::join(join_address, join_port, identity);
+        auto opened =
+            host_port ? net::SdlTransport::host(*host_port) : net::SdlTransport::join(join_address, join_port);
         if (!opened) {
             std::println(stderr, "vikings-remaster: {}", opened.error());
             return EXIT_FAILURE;
         }
-        net = std::move(*opened);
+        net = host_port ? NetGame::host(std::move(*opened), players, slot, cheat, delay, identity)
+                        : NetGame::join(std::move(*opened), identity);
         std::println("vikings-remaster: {}",
                      host_port ? std::format("hosting on port {}, for {} players", *host_port, players)
                                : std::format("joined {} port {}", join_address, join_port));

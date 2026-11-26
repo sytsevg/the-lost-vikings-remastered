@@ -1,6 +1,8 @@
-// Tests for src/lvr/online.* (co-op online, ADR-0012): a host and a client in one process over 127.0.0.1, each
-// with its own session, through the lobby and into level 1; they play the same game.
+// Tests for src/lvr/online.* (co-op online, ADR-0012): a host and a client in one process, each with its own session,
+// through the lobby and into level 1; they play the same game. Each test runs twice: over 127.0.0.1 through SDL3_net,
+// and on the simulated network (what NetGame does mustn't depend on which).
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -11,6 +13,8 @@
 #include "lvr/names.hpp"
 #include "lvr/online.hpp"
 #include "lvr/session.hpp"
+#include "net/simulated.hpp"
+#include "net/transport.hpp"
 
 using namespace lvr;
 
@@ -28,46 +32,90 @@ std::uint16_t held(int player, std::uint32_t step) {
     return step >= 90 ? kLeft : 0;
 }
 
+// Where a test's machines meet: 127.0.0.1 through SDL3_net, or the simulated network (a little late, now and then a
+// fast message lost). Its clock: the real one's milliseconds, or the simulated one's, which a pass moves on.
+struct Wire {
+    bool simulated = false;
+    net::SimulatedNetwork network{net::SimulatedNetwork::Conditions{.delay_ms = 2, .jitter_ms = 2, .loss_percent = 10}};
+    std::uint16_t port = 0;
+
+    std::unique_ptr<NetGame> host(std::uint16_t first_port, int players, int slot, const NetGame::Identity& identity) {
+        if (simulated) {
+            return NetGame::host(network.host(), players, slot, false, std::nullopt, identity);
+        }
+        for (port = first_port; port < first_port + 20; ++port) {
+            if (auto opened = net::SdlTransport::host(port)) {
+                return NetGame::host(std::move(*opened), players, slot, false, std::nullopt, identity);
+            }
+        }
+        return nullptr;
+    }
+    std::unique_ptr<NetGame> join(const NetGame::Identity& identity) {
+        if (simulated) {
+            return NetGame::join(network.join(), identity);
+        }
+        auto joined = net::SdlTransport::join("127.0.0.1", port);
+        return joined ? NetGame::join(std::move(*joined), identity) : nullptr;
+    }
+    void pass(std::uint32_t ms) {
+        if (simulated) {
+            network.advance(ms);
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds{ms});
+        }
+    }
+    std::uint64_t now() const {
+        if (simulated) {
+            return network.now();
+        }
+        return static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+                .count());
+    }
+};
+
+// A test's wire, once on each.
+Wire each_wire() {
+    Wire wire;
+    wire.simulated = GENERATE(false, true);
+    UNSCOPED_INFO((wire.simulated ? "the simulated network" : "SDL3_net over 127.0.0.1"));
+    return wire;
+}
+
 }  // namespace
 
 TEST_CASE("real data: a host and a client play level 1 online, the same game", "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
+    Wire wire = each_wire();
     const NetGame::Identity identity{.build = "test", .game = 1, .name = "host"};
-    std::unique_ptr<NetGame> host;
-    std::uint16_t port = kFirstPort;
-    for (; port < kFirstPort + 20 && !host; ++port) {
-        if (auto opened = NetGame::host(port, 2, 0, false, std::nullopt, identity)) {
-            host = std::move(*opened);
-        }
-    }
+    std::unique_ptr<NetGame> host = wire.host(kFirstPort, 2, 0, identity);
     REQUIRE(host);
-    --port;
     // Another build is turned away.
-    auto other = NetGame::join("127.0.0.1", port, {.build = "other", .game = 1, .name = "x"});
+    auto other = wire.join({.build = "other", .game = 1, .name = "x"});
     REQUIRE(other);
-    auto client = NetGame::join("127.0.0.1", port, {.build = "test", .game = 1, .name = "guest"});
+    auto client = wire.join({.build = "test", .game = 1, .name = "guest"});
     REQUIRE(client);
     std::optional<NetGame::Joined> at_host;
     std::optional<NetGame::Joined> at_client;
     bool refused = false;
-    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds{5};
-    while ((!at_host || !at_client || !refused) && std::chrono::steady_clock::now() < until) {
+    const auto until = wire.now() + 5'000;
+    while ((!at_host || !at_client || !refused) && wire.now() < until) {
         if (!at_host) {
             auto lobby = host->lobby();
             REQUIRE(lobby);
             at_host = *lobby;
         }
         if (!at_client) {
-            auto lobby = (*client)->lobby();
+            auto lobby = client->lobby();
             REQUIRE(lobby);
             at_client = *lobby;
         }
         if (!refused) {
-            refused = !(*other)->lobby().has_value();
+            refused = !other->lobby().has_value();
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        wire.pass(2);
     }
     REQUIRE(at_host);
     REQUIRE(at_client);
@@ -78,7 +126,7 @@ TEST_CASE("real data: a host and a client play level 1 online, the same game", "
     CHECK(at_client->delay == at_host->delay);
 
     std::vector<std::unique_ptr<Session>> sessions;
-    std::vector<NetGame*> games{host.get(), client->get()};
+    std::vector<NetGame*> games{host.get(), client.get()};
     for (int player = 0; player < 2; ++player) {
         auto opened = Session::open(LVR_ORIGINAL_DIR, at_host->slot, {}, Rules::kRemaster, draw,
                                     Online{.on = true, .players = 2}, player);
@@ -89,8 +137,8 @@ TEST_CASE("real data: a host and a client play level 1 online, the same game", "
     constexpr std::uint32_t kSteps = 100;
     std::array<std::uint32_t, 2> steps{};
     // (A guard against hanging only: a sanitizers' build with every core busy runs it slowly.)
-    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds{300};
-    while ((steps[0] < kSteps || steps[1] < kSteps) && std::chrono::steady_clock::now() < end) {
+    const auto end = wire.now() + 300'000;
+    while ((steps[0] < kSteps || steps[1] < kSteps) && wire.now() < end) {
         for (int player = 0; player < 2; ++player) {
             NetGame& game = *games.at(static_cast<std::size_t>(player));
             Session& session = *sessions.at(static_cast<std::size_t>(player));
@@ -106,26 +154,26 @@ TEST_CASE("real data: a host and a client play level 1 online, the same game", "
                 ++at;
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        wire.pass(1);
     }
     REQUIRE(steps[0] == kSteps);
     REQUIRE(steps[1] == kSteps);
     // The last inputs on their way, and any step they put right run again.
-    const auto settle = std::chrono::steady_clock::now() + std::chrono::milliseconds{500};
-    while (std::chrono::steady_clock::now() < settle) {
+    const auto settle = wire.now() + 500;
+    while (wire.now() < settle) {
         for (NetGame* game : games) {
             REQUIRE(game->poll());
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        wire.pass(2);
     }
     CHECK(sessions[0]->state_hash() == sessions[1]->state_hash());
     // The round trips to the host, as the host measures them, the same on both machines; the host's own: none.
     CHECK(host->network_ms(1).has_value());
     CHECK(host->engine_ms(1).has_value());
-    CHECK((*client)->network_ms(1).has_value());
-    CHECK((*client)->engine_ms(1).has_value());
+    CHECK(client->network_ms(1).has_value());
+    CHECK(client->engine_ms(1).has_value());
     CHECK_FALSE(host->network_ms(0).has_value());
-    CHECK_FALSE((*client)->network_ms(0).has_value());
+    CHECK_FALSE(client->network_ms(0).has_value());
     // The game's log, as it would be written if the machines went out of step: played again it comes to the same
     // states; one hash spoiled, the replay says at which step.
     const std::string log = host->log();
@@ -152,12 +200,12 @@ struct Machine {
 };
 
 // Runs the machines until each has run `until` steps (each gives what `held` says for his player).
-void run_until(std::vector<Machine*> machines, std::uint32_t until) {
-    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds{20};  // (a guard against hanging)
+void run_until(Wire& wire, std::vector<Machine*> machines, std::uint32_t until) {
+    const auto end = wire.now() + 20'000;  // (a guard against hanging)
     const auto behind = [&] {
         return std::ranges::any_of(machines, [until](Machine* one) { return one->steps < until; });
     };
-    while (behind() && std::chrono::steady_clock::now() < end) {
+    while (behind() && wire.now() < end) {
         for (Machine* one : machines) {
             REQUIRE(one->net->poll());
             if (one->steps >= until) {
@@ -171,7 +219,7 @@ void run_until(std::vector<Machine*> machines, std::uint32_t until) {
                 one->steps = one->net->at_step();  // (one joining under way catches up several at once)
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        wire.pass(1);
     }
     for (Machine* one : machines) {
         UNSCOPED_INFO("player " << one->net->player() << ": " << one->steps << " steps, waiting for "
@@ -180,30 +228,30 @@ void run_until(std::vector<Machine*> machines, std::uint32_t until) {
     REQUIRE_FALSE(behind());
 }
 
-void settle(const std::vector<Machine*>& machines) {
-    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds{500};
-    while (std::chrono::steady_clock::now() < until) {
+void settle(Wire& wire, const std::vector<Machine*>& machines) {
+    const auto until = wire.now() + 500;
+    while (wire.now() < until) {
         for (Machine* one : machines) {
             REQUIRE(one->net->poll());
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        wire.pass(2);
     }
 }
 
-// Joins the game at `port` while it is under way: what the host gave, taken (the others go on meanwhile).
-Machine join_under_way(std::uint16_t port, const std::string& name, const std::vector<Machine*>& playing) {
-    auto client = NetGame::join("127.0.0.1", port, {.build = "test", .game = 1, .name = name});
+// Joins the game on the wire while it is under way: what the host gave, taken (the others go on meanwhile).
+Machine join_under_way(Wire& wire, const std::string& name, const std::vector<Machine*>& playing) {
+    auto client = wire.join({.build = "test", .game = 1, .name = name});
     REQUIRE(client);
     std::optional<NetGame::Joined> joined;
-    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds{10};
-    while (!joined && std::chrono::steady_clock::now() < until) {
+    const auto until = wire.now() + 10'000;
+    while (!joined && wire.now() < until) {
         for (Machine* one : playing) {
             REQUIRE(one->net->poll());
         }
-        auto lobby = (*client)->lobby();
+        auto lobby = client->lobby();
         REQUIRE(lobby);
         joined = *lobby;
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        wire.pass(1);
     }
     REQUIRE(joined);
     REQUIRE_FALSE(joined->state.empty());
@@ -212,7 +260,7 @@ Machine join_under_way(std::uint16_t port, const std::string& name, const std::v
     REQUIRE(opened);
     REQUIRE((*opened)->take_state(joined->state));
     Machine machine{
-        .net = std::move(*client), .session = std::move(*opened), .steps = joined->first_step, .delay = joined->delay};
+        .net = std::move(client), .session = std::move(*opened), .steps = joined->first_step, .delay = joined->delay};
     machine.net->begin(*machine.session);
     return machine;
 }
@@ -223,31 +271,25 @@ TEST_CASE("real data: one joins the game under way, and one who left comes back"
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
+    Wire wire = each_wire();
     const NetGame::Identity identity{.build = "test", .game = 1, .name = "host"};
     Machine host;
-    std::uint16_t port = kFirstPort + 20;
-    for (; port < kFirstPort + 40 && !host.net; ++port) {
-        if (auto opened = NetGame::host(port, 2, 0, false, std::nullopt, identity)) {
-            host.net = std::move(*opened);
-        }
-    }
+    host.net = wire.host(kFirstPort + 20, 2, 0, identity);
     REQUIRE(host.net);
-    --port;
     Machine guest;
-    auto client = NetGame::join("127.0.0.1", port, {.build = "test", .game = 1, .name = "guest"});
-    REQUIRE(client);
-    guest.net = std::move(*client);
+    guest.net = wire.join({.build = "test", .game = 1, .name = "guest"});
+    REQUIRE(guest.net);
     std::optional<NetGame::Joined> at_host;
     std::optional<NetGame::Joined> at_guest;
-    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds{5};
-    while ((!at_host || !at_guest) && std::chrono::steady_clock::now() < until) {
+    const auto until = wire.now() + 5'000;
+    while ((!at_host || !at_guest) && wire.now() < until) {
         if (!at_host) {
             at_host = host.net->lobby().value_or(std::nullopt);
         }
         if (!at_guest) {
             at_guest = guest.net->lobby().value_or(std::nullopt);
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        wire.pass(2);
     }
     REQUIRE(at_host);
     REQUIRE(at_guest);
@@ -260,14 +302,14 @@ TEST_CASE("real data: one joins the game under way, and one who left comes back"
         one->net->begin(*one->session);
     }
     CHECK_FALSE(host.session->world().players[2].here);
-    run_until({&host, &guest}, 60);
+    run_until(wire, {&host, &guest}, 60);
 
     // A third comes into the free place: Olaf, whom nobody played.
-    Machine late = join_under_way(port, "late", {&host, &guest});
+    Machine late = join_under_way(wire, "late", {&host, &guest});
     CHECK(late.net->player() == 2);
     CHECK(late.steps <= 60);
-    run_until({&host, &guest, &late}, 110);
-    settle({&host, &guest, &late});
+    run_until(wire, {&host, &guest, &late}, 110);
+    settle(wire, {&host, &guest, &late});
     CHECK(guest.session->state_hash() == host.session->state_hash());
     CHECK(late.session->state_hash() == host.session->state_hash());
     CHECK(late.session->world().players[2].here);
@@ -278,11 +320,11 @@ TEST_CASE("real data: one joins the game under way, and one who left comes back"
     // The guest leaves (Baleog nobody's), and someone comes back into his place: Baleog again.
     guest.net->quit();
     guest.net.reset();
-    run_until({&host, &late}, 140);
-    Machine back = join_under_way(port, "back", {&host, &late});
+    run_until(wire, {&host, &late}, 140);
+    Machine back = join_under_way(wire, "back", {&host, &late});
     CHECK(back.net->player() == 1);
-    run_until({&host, &late, &back}, 200);
-    settle({&host, &late, &back});
+    run_until(wire, {&host, &late, &back}, 200);
+    settle(wire, {&host, &late, &back});
     CHECK(late.session->state_hash() == host.session->state_hash());
     CHECK(back.session->state_hash() == host.session->state_hash());
     CHECK(back.session->world().players[1].viking == 1);
@@ -301,28 +343,21 @@ TEST_CASE("real data: a lobby the host starts (a new game: the intro, the same o
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
+    Wire wire = each_wire();
     const NetGame::Identity identity{.build = "test", .game = 1, .name = "host"};
     Machine host;
-    std::uint16_t port = kFirstPort + 40;
-    for (; port < kFirstPort + 60 && !host.net; ++port) {
-        if (auto opened =
-                NetGame::host(port, 0, scene::kIntro, false, std::nullopt, identity)) {  // (its word starts it)
-            host.net = std::move(*opened);
-        }
-    }
+    host.net = wire.host(kFirstPort + 40, 0, scene::kIntro, identity);  // (its word starts it)
     REQUIRE(host.net);
-    --port;
     Machine guest;
-    auto client = NetGame::join("127.0.0.1", port, {.build = "test", .game = 1, .name = "guest"});
-    REQUIRE(client);
-    guest.net = std::move(*client);
+    guest.net = wire.join({.build = "test", .game = 1, .name = "guest"});
+    REQUIRE(guest.net);
     // The lobby: until the guest is in it and has the host's word on the start and his own round trip; nothing starts
     // meanwhile.
     const auto in_lobby = [&](const auto& until) {
-        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+        const auto end = wire.now() + 10'000;
         std::optional<NetGame::Joined> at_host;
         std::optional<NetGame::Joined> at_guest;
-        while (!until(at_host, at_guest) && std::chrono::steady_clock::now() < end) {
+        while (!until(at_host, at_guest) && wire.now() < end) {
             if (!at_host) {
                 auto lobby = host.net->lobby();
                 REQUIRE(lobby);
@@ -333,7 +368,7 @@ TEST_CASE("real data: a lobby the host starts (a new game: the intro, the same o
                 REQUIRE(lobby);
                 at_guest = *lobby;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+            wire.pass(2);
         }
         REQUIRE(until(at_host, at_guest));
         return std::pair{at_host, at_guest};
@@ -377,17 +412,17 @@ TEST_CASE("real data: a lobby the host starts (a new game: the intro, the same o
     };
     start(scene::kIntro);
     CHECK(host.session->demo());
-    run_until({&host, &guest}, 60);
-    settle({&host, &guest});
+    run_until(wire, {&host, &guest}, 60);
+    settle(wire, {&host, &guest});
     CHECK(guest.session->state_hash() == host.session->state_hash());
     CHECK(guest.session->scene() == scene::kIntro);
 
     // Back to the lobby: the guest is told, and both are there again, the same two.
     host.net->back_to_lobby();
-    const auto told = std::chrono::steady_clock::now() + std::chrono::seconds{10};
-    while (!guest.net->back_asked() && std::chrono::steady_clock::now() < told) {
+    const auto told = wire.now() + 10'000;
+    while (!guest.net->back_asked() && wire.now() < told) {
         REQUIRE(guest.net->poll());
-        std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        wire.pass(2);
     }
     REQUIRE(guest.net->back_asked());
     guest.net->to_lobby();
@@ -397,8 +432,8 @@ TEST_CASE("real data: a lobby the host starts (a new game: the intro, the same o
 
     // Another game, from its step 0: the same on both (what was late of the one before not taken).
     start(0);
-    run_until({&host, &guest}, 120);
-    settle({&host, &guest});
+    run_until(wire, {&host, &guest}, 120);
+    settle(wire, {&host, &guest});
     CHECK(guest.session->scene() == 0);
     CHECK(guest.session->state_hash() == host.session->state_hash());
 }
@@ -408,16 +443,11 @@ TEST_CASE("real data: two join the game under way one right after the other: eve
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
+    Wire wire = each_wire();
     const NetGame::Identity identity{.build = "test", .game = 1, .name = "host"};
     Machine host;
-    std::uint16_t port = kFirstPort + 60;
-    for (; port < kFirstPort + 80 && !host.net; ++port) {
-        if (auto opened = NetGame::host(port, 1, 0, false, std::nullopt, identity)) {  // (alone: it starts at once)
-            host.net = std::move(*opened);
-        }
-    }
+    host.net = wire.host(kFirstPort + 60, 1, 0, identity);  // (alone: it starts at once)
     REQUIRE(host.net);
-    --port;
     auto started = host.net->lobby();
     REQUIRE(started);
     REQUIRE(started->has_value());
@@ -426,15 +456,15 @@ TEST_CASE("real data: two join the game under way one right after the other: eve
     host.session = std::move(*opened);
     host.delay = (*started)->delay;
     host.net->begin(*host.session);
-    run_until({&host}, 40);
+    run_until(wire, {&host}, 40);
     // The second's hello before the first has arrived (his arrival is 16 steps on, and nobody steps meanwhile): he
     // is told of the first's arrival to come with the game's state.
-    Machine first = join_under_way(port, "first", {&host});
-    Machine second = join_under_way(port, "second", {&host, &first});
+    Machine first = join_under_way(wire, "first", {&host});
+    Machine second = join_under_way(wire, "second", {&host, &first});
     CHECK(first.net->player() == 1);
     CHECK(second.net->player() == 2);
-    run_until({&host, &first, &second}, 140);
-    settle({&host, &first, &second});
+    run_until(wire, {&host, &first, &second}, 140);
+    settle(wire, {&host, &first, &second});
     CHECK(first.session->state_hash() == host.session->state_hash());
     CHECK(second.session->state_hash() == host.session->state_hash());
     CHECK(second.session->world().players[1].here);

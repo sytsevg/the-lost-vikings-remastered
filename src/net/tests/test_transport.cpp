@@ -1,5 +1,6 @@
-// Tests for src/net/transport.*: a host and a client in one process over 127.0.0.1 (ADR-0012). The messages come,
-// in order, fast or reliably; with every datagram lost the fast ones come over TCP; a client that goes is seen to.
+// Tests for src/net/transport.*'s SDL3_net adapter: a host and a client in one process over 127.0.0.1 (ADR-0012). The
+// messages come, in order, fast or reliably; with every datagram lost the fast ones come over TCP; a client that goes
+// is seen to.
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
@@ -19,19 +20,19 @@ constexpr std::uint16_t kFirstPort = 47231;
 
 // A host on a port nothing else has, and a client joined to it.
 struct Pair {
-    std::unique_ptr<Transport> host;
-    std::unique_ptr<Transport> client;
+    std::unique_ptr<SdlTransport> host;
+    std::unique_ptr<SdlTransport> client;
     std::vector<Event> at_host;
     std::vector<Event> at_client;
 
     Pair() {
         for (std::uint16_t port = kFirstPort; port < kFirstPort + 20 && !host; ++port) {
-            if (auto opened = Transport::host(port)) {
+            if (auto opened = SdlTransport::host(port)) {
                 host = std::move(*opened);
             }
         }
         REQUIRE(host);
-        auto joined = Transport::join("127.0.0.1", host->port(), 2000);
+        auto joined = SdlTransport::join("127.0.0.1", host->port(), 2000);
         REQUIRE(joined);
         client = std::move(*joined);
     }

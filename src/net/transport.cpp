@@ -20,18 +20,18 @@ namespace {
 // What a frame carries (its first byte after the length on TCP, after the token over UDP).
 constexpr std::uint8_t kMessage = 0;  // a message sent reliably
 constexpr std::uint8_t kFast = 1;     // a message sent fast: by UDP and TCP both, numbered (only a newer one taken)
-constexpr std::uint8_t kToken = 2;    // host to client, over TCP: the token his UDP introduces itself with
+constexpr std::uint8_t kToken = 2;    // host to guest, over TCP: the token his UDP introduces itself with
 constexpr std::uint8_t kPing = 3;
 constexpr std::uint8_t kPong = 4;
-constexpr std::uint8_t kHello = 5;    // client to host, over UDP: here is my UDP (until welcomed)
-constexpr std::uint8_t kWelcome = 6;  // host to client, over UDP: it got through
+constexpr std::uint8_t kHello = 5;    // guest to host, over UDP: here is my UDP (until welcomed)
+constexpr std::uint8_t kWelcome = 6;  // host to guest, over UDP: it got through
 
 constexpr std::uint64_t kPingEvery = 500;   // milliseconds
-constexpr std::uint64_t kHelloEvery = 200;  // the client's UDP introducing itself, until it is welcomed
+constexpr std::uint64_t kHelloEvery = 200;  // the guest's UDP introducing itself, until it is welcomed
 constexpr std::uint64_t kQuietUdp = 2000;   // nothing over UDP for this long: the fast messages go over TCP
 // Nothing at all from a peer for this long (its pings come twice a second): gone, though its socket wasn't closed
 // (a cable pulled, the machine asleep, the program hung).
-constexpr std::uint64_t kSilent = 10000;                    // (Transport::set_patience: shorter, for a test)
+constexpr std::uint64_t kSilent = 10000;                    // (SdlTransport::set_patience: shorter, for a test)
 constexpr std::size_t kMostDatagram = 1200;                 // a fast message longer than this goes over TCP
 constexpr std::size_t kMostFrame = std::size_t{16} << 20U;  // a frame longer than this: the peer is broken
 constexpr std::size_t kHeader = 5;                          // a frame's length (or a datagram's token) and kind
@@ -68,7 +68,7 @@ void stop_net() {
 
 }  // namespace
 
-struct Transport::Inner {
+struct SdlTransport::Inner {
     struct Peer {
         int number = 0;
         NET_StreamSocket* stream = nullptr;
@@ -99,7 +99,7 @@ struct Transport::Inner {
     std::uint16_t port = 0;
     NET_Server* server = nullptr;
     NET_DatagramSocket* datagrams = nullptr;
-    std::vector<Peer> peers;  // the host's clients; a client's one, the host
+    std::vector<Peer> peers;  // the host's guests; a guest's one, the host
     int next_number = 1;
     std::mt19937 tokens{std::random_device{}()};
     int loss = 0;                      // tests: the datagrams lost, in percent
@@ -344,13 +344,13 @@ struct Transport::Inner {
     }
 };
 
-Transport::Transport(std::unique_ptr<Inner> inner) : inner_{std::move(inner)} {
+SdlTransport::SdlTransport(std::unique_ptr<Inner> inner) : inner_{std::move(inner)} {
     inner_->start_pumping();
 }
 
-Transport::~Transport() = default;
+SdlTransport::~SdlTransport() = default;
 
-std::expected<std::unique_ptr<Transport>, std::string> Transport::host(std::uint16_t port) {
+std::expected<std::unique_ptr<SdlTransport>, std::string> SdlTransport::host(std::uint16_t port) {
     if (!start_net()) {
         return std::unexpected{std::string{"the network: "} + SDL_GetError()};
     }
@@ -365,11 +365,11 @@ std::expected<std::unique_ptr<Transport>, std::string> Transport::host(std::uint
     if (inner->datagrams == nullptr) {
         return std::unexpected{std::format("hosting on port {} (UDP): {}", port, SDL_GetError())};
     }
-    return std::unique_ptr<Transport>{new Transport{std::move(inner)}};
+    return std::unique_ptr<SdlTransport>{new SdlTransport{std::move(inner)}};
 }
 
-std::expected<std::unique_ptr<Transport>, std::string> Transport::join(const std::string& address, std::uint16_t port,
-                                                                       int wait_ms) {
+std::expected<std::unique_ptr<SdlTransport>, std::string> SdlTransport::join(const std::string& address,
+                                                                             std::uint16_t port, int wait_ms) {
     if (!start_net()) {
         return std::unexpected{std::string{"the network: "} + SDL_GetError()};
     }
@@ -399,17 +399,17 @@ std::expected<std::unique_ptr<Transport>, std::string> Transport::join(const std
     if (inner->datagrams == nullptr) {
         return std::unexpected{std::format("UDP: {}", SDL_GetError())};
     }
-    return std::unique_ptr<Transport>{new Transport{std::move(inner)}};
+    return std::unique_ptr<SdlTransport>{new SdlTransport{std::move(inner)}};
 }
 
-std::vector<Event> Transport::poll() {
+std::vector<Event> SdlTransport::poll() {
     Inner& in = *inner_;
     const std::scoped_lock held{in.lock};
     std::erase_if(in.peers, [](const Inner::Peer& peer) { return peer.gone && peer.stream == nullptr; });
     return std::exchange(in.gathered, {});
 }
 
-void Transport::send(int peer, std::span<const std::uint8_t> bytes, Channel channel) {
+void SdlTransport::send(int peer, std::span<const std::uint8_t> bytes, Channel channel) {
     const std::scoped_lock held{inner_->lock};
     if (Inner::Peer* to = inner_->find(peer)) {
         if (channel == Channel::kReliable) {
@@ -423,7 +423,7 @@ void Transport::send(int peer, std::span<const std::uint8_t> bytes, Channel chan
     }
 }
 
-void Transport::drain(int wait_ms) {
+void SdlTransport::drain(int wait_ms) {
     const std::scoped_lock held{inner_->lock};
     for (Inner::Peer& peer : inner_->peers) {
         if (peer.stream != nullptr) {
@@ -432,26 +432,26 @@ void Transport::drain(int wait_ms) {
     }
 }
 
-void Transport::drop(int peer) {
+void SdlTransport::drop(int peer) {
     const std::scoped_lock held{inner_->lock};
     if (Inner::Peer* gone = inner_->find(peer)) {
         gone->gone = true;
     }
 }
 
-std::optional<int> Transport::round_trip_ms(int peer) const {
+std::optional<int> SdlTransport::round_trip_ms(int peer) const {
     const std::scoped_lock held{inner_->lock};
     const auto found = std::ranges::find(inner_->peers, peer, &Inner::Peer::number);
     return found != inner_->peers.end() ? found->round_trip : std::nullopt;
 }
 
-bool Transport::fast_link(int peer) const {
+bool SdlTransport::fast_link(int peer) const {
     const std::scoped_lock held{inner_->lock};
     const auto found = std::ranges::find(inner_->peers, peer, &Inner::Peer::number);
     return found != inner_->peers.end() && found->udp_ok;
 }
 
-void Transport::simulate_cut() {
+void SdlTransport::simulate_cut() {
     const std::scoped_lock held{inner_->lock};
     inner_->loss = 100;
     if (inner_->datagrams != nullptr) {
@@ -464,12 +464,12 @@ void Transport::simulate_cut() {
     }
 }
 
-void Transport::set_patience(std::uint64_t ms) {
+void SdlTransport::set_patience(std::uint64_t ms) {
     const std::scoped_lock held{inner_->lock};
     inner_->patience = ms;
 }
 
-void Transport::simulate_loss(int percent) {
+void SdlTransport::simulate_loss(int percent) {
     const std::scoped_lock held{inner_->lock};
     inner_->loss = percent;
     if (inner_->datagrams != nullptr) {
@@ -477,11 +477,15 @@ void Transport::simulate_loss(int percent) {
     }
 }
 
-bool Transport::hosting() const noexcept {
+bool SdlTransport::hosting() const noexcept {
     return inner_->hosting;
 }
 
-std::uint16_t Transport::port() const noexcept {
+std::uint32_t SdlTransport::now_ms() const {
+    return static_cast<std::uint32_t>(SDL_GetTicks());
+}
+
+std::uint16_t SdlTransport::port() const noexcept {
     return inner_->port;
 }
 
