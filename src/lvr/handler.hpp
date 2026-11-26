@@ -67,6 +67,7 @@ class InputHandler {
     input::Actions key_actions(std::string_view key) const;
     bool act(input::Actions actions, Session& session) const;
     bool skips_demo(std::uint16_t keys) const;
+    bool at_title(const Session& session) const;  // Remaster rules, at the title (Enter and Escape there)
 
     input::Controls controls_;
     input::PadReading now_{};
@@ -78,8 +79,9 @@ class InputHandler {
     bool hush_ = false;  // the menu was closed: what the gamepads hold now is quiet
     bool give_up_ = false;
     bool quit_box_ = false;
-    bool escaped_ = false;  // Escape pressed since the last step
-    bool choose_ = false;   // Remaster rules: Enter pressed, until a step takes it (MenuKeys::choose)
+    bool escaped_ = false;      // Escape pressed since the last step
+    bool choose_ = false;       // Remaster rules: Enter pressed, until a step takes it (MenuKeys::choose)
+    bool title_enter_ = false;  // Enter pressed at the title, as the original's Enter: let go, not any more
 };
 
 }  // namespace lvr

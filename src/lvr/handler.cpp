@@ -55,10 +55,22 @@ InputHandler::Asks InputHandler::pressed(std::string_view key, bool repeat, bool
         return Asks::kMenu;
     }
     escaped_ = escaped_ || (key == "Escape" && !repeat);
-    choose_ = choose_ || (remaster_ && !repeat && (key == "Return" || key == "Keypad Enter"));
+    const bool enter = key == "Return" || key == "Keypad Enter";
+    choose_ = choose_ || (remaster_ && !repeat && enter);
     // A press, or the keyboard's own repeat of a held key, which reaches the original's handler as a press too.
     // Remaster's own (not repeated) go first; one they take isn't the game's.
-    const input::Actions actions = key_actions(key);
+    input::Actions actions = key_actions(key);
+    // At the title, under Remaster rules, Enter chooses as Space does and Escape doesn't: the original's Enter and its
+    // pause are one bit (key::kEnter), which its title takes as Enter (the user, 2026-11-26). Escape still goes back
+    // from the title's password (a typed Escape, below); at its menu it does nothing.
+    if (at_title(session)) {
+        if (key == "Escape") {
+            actions &= ~bit(Action::kPause);
+        } else if (enter) {
+            actions |= bit(Action::kPause);
+            title_enter_ = true;
+        }
+    }
     session.key_pressed(remaster_ && key == "Escape" ? input::kTypedEscape : input::typed_character(key));
     if (!(remaster_ && !repeat && act(actions, session))) {
         keyboard_ |= input::game_bits(actions);
@@ -70,7 +82,16 @@ InputHandler::Asks InputHandler::pressed(std::string_view key, bool repeat, bool
 }
 
 void InputHandler::released(std::string_view key) {
-    keyboard_ &= ~unsigned{input::game_bits(key_actions(key))};
+    input::Actions actions = key_actions(key);
+    if (title_enter_ && (key == "Return" || key == "Keypad Enter")) {  // (Enter at the title, pressed)
+        actions |= bit(Action::kPause);
+        title_enter_ = false;
+    }
+    keyboard_ &= ~unsigned{input::game_bits(actions)};
+}
+
+bool InputHandler::at_title(const Session& session) const {
+    return remaster_ && session.scene() == scene::kTitle;
 }
 
 void InputHandler::read_pads(const input::PadReading& reading) {

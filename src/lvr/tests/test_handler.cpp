@@ -85,12 +85,24 @@ TEST_CASE(
     CHECK(hands.keyboard() == 0);
     CHECK_FALSE(hands.tick(nothing_held, *level).escaped);
 
+    // At the title Escape isn't the original's pause, which its title takes as Enter (the user, 2026-11-26): it goes
+    // back from the password, and at the menu does nothing. Enter is the original's Enter there, as Space chooses too.
     auto title = opened(scene::kTitle, Rules::kRemaster);
     InputHandler at_title{input::remaster_controls(), true};
     CHECK(at_title.pressed("Escape", false, false, *title) == InputHandler::Asks::kNothing);
-    CHECK((at_title.keyboard() & bits(Action::kPause)) != 0);
+    CHECK(at_title.keyboard() == 0);
     CHECK(at_title.tick(nothing_held, *title).escaped);
     CHECK_FALSE(at_title.tick(nothing_held, *title).escaped);  // (once)
+    at_title.released("Escape");
+    (void)at_title.pressed("Return", false, false, *title);
+    CHECK(at_title.keyboard() == key::kEnter);
+    at_title.released("Return");
+    CHECK(at_title.keyboard() == 0);
+    // Elsewhere outside a level, Escape is the original's pause as it was (the intro).
+    auto intro = opened(scene::kIntro, Rules::kRemaster);
+    InputHandler in_intro{input::remaster_controls(), true};
+    (void)in_intro.pressed("Escape", false, false, *intro);
+    CHECK((in_intro.keyboard() & bits(Action::kPause)) != 0);
 
     hands.give_up();
     hands.quit_box();
