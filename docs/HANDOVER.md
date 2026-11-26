@@ -187,7 +187,9 @@ How the visuals work so far:
   Classic renderer draws it into a `Screen` of palette indices at once. The GPU renderer keeps its list and
   the `Screen` only says which one (`Screen::kept`, of the last 512), with the palette and the `Motion`; the
   window shows one a refresh of its own (`gpu_show.frag` looks up the palette and scales, then the minimap and
-  the rewind's mark go over it).
+  the rewind's mark go over it). It fills the window, the 4:3 shape kept (the user, 2026-11-26, not only whole
+  times the original's pixels): drawn the next whole number of times as large, a pixel of the window the mean of
+  what it covers (`GpuRenderer::shown_in` reads back a window's size).
 - **The atlas** has pages (`GpuRenderer::State::Page`): the shared pictures, the scene's (tileset, the tiles'
   masks, its full pictures) and the sprites' pieces, each put there the first time it is shown and found again
   by a hash of its pixels. A kept picture is drawn from one page; a page is used again only when no kept

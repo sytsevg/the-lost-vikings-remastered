@@ -1357,13 +1357,17 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
     const bool grounded =
         screen.ground != nullptr && (screen.ground->id == ground_id || upload_ground(commands, *screen.ground));
 
-    const int scale = std::max(1, std::min(width / kScreenWidth, height / kScreenHeight));
-    const int left = (width - (kScreenWidth * scale)) / 2;  // whole pixels
-    const int top = (height - (kScreenHeight * scale)) / 2;
+    // The original's screen as large as the window holds it, its shape kept (the user, 2026-11-26: not only as large
+    // as whole pixels allow, with black around it). Shown at a size not a whole number of times its own, it is drawn
+    // the next whole number of times and shown a little smaller: a pixel of the window is the mean of what it covers.
+    const float scale =
+        std::max(1.0F, std::min(static_cast<float>(width) / kScreenWidth, static_cast<float>(height) / kScreenHeight));
+    const auto left = static_cast<int>(std::round((static_cast<float>(width) - (kScreenWidth * scale)) / 2));
+    const auto top = static_cast<int>(std::round((static_cast<float>(height) - (kScreenHeight * scale)) / 2));
     // The playfield's part with the HUD under it, both at one scale: as large as the original's screen's place
     // holds them. The original's view fills it; a larger one makes everything smaller, the HUD too.
-    const auto screen_width = static_cast<float>(kScreenWidth * scale);
-    const auto screen_height = static_cast<float>(kScreenHeight * scale);
+    const float screen_width = kScreenWidth * scale;
+    const float screen_height = kScreenHeight * scale;
     const auto picture_width = static_cast<float>(picture != nullptr ? std::max(picture->width, kScreenWidth) : 0);
     const auto picture_height = static_cast<float>(picture != nullptr ? picture->height : 0);
     const Screen::Part shown{.x = std::clamp(screen.part.x, 0.0F, picture_width),
@@ -1548,7 +1552,7 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         // With the minimap in the bottom left corner the HUD makes room, where it would be under it: it goes right
         // by a column of its stone tiles. Shown smaller, it is clear of the corner as it is, in the middle.
         float hud_left = middle(kScreenWidth * fit);
-        const float aside = static_cast<float>(left + (kMinimapSide * scale)) - (kHudSpare * fit);
+        const float aside = static_cast<float>(left) + (kMinimapSide * scale) - (kHudSpare * fit);
         if (aside > hud_left) {
             const float eased = made_room * made_room * (3.0F - (2.0F * made_room));
             hud_left += (aside - hud_left) * eased;
@@ -1588,13 +1592,12 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         };
         const float source_x = start_of(view[0], view[2], over_width);
         const float source_y = start_of(view[1], view[3], over_height);
-        const auto shown_side = static_cast<float>(kMinimapSide * scale);
-        const Placed placed{
-            .dest = {static_cast<float>(left), static_cast<float>(top + (kScreenHeight * scale)) - shown_side,
-                     shown_side, shown_side},
-            .source = {source_x, source_y, side, side},
-            .size = {static_cast<float>(width), static_cast<float>(height)},
-            .unused = {}};
+        const float shown_side = kMinimapSide * scale;
+        const Placed placed{.dest = {static_cast<float>(left), static_cast<float>(top) + screen_height - shown_side,
+                                     shown_side, shown_side},
+                            .source = {source_x, source_y, side, side},
+                            .size = {static_cast<float>(width), static_cast<float>(height)},
+                            .unused = {}};
         Over how{.size = {static_cast<float>(over_width), static_cast<float>(over_height), side / kMinimapSide, seen},
                  .window = {source_x, source_y, source_x + side, source_y + side},
                  .view = view,
@@ -1616,7 +1619,7 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
                 std::array<float, 4> size;
                 std::array<float, 4> left;
             };
-            const auto pixel = static_cast<float>(scale);
+            const float pixel = scale;
             const Placed bar{.dest = {placed.dest[0] + (kGaugeAt[0] * pixel), placed.dest[1] + (kGaugeAt[1] * pixel),
                                       kGaugeAt[2] * pixel, kGaugeAt[3] * pixel},
                              .source = {0, 0, kGaugeAt[2], kGaugeAt[3]},
@@ -1647,13 +1650,13 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         };
         SDL_BindGPUGraphicsPipeline(pass, own_format ? mark_pipeline_own : mark_pipeline);
         const auto mark = [&](int nudge, const std::array<float, 4>& tint) {
-            const Placed placed{
-                .dest = {static_cast<float>(left + ((kScreenWidth - kFromEdge - kWide + nudge) * scale)),
-                         static_cast<float>(top + ((kFromEdge + nudge) * scale)), static_cast<float>(kWide * scale),
-                         static_cast<float>(kHigh * scale)},
-                .source = {0, 0, 2, 1},
-                .size = {static_cast<float>(width), static_cast<float>(height)},
-                .unused = {}};
+            const Placed placed{.dest = {static_cast<float>(left) +
+                                             (static_cast<float>(kScreenWidth - kFromEdge - kWide + nudge) * scale),
+                                         static_cast<float>(top) + (static_cast<float>(kFromEdge + nudge) * scale),
+                                         kWide * scale, kHigh * scale},
+                                .source = {0, 0, 2, 1},
+                                .size = {static_cast<float>(width), static_cast<float>(height)},
+                                .unused = {}};
             SDL_PushGPUVertexUniformData(commands, 0, &placed, sizeof(placed));
             SDL_PushGPUFragmentUniformData(commands, 0, tint.data(), sizeof(tint));
             SDL_DrawGPUPrimitives(pass, kCorners, 1, 0, 0);
@@ -1692,9 +1695,8 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         SDL_DrawGPUPrimitives(pass, kCorners, 1, 0, 0);
     }
     SDL_EndGPURenderPass(pass);
-    const std::array<float, 4> screen_part{static_cast<float>(left), static_cast<float>(top),
-                                           static_cast<float>(kScreenWidth * scale),
-                                           static_cast<float>(kScreenHeight * scale)};
+    const std::array<float, 4> screen_part{static_cast<float>(left), static_cast<float>(top), screen_width,
+                                           screen_height};
     if (shown_look == Look::kXbr || shown_look == Look::kCrt) {
         show_xbr(commands, onto, width, height, screen_part, {grid[0], grid[1], fit, 0}, own, shown_look);
     }
@@ -1940,6 +1942,11 @@ std::expected<std::vector<std::uint8_t>, std::string> GpuRenderer::State::read_b
 std::expected<std::vector<std::uint8_t>, std::string> GpuRenderer::shown(const Screen& screen, int scale,
                                                                          const Minimap* minimap, float between) {
     return state_->read_back(screen, kScreenWidth * scale, kScreenHeight * scale, minimap, between, 0);
+}
+
+std::expected<std::vector<std::uint8_t>, std::string> GpuRenderer::shown_in(const Screen& screen, int width, int height,
+                                                                            const Minimap* minimap) {
+    return state_->read_back(screen, width, height, minimap, 0, 0);
 }
 
 void GpuRenderer::set_look(Look look) noexcept {

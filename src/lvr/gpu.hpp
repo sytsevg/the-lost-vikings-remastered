@@ -74,7 +74,8 @@ class GpuRenderer {
     // (`kept`, with its palette; no pixels). The last 512 are kept; showing one lets go of those before it.
     std::expected<void, std::string> keep(Screen& screen, const View& view, const SceneGraphics& scene,
                                           const SharedGraphics& shared);
-    // A kept picture in the window, its colours looked up: as large as whole pixels allow, in the middle, and
+    // A kept picture in the window, its colours looked up: as large as the window holds it, its shape kept, in the
+    // middle, and
     // `between` (0 to 1) into the refresh it is shown for (what moves between ticks is moved by that much).
     // With `minimap`: a square of it around the view in the bottom left corner, the HUD moved right to make room.
     std::expected<void, std::string> show(const Screen& screen, const Minimap* minimap = nullptr, float between = 0);
@@ -82,6 +83,9 @@ class GpuRenderer {
     // pixel. For a test or a dump.
     std::expected<std::vector<std::uint8_t>, std::string> shown(const Screen& screen, int scale = 1,
                                                                 const Minimap* minimap = nullptr, float between = 0);
+    // The same as a window `width` x `height` shows it.
+    std::expected<std::vector<std::uint8_t>, std::string> shown_in(const Screen& screen, int width, int height,
+                                                                   const Minimap* minimap = nullptr);
     // A kept picture's view alone, as large as it is (`scale` pixels a pixel of it), without the rows the HUD lies
     // over or the HUD: with a view as large as a level, a picture of all of it (a development tool). Read back as
     // shown() reads it.

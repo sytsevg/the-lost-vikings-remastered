@@ -234,6 +234,39 @@ TEST_CASE("gpu: a kept picture is shown with its colours looked up") {
     CHECK(wrong == 0);
     CHECK_FALSE(gpu.show(first));  // there is no window
 
+    // In a window of another shape, as large as it holds the screen, in the middle: at 2.5 times, a pixel of the
+    // window that lies within one of the picture's is that one's colour (one in five across and down is a mix).
+    {
+        constexpr int kWide = 1000;
+        constexpr int kHigh = 600;
+        const auto in = gpu.shown_in(first, kWide, kHigh);
+        REQUIRE(in);
+        REQUIRE(in->size() == std::size_t{kWide} * kHigh * 4);
+        const auto at = [&in](int x, int y) {
+            const auto i = static_cast<std::size_t>((y * kWide) + x) * 4;
+            return std::array<int, 3>{in->at(i), in->at(i + 1), in->at(i + 2)};
+        };
+        std::size_t outside = 0;
+        for (int y = 0; y < kHigh; ++y) {
+            for (const int x : {0, 99, 900, 999}) {
+                outside += at(x, y) != std::array<int, 3>{0, 0, 0} ? 1U : 0U;
+            }
+        }
+        CHECK(outside == 0);
+        std::size_t unlike = 0;
+        for (int y = 0; y < kScreenHeight; y += 2) {
+            for (int x = 0; x < kScreenWidth; x += 2) {
+                const auto i = static_cast<std::size_t>((y * kScreenWidth) + x) * 4;
+                const std::array<int, 3> wanted{shown->at(i), shown->at(i + 1), shown->at(i + 2)};
+                const std::array<int, 3> is = at(100 + (x / 2 * 5), y / 2 * 5);
+                unlike += std::abs(is[0] - wanted[0]) + std::abs(is[1] - wanted[1]) + std::abs(is[2] - wanted[2]) > 6
+                              ? 1U
+                              : 0U;
+            }
+        }
+        CHECK(unlike == 0);
+    }
+
     // The minimap: a square of it (64 cells a side: 256 of its pixels) in the bottom left corner, 64 pixels a
     // side, with a frame; the HUD moved 33 pixels right to make room, and the playfield as it was.
     const auto pixel = [](std::size_t x, std::size_t y) { return ((y * kScreenWidth) + x) * 4; };
