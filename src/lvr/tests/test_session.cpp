@@ -24,13 +24,18 @@
 
 using namespace lvr;
 
+namespace {
+// For a test that listens: a step's sound made into `samples` (SessionSound::made).
+const SessionSound kListening{.modern = false, .soundfont = {}, .live = false, .made = true};
+}  // namespace
+
 TEST_CASE("real data: a session shows a picture a refresh and renders their sound", "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
     CHECK_FALSE(Session::open("/nowhere", 1));
     CHECK_FALSE(Session::open(LVR_ORIGINAL_DIR, 48));
-    auto opened = Session::open(LVR_ORIGINAL_DIR, 1);  // level 2: its password's box waits for a key
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 1, kListening);  // level 2: its password's box waits for a key
     REQUIRE(opened);
     Session& session = **opened;
     CHECK_FALSE(session.has_modern());  // no SoundFont was named
@@ -442,41 +447,84 @@ TEST_CASE("real data: Remaster rules' rewind: ten seconds a level, given again w
     CHECK_FALSE(session.step(0).back().rewind_left);  // and no bar
 }
 
-TEST_CASE("real data: the quicksave keeps the play and brings it back, with the cheat on only", "[real-data]") {
+TEST_CASE("real data: the quicksave, with the cheat on only: kept in the profile, brought back in this run or another",
+          "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
+    const std::filesystem::path folder = std::filesystem::temp_directory_path() / "lvr-test-session-quicksave";
+    std::filesystem::remove_all(folder);
     const auto keys_of = [](int step) {
         return static_cast<std::uint16_t>(step < 6 ? (step % 2 != 0 ? key::kF : 0) : key::kRight);
     };
-    auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
-    REQUIRE(opened);
-    Session& session = **opened;
     std::vector<std::vector<std::uint8_t>> ends;
-    for (int step = 0; step < 20; ++step) {
-        ends.push_back(session.step(keys_of(step)).back().pixels);
+    {
+        auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+        REQUIRE(opened);
+        Session& session = **opened;
+        REQUIRE(session.use_profile(folder));
+        for (int step = 0; step < 20; ++step) {
+            ends.push_back(session.step(keys_of(step)).back().pixels);
+        }
+        // Without the cheat nothing is kept.
+        CHECK_FALSE(session.quicksave());
+        ends.push_back(session.step(keys_of(20)).back().pixels);
+        CHECK_FALSE(session.has_quicksave());
+        // With it: kept before step 21, and brought back 20 steps later; the play goes on from there as it did.
+        session.cheat();
+        CHECK(session.quicksave());
+        for (int step = 21; step < 41; ++step) {
+            ends.push_back(session.step(keys_of(step)).back().pixels);
+        }
+        CHECK(session.has_quicksave());
+        CHECK(session.quickload());
+        CHECK(session.step(keys_of(21)).back().pixels == ends.at(21));
+        CHECK(session.step(keys_of(22)).back().pixels == ends.at(22));
+        // What led up to the load isn't there to go back to.
+        session.rewind(true);
+        CHECK(session.step(0).back().pixels == ends.at(20));  // (the two steps since the load at once)
+        CHECK(session.rewinding());
+        session.step(0);
+        CHECK_FALSE(session.rewinding());  // and then nothing
+        session.rewind(false);
     }
-    // Without the cheat nothing is kept.
-    CHECK_FALSE(session.quicksave());
-    ends.push_back(session.step(keys_of(20)).back().pixels);
-    CHECK_FALSE(session.has_quicksave());
-    // With it: kept before step 21, and brought back 20 steps later; the play goes on from there as it did.
-    session.cheat();
-    CHECK(session.quicksave());
-    for (int step = 21; step < 41; ++step) {
-        ends.push_back(session.step(keys_of(step)).back().pixels);
+    CHECK(std::filesystem::exists(folder / "quicksave.bin"));
+    {
+        // Another run, in another level: the quicksave is there, and brings back the level and the play.
+        auto opened = Session::open(LVR_ORIGINAL_DIR, 4, {}, Rules::kRemaster);
+        REQUIRE(opened);
+        Session& session = **opened;
+        CHECK_FALSE(session.has_quicksave());
+        REQUIRE(session.use_profile(folder));
+        REQUIRE(session.has_quicksave());
+        session.step(0);
+        session.quickload();  // without the cheat: nothing
+        session.step(0);
+        CHECK(session.scene() == 4);
+        session.cheat();
+        session.quickload();
+        CHECK(session.step(keys_of(21)).back().pixels == ends.at(21));
+        CHECK(session.scene() == 1);
+        for (int step = 22; step < 41; ++step) {
+            CHECK(session.step(keys_of(step)).back().pixels == ends.at(static_cast<std::size_t>(step)));
+        }
     }
-    CHECK(session.has_quicksave());
-    CHECK(session.quickload());
-    CHECK(session.step(keys_of(21)).back().pixels == ends.at(21));
-    CHECK(session.step(keys_of(22)).back().pixels == ends.at(22));
-    // What led up to the load isn't there to go back to.
-    session.rewind(true);
-    CHECK(session.step(0).back().pixels == ends.at(20));  // (the two steps since the load at once)
-    CHECK(session.rewinding());
-    session.step(0);
-    CHECK_FALSE(session.rewinding());  // and then nothing
-    session.rewind(false);
+    {
+        // A file that was damaged: said, and there is no quicksave.
+        std::string bytes;
+        {
+            std::ifstream file{folder / "quicksave.bin", std::ios::binary};
+            bytes.assign(std::istreambuf_iterator<char>{file}, {});
+        }
+        REQUIRE(bytes.size() > 2000);
+        bytes[bytes.size() / 2] = static_cast<char>(bytes[bytes.size() / 2] ^ 0x55);
+        std::ofstream{folder / "quicksave.bin", std::ios::binary} << bytes;
+        auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+        REQUIRE(opened);
+        CHECK_FALSE((*opened)->use_profile(folder));
+        CHECK_FALSE((*opened)->has_quicksave());
+    }
+    std::filesystem::remove_all(folder);
 
     // Vanilla rules have no quicksave, cheat or not.
     auto vanilla = Session::open(LVR_ORIGINAL_DIR, 1);
@@ -571,69 +619,6 @@ TEST_CASE("real data: what the minimap has seen is kept in the profile from one 
         REQUIRE((*vanilla)->use_profile(folder));
         REQUIRE((*vanilla)->save_profile());
         CHECK_FALSE(std::filesystem::exists(folder));
-    }
-    std::filesystem::remove_all(folder);
-}
-
-TEST_CASE("real data: the quicksave is kept in the profile and brought back in another run", "[real-data]") {
-    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
-        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
-    }
-    const std::filesystem::path folder = std::filesystem::temp_directory_path() / "lvr-test-session-quicksave";
-    std::filesystem::remove_all(folder);
-    const auto keys_of = [](int step) {
-        return static_cast<std::uint16_t>(step < 6 ? (step % 2 != 0 ? key::kF : 0) : key::kRight);
-    };
-    std::vector<std::vector<std::uint8_t>> ends;
-    {
-        auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
-        REQUIRE(opened);
-        Session& session = **opened;
-        REQUIRE(session.use_profile(folder));
-        session.cheat();
-        for (int step = 0; step < 40; ++step) {
-            if (step == 25) {
-                session.quicksave();  // the play before step 25
-            }
-            ends.push_back(session.step(keys_of(step)).back().pixels);
-        }
-        CHECK(session.has_quicksave());
-    }
-    CHECK(std::filesystem::exists(folder / "quicksave.bin"));
-    {
-        // Another run, in another level: the quicksave is there, and brings back the level and the play.
-        auto opened = Session::open(LVR_ORIGINAL_DIR, 4, {}, Rules::kRemaster);
-        REQUIRE(opened);
-        Session& session = **opened;
-        CHECK_FALSE(session.has_quicksave());
-        REQUIRE(session.use_profile(folder));
-        REQUIRE(session.has_quicksave());
-        session.step(0);
-        session.quickload();  // without the cheat: nothing
-        session.step(0);
-        CHECK(session.scene() == 4);
-        session.cheat();
-        session.quickload();
-        CHECK(session.step(keys_of(25)).back().pixels == ends.at(25));
-        CHECK(session.scene() == 1);
-        for (int step = 26; step < 40; ++step) {
-            CHECK(session.step(keys_of(step)).back().pixels == ends.at(static_cast<std::size_t>(step)));
-        }
-    }
-    {
-        // A file that was damaged: said, and there is no quicksave.
-        std::string bytes;
-        {
-            std::ifstream file{folder / "quicksave.bin", std::ios::binary};
-            bytes.assign(std::istreambuf_iterator<char>{file}, {});
-        }
-        REQUIRE(bytes.size() > 2000);
-        bytes[bytes.size() / 2] = static_cast<char>(bytes[bytes.size() / 2] ^ 0x55);
-        std::ofstream{folder / "quicksave.bin", std::ios::binary} << bytes;
-        auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
-        REQUIRE(opened);
-        CHECK_FALSE((*opened)->use_profile(folder));
-        CHECK_FALSE((*opened)->has_quicksave());
     }
     std::filesystem::remove_all(folder);
 }
@@ -1299,8 +1284,9 @@ TEST_CASE("real data: Remaster rules' title demos play as their recordings, zoom
     // The title left alone, from its start through the six demos to the first again: under Remaster rules, zoomed
     // out as far as it goes, every entity of a demo where Vanilla rules have it at every step (the user, 2026-11-26:
     // they played otherwise; a larger view takes in more of the level).
-    auto vanilla = Session::open(LVR_ORIGINAL_DIR, scene::kTitle, {}, Rules::kVanilla);
-    auto remaster = Session::open(LVR_ORIGINAL_DIR, scene::kTitle, {}, Rules::kRemaster);
+    // (Nothing drawn and no sound made: only where the entities are is looked at.)
+    auto vanilla = Session::open(LVR_ORIGINAL_DIR, scene::kTitle, {}, Rules::kVanilla, draw_nothing);
+    auto remaster = Session::open(LVR_ORIGINAL_DIR, scene::kTitle, {}, Rules::kRemaster, draw_nothing);
     REQUIRE(vanilla);
     REQUIRE(remaster);
     (*remaster)->set_zoom_level(5);
@@ -1380,7 +1366,7 @@ TEST_CASE("real data: Remaster rules' volumes are gains on the sound made: the m
     // (a quarter of the loudness): every sample a quarter of the other's. Turned down in the driver instead, the
     // notes went quiet early (the user, 2026-11-26).
     const auto heard = [](int volume) {
-        auto opened = Session::open(LVR_ORIGINAL_DIR, 0, {}, Rules::kRemaster);
+        auto opened = Session::open(LVR_ORIGINAL_DIR, 0, kListening, Rules::kRemaster);
         REQUIRE(opened);
         Session& session = **opened;
         session.set_volume(volume, volume);
@@ -1407,7 +1393,7 @@ TEST_CASE("Vanilla rules' Classic sound through the title's demos, for a compari
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
-    auto opened = Session::open(LVR_ORIGINAL_DIR, scene::kLogo, {}, Rules::kVanilla);
+    auto opened = Session::open(LVR_ORIGINAL_DIR, scene::kLogo, kListening, Rules::kVanilla);
     REQUIRE(opened);
     Session& session = **opened;
     std::ofstream out{"build/opl-ours.txt"};

@@ -138,6 +138,9 @@ class Opl3 : public OplSink {
     void tap(std::function<void(std::uint16_t, std::uint8_t)> told);
     // Renders `seconds` of sound (with the fraction of a sample carried over) onto `out`, left and right in turn.
     void render(double seconds, std::vector<std::int16_t>& out);
+    // Instead of a render, for what is never heard (a session that makes no sound): what the writes made early, for
+    // the next render to hand out, is let go, so that it doesn't pile up.
+    void unheard() { early_.clear(); }
     std::uint32_t sample_rate() const noexcept { return rate_; }
 
   private:

@@ -39,6 +39,10 @@ struct SessionSound {
     // heard as the picture is shown (hear_now), instead of a step's sound being made with the step. For a front
     // end with a device; without one (a dump, a test) a step's sound is in `samples`.
     bool live = false;
+    // Not live, whether a step's sound is made into `samples` at all: only when asked for (the game's dump, a test
+    // that listens). Without it the players still take what the game asks of the sound and go on as they would;
+    // only the chips and the synthesizers aren't run, which is most of a step's time in a test.
+    bool made = false;
 };
 
 // How long one joining a game under way takes to fade in: half a second.
@@ -56,9 +60,10 @@ class Session {
     Rules rules() const noexcept { return play_.world.rules; }
 
     // One step of input: the pictures of the refreshes it takes (three for a tick or a wait's pass, one in the
-    // inventory, 145 more for a change of scene; none when a menu only opens). Their sound is added to `samples`;
-    // live, what each picture asks of the sound is in `cues` instead, one entry a picture. `pace`: under Remaster
-    // rules, how fast the Vikings walk and climb (World::pace: a gamepad's stick pushed part way).
+    // inventory, 145 more for a change of scene; none when a menu only opens). Their sound is added to `samples`
+    // (when it is made: SessionSound::made); live, what each picture asks of the sound is in `cues` instead, one
+    // entry a picture. `pace`: under Remaster rules, how fast the Vikings walk and climb (World::pace: a gamepad's
+    // stick pushed part way).
     std::vector<Screen> step(std::uint16_t keyboard, Play::MenuKeys keys = {}, Pace pace = {});
 
     // --- Online (ADR-0012): what rollback drives (lvr/coop.hpp) ---
@@ -319,6 +324,7 @@ class Session {
     std::int32_t effects_gain_ = 65536;
     bool modern_on_ = false;
     bool live_ = false;
+    bool made_ = false;  // SessionSound::made
     bool effects_on_ = false;
     bool moving_ = false;  // the pictures being made are of the play going on (not made again going back)
     // The zoom: which view is wanted; while the view changes, how many pictures into that it is, and (growing)

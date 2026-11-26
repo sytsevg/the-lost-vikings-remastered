@@ -269,6 +269,9 @@ struct View {
 assets::Palette darkened(const assets::Palette& palette, std::array<std::uint8_t, 3> by, bool all);
 
 void draw(Screen& screen, const View& view, const SceneGraphics& scene, const SharedGraphics& shared);
+// What draws nothing: for a session whose pictures nobody looks at (a test of the play, not of what it shows).
+inline void draw_nothing(Screen& /*screen*/, const View& /*view*/, const SceneGraphics& /*scene*/,
+                         const SharedGraphics& /*shared*/) {}
 
 // A picture `share` (0 to 1) as bright, and everything that goes dark with it: its colours (unless they were darkened
 // as it was drawn: a scene's fade, the original's levels off them, View::darken), the lights on it, and

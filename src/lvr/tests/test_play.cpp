@@ -136,85 +136,48 @@ TEST_CASE("real data: the kinds each scene places that aren't written yet", "[.]
     SUCCEED();
 }
 
-TEST_CASE("real data: the pause menu holds the game, and giving up is the game over", "[real-data]") {
+TEST_CASE("real data: the pause menu: \"yes\" in the quit box ends the play; Enter gives up as fire does",
+          "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
+    // (The rest of it, refresh by refresh, is pause-menu.replay's: Esc, the choice moved, "no" by fire, by Esc and
+    // by the N key, Alt+X and "no", giving up into the game-over scene and the level again.)
     const auto files = assets::GameFiles::open(LVR_ORIGINAL_DIR);
     REQUIRE(files);
-    auto loaded = load_level(*files, 2);
-    REQUIRE(loaded);
-    Play play{*files, std::make_unique<LoadedLevel>(std::move(*loaded)), 1};
-    int pictures = 0;
-    const auto step = [&](std::uint16_t keys) { return play.step(keys, [&] { ++pictures; }); };
-    constexpr std::uint16_t kFire = 0x8000;
-    constexpr std::uint16_t kPause = 0x1000;
-    for (int i = 0; i < 4; ++i) {  // the password's box, answered
-        (void)step(i == 2 ? kFire : std::uint16_t{0});
-    }
-    REQUIRE_FALSE(play.world.waiting_for_key);
-    const int erik_x = play.world.entities[0]->x;
-
-    // Esc: the menu is set up without a refresh; the picture a little darker, a box on the text layer.
-    CHECK(step(kPause) == 0);
-    CHECK(play.world.tint == std::array<std::uint8_t, 3>{8, 8, 8});
-    CHECK(std::ranges::any_of(play.world.text.cells, [](auto cell) { return cell != 0; }));
-    // A pass is three refreshes, and nothing moves, whatever is held.
-    CHECK(step(0x0100) == 3);
-    CHECK(play.world.entities[0]->x == erik_x);
-    // Fire on "no": two more refreshes, the menu gone, and the tick it held runs.
-    (void)step(0);
-    CHECK(step(kFire) == 3 + 2 + 3);
-    CHECK(play.world.tint == std::array<std::uint8_t, 3>{});
-    CHECK(std::ranges::none_of(play.world.text.cells, [](auto cell) { return cell != 0; }));
-    CHECK_FALSE(play.world.game_over);
-
-    // The quit keys after a tick: the box; the N key closes it and the game goes on.
-    play.menu_keys.quit = true;
-    CHECK(step(0) == 3);
-    play.menu_keys.quit = false;
-    CHECK(std::ranges::any_of(play.world.text.cells, [](auto cell) { return cell != 0; }));
-    play.menu_keys.no = true;
-    CHECK(step(0) == 5);
-    play.menu_keys.no = false;
-    CHECK_FALSE(play.ended);
-    CHECK(play.world.tint == std::array<std::uint8_t, 3>{});
-
-    // Again, and "yes" by its key: the game ends.
-    play.menu_keys.quit = true;
-    (void)step(0);
-    play.menu_keys.quit = false;
-    play.menu_keys.yes = true;
-    (void)step(0);
-    play.menu_keys.yes = false;
-    CHECK(play.ended);
-    CHECK(play.error.empty());
+    const auto level_2 = [&files] {  // its password's box answered
+        auto loaded = load_level(*files, 2);
+        REQUIRE(loaded);
+        auto play = std::make_unique<Play>(*files, std::make_unique<LoadedLevel>(std::move(*loaded)), 1);
+        for (int i = 0; i < 4; ++i) {
+            (void)play->step(i == 2 ? std::uint16_t{0x8000} : std::uint16_t{0}, [] {});
+        }
+        REQUIRE_FALSE(play->world.waiting_for_key);
+        return play;
+    };
+    // The quit keys: the box; "yes" by its key: the game ends.
+    auto quitting = level_2();
+    quitting->menu_keys.quit = true;
+    (void)quitting->step(std::uint16_t{0}, [] {});
+    quitting->menu_keys.quit = false;
+    quitting->menu_keys.yes = true;
+    (void)quitting->step(std::uint16_t{0}, [] {});
+    CHECK(quitting->ended);
+    CHECK(quitting->error.empty());
+    // Esc, left ("yes"), and Enter (Remaster rules' choose, the word shown chosen as fire does): the choice taken,
+    // the change of scene, and the Vikings alive in the game-over scene.
+    auto giving_up = level_2();
+    (void)giving_up->step(std::uint16_t{0x1000}, [] {});
+    (void)giving_up->step(std::uint16_t{0x0200}, [] {});
+    (void)giving_up->step(std::uint16_t{0}, [] {});
+    giving_up->menu_keys.choose = true;
+    CHECK(giving_up->step(std::uint16_t{0}, [] {}) > 145);
+    CHECK(giving_up->world.scene == scene::kGameOver);
+    CHECK(std::ranges::none_of(giving_up->world.game_over_scene.kept_health,
+                               [](std::uint16_t health) { return health == 0; }));
 }
 
-TEST_CASE("real data: giving up in the pause menu leads to the game-over scene with the Vikings alive", "[real-data]") {
-    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
-        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
-    }
-    const auto files = assets::GameFiles::open(LVR_ORIGINAL_DIR);
-    REQUIRE(files);
-    auto loaded = load_level(*files, 2);
-    REQUIRE(loaded);
-    Play play{*files, std::make_unique<LoadedLevel>(std::move(*loaded)), 1};
-    const auto step = [&](std::uint16_t keys) { return play.step(keys, [] {}); };
-    for (int i = 0; i < 4; ++i) {
-        (void)step(i == 2 ? std::uint16_t{0x8000} : std::uint16_t{0});
-    }
-    (void)step(0x1000);
-    (void)step(0x0200);  // left: "yes"
-    (void)step(0);
-    play.menu_keys.choose = true;  // Enter, under Remaster rules: the word shown chosen, as F (above)
-    CHECK(step(0) > 145);          // the choice taken, and the change of scene
-    CHECK(play.world.scene == scene::kGameOver);
-    CHECK(
-        std::ranges::none_of(play.world.game_over_scene.kept_health, [](std::uint16_t health) { return health == 0; }));
-}
-
-TEST_CASE("real data: the game-over scene knows its slot; under Remaster rules its letters are drawn in front",
+TEST_CASE("real data: the game-over scene knows its slot, with the database of whichever level was lost",
           "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
@@ -228,12 +191,9 @@ TEST_CASE("real data: the game-over scene knows its slot; under Remaster rules i
         const auto loaded = load_slot(*files, scene::kGameOver, lost->database_entry);
         REQUIRE(loaded);
         CHECK(loaded->slot == scene::kGameOver);
-        const World vanilla = start_world(*loaded);
-        CHECK(vanilla.scene == scene::kGameOver);
-        CHECK(vanilla.kinds.at(game_over_kind::kLetters).pool == Pool::kMiddle);
-        const World remaster = start_world(*loaded, Rules::kRemaster);
-        CHECK(remaster.scene == scene::kGameOver);
-        CHECK(remaster.kinds.at(game_over_kind::kLetters).pool == Pool::kFront);
+        // (That its letters are seen under Remaster rules as under Vanilla's is test_session.cpp's, by the picture.)
+        CHECK(start_world(*loaded).scene == scene::kGameOver);
+        CHECK(start_world(*loaded, Rules::kRemaster).scene == scene::kGameOver);
     }
 }
 

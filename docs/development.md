@@ -131,6 +131,8 @@ See [ADR-0010](decisions.md) for the full layout (shared `assets`, `audio`, `ima
 - All targets are defined in `src/CMakeLists.txt`.
 - `<dir>/tests/test_<name>.cpp` tests `<dir>/<name>.*` (e.g. `src/assets/tests/test_level.cpp`). Each test file
   is self-contained. Tests needing your game files are tagged `[real-data]`.
+- A test's `Session` makes no sound unless it asks (`SessionSound::made`), and one that doesn't look at the
+  pictures passes `draw_nothing`: the sound and the pictures are most of a session's time.
 - All fuzz targets live in `src/assets/fuzz/fuzzers.cpp` (one `#if LVR_FUZZ_<TARGET>` block each, plus one
   `lvr_add_fuzzer()` line in `src/CMakeLists.txt`).
 

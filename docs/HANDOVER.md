@@ -501,9 +501,16 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   were "way too many". Agreed 2026-11-26 from an architecture review (`gamedata/previews/architecture/`): the
   replay modes are one pass, `goldens.sh` (goldens, saves and the sync test together; `--copies` is in the sync
   test, whose play goes on from a copy; 257 s of four passes became 86 s), `saves.sh` is gone, and so are the unit
-  tests that played replays without pictures. Next: the slowest tests split so that ctest runs their parts side
-  by side (the ci run waits for its slowest test), the share of the sound in a test session's time measured, and
-  a list for the user of unit tests that check the same thing twice (nothing deleted before the user says).
+  tests that played replays without pictures. Then the long tail: the ci run waited for its slowest test (the
+  title's demos, 55 of its 56 s), and a test session spent its time making sound (half or more) and pictures
+  nobody looked at. A session makes no sound now unless asked (`SessionSound::made`: the game does, and the tests
+  that listen), and a test that doesn't look draws nothing (`draw_nothing`): the unit tests take 12 s instead of
+  36 in the release build, the ci run 10 s instead of 56. Of the tests that checked the same thing twice, the two
+  pause-menu tests (the replay has the rest) and the two quicksave tests became one each, and the game-over test
+  lost what the picture test shows. Kept, as not repeated after all: the decode tests under "every level, scene
+  and image loads" (they check more of the formats) and the cheat's next-level key held over the change (no
+  replay holds it). Still to look at: the Vanilla kinds' tests that the goldens pin (a measurement first; the
+  unit tests' coverage is 82%, the minimum 80%, ADR-0002).
 - **Not checked by anything but the eye:** whatever the GPU renderer shows beyond the original's view, and
   whether a level still plays well zoomed out (enemies run for longer and further; nothing resets as often).
 - **The GPU renderer has run on one graphics card** (the user's) and the container's software driver. Vulkan

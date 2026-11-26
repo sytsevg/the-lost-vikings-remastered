@@ -975,7 +975,7 @@ int main(int argc, char* argv[]) try {
     std::filesystem::path dir = gamedata / "original";
     std::filesystem::path dump_to;
     std::filesystem::path wav;
-    SessionSound sound{.modern = false, .soundfont = gamedata / "GeneralUser-GS.sf2"};
+    SessionSound sound{.modern = false, .soundfont = gamedata / "GeneralUser-GS.sf2", .live = false, .made = true};
     int slot = scene::kLogo;
     std::optional<Showcase> showcase;  // --showcase
     int steps = 0;

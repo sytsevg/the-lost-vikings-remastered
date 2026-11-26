@@ -62,6 +62,7 @@ std::expected<std::unique_ptr<Session>, std::string> Session::open(const std::fi
     session->play_.snes = session->snes_ ? &*session->snes_ : nullptr;
     session->draw_ = std::move(draw_with);
     session->live_ = sound.live;
+    session->made_ = sound.made;
     session->set_modern(sound.modern);
     // The start is shown as its last picture for as long as the original's load takes; its sounds with the last.
     const Screen start = session->picture();
@@ -627,6 +628,13 @@ audio::Placement Session::placed(const SoundCue& cue) const {
 }
 
 void Session::refresh_sound() {
+    if (!made_) {  // (the driver serviced as ever, twice a refresh; nothing made of it)
+        players([](audio::Player& p) { p.service(); });
+        players([](audio::Player& p) { p.service(); });
+        chip_.unheard();
+        effects_chip_.unheard();
+        return;
+    }
     half_refresh_sound(samples);
     half_refresh_sound(samples);
 }
