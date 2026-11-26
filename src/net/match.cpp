@@ -102,6 +102,15 @@ std::expected<Match::Polled, std::string> Match::poll() {
         }
         take(*incoming);
     }
+    // What is due goes at most once a refresh from a pass (the window may pass far more often); right after a step
+    // it goes at once (flush).
+    constexpr auto kRefreshMs = static_cast<std::uint32_t>(kStepMs / 3);
+    if (sent_at_ && c.now_ms() - *sent_at_ < kRefreshMs) {
+        if (const std::optional<std::uint32_t> out = rollback_.out_of_step()) {
+            return std::unexpected{std::format("out of step with another machine at step {}", *out)};
+        }
+        return Polled::kGoingOn;
+    }
     if (auto flushed = flush(); !flushed) {
         return std::unexpected{flushed.error()};
     }
@@ -192,6 +201,7 @@ void Match::take_hash(int sender, const Hash& hash) {
 std::expected<void, std::string> Match::flush() {
     Connection& c = *connection_;
     const int me = c.player();
+    sent_at_ = c.now_ms();
     // To each: every player's inputs he hasn't acknowledged (a guest gives the host his own; the host passes on
     // everyone's but the guest's own), and where this machine is.
     for (int to = 0; to < kMostPlayers; ++to) {

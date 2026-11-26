@@ -31,8 +31,9 @@ class Match {
     // The game `started`, rollback over `game` (whose state, joining under way, is already the one given).
     Match(Connection& connection, Game& game, const Started& started);
 
-    // Each refresh: what came, and what is due to be sent. A guest told to go back to the lobby: kBack (what comes
-    // after that word is the lobby's). An error ends the game: the host gone, out of step.
+    // Each pass of the window: what came; and what is due to be sent, at most once a refresh. A guest told to go back
+    // to the lobby: kBack (what comes after that word is the lobby's). An error ends the game: the host gone, out of
+    // step.
     enum class Polled : std::uint8_t { kGoingOn, kBack };
     std::expected<Polled, std::string> poll();
     // What is due to be sent, now: right after a step took this machine's input, so it is on its way at once.
@@ -82,6 +83,7 @@ class Match {
     std::uint32_t hash_sent_ = 7;                                  // the next step whose hash is still to be sent
     std::uint32_t catch_up_to_ = 0;  // joining under way: the steps before his arrival, run unseen at once
     int waited_ = 0;
+    std::optional<std::uint32_t> sent_at_;  // when what was due last went (the connection's clock)
 };
 
 }  // namespace lvr::net
