@@ -144,10 +144,6 @@ void LvrPlayer::play_step() {
     menu_keys.effects = alt && s;  // a tick acts on them while they are held, as the original does
     menu_keys.music = alt && m;
     input.menu = menu_keys;
-    if (copies) {
-        World copy = play_.world;
-        play_.world = std::move(copy);
-    }
     if (saves) {
         std::vector<std::uint8_t> written;
         Writer to{written};

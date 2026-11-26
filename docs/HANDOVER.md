@@ -134,8 +134,9 @@ host, and what is open:
 - **Next (2026-11-26):** M9 as restructured was played by the user (two windows, HOST GAME and JOIN GAME at
   127.0.0.1) and everything he found fixed (the play-test's commits on `m9-places`, merged into main the same day:
   the places timed by the screen's refreshes, the title's OPTIONS, the effects' twirl, fuse and blasts, halos hidden
-  by what is in front, the volumes as gains, ...). Then the tests are to be cut back a lot (the user: "WAY too many": a proposal first, "Open"; the three
-  copies of the protocol and the loopback tests are gone already). Then M10, the extra sound effects (footsteps by
+  by what is in front, the volumes as gains, ...). Then the tests are to be cut back a lot (the user: "WAY too many"; the three copies of the protocol
+  and the loopback tests are gone already; since 2026-11-26 the replay modes are one pass, and what is next for
+  them is under "Open", "Too many tests"). Then M10, the extra sound effects (footsteps by
   surface, the bow, Olaf's shield, an electric buzz).
 - **The Modern sound's effects placed by position (built and checked 2026-11-25; being heard on the host):**
   ADR-0015. To judge by ear: how far to the sides the view's edges are (`kEdge`, 48 of 63, in `Session::placed`)
@@ -496,8 +497,12 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   dropped; IPv6 addresses; the build's ID (now a hash of the sources at every build, `cmake/build_id.cmake`); a
   log's bad number threw; the cue ledger took one player's inventory click for another's.
 - **Too many tests (the user, 2026-11-25):** the unit tests and the replays' goldens, saves, copies and rollback
-  are "way too many"; to be cut back a lot, later (a proposal first: which replay modes to merge or drop, which
-  unit tests the replays already cover).
+  were "way too many". Agreed 2026-11-26 from an architecture review (`gamedata/previews/architecture/`): the
+  replay modes are one pass, `goldens.sh` (goldens, saves and the sync test together; `--copies` is in the sync
+  test, whose play goes on from a copy; 257 s of four passes became 86 s), `saves.sh` is gone, and so are the unit
+  tests that played replays without pictures. Next: the slowest tests split so that ctest runs their parts side
+  by side (the ci run waits for its slowest test), the share of the sound in a test session's time measured, and
+  a list for the user of unit tests that check the same thing twice (nothing deleted before the user says).
 - **Not checked by anything but the eye:** whatever the GPU renderer shows beyond the original's view, and
   whether a level still plays well zoomed out (enemies run for longer and further; nothing resets as often).
 - **The GPU renderer has run on one graphics card** (the user's) and the container's software driver. Vulkan
@@ -522,20 +527,20 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
 | `src/replay/` | replays and goldens, and `lv-replay`, which plays one against the other |
 | `src/exporter/` | `lv-export`, a development tool: the game's data as PNG and JSON, script listings |
 | `replays/` | the replays with their goldens ([`replays/README.md`](../replays/README.md)) |
-| `scripts/` | the checks: `check.sh`, `goldens.sh`, `saves.sh`, coverage, `replay_cover.sh`, and the small checkers `check.sh` runs |
+| `scripts/` | the checks: `check.sh`, `goldens.sh`, coverage, `replay_cover.sh`, and the small checkers `check.sh` runs |
 | `tools/` | research tools: the scriptable DOSBox (`dosbox.py`, `lockstep.py`), disassemblers, the replay maker |
 | `docs/original/`, `docs/formats/` | our write-ups of the original's engine and file formats |
 
 ## How the work is done
 
-- **Before a commit that touches the engine:** `./scripts/goldens.sh` (every replay against its golden, under a
-  minute) and `./scripts/check.sh` (format, constants defined once, every kind's state in its `Saved`,
+- **Before a commit that touches the engine:** `./scripts/goldens.sh` (every replay against its golden, with the
+  world written out and read back and the last 8 steps run again before every step: about a minute and a half)
+  and `./scripts/check.sh` (format, constants defined once, every kind's state in its `Saved`,
   ASan/UBSan build with lint, unit tests, coverage of at least 80%). After a change that is only formatting,
   comments or docs neither needs running again. On the host, `./run-dev-env.sh test` does both in the container.
-- **After adding state to `World` or to a kind:** `./scripts/saves.sh` (a way through each level, the demo, the
-  ending and a new game, with the world written out and read back before every step: cut down from every replay
-  by the user, 2026-11-25; `--all` for every replay, about a minute), and raise `kStateVersion` (a test in `test_play.cpp` fails
-  until its sizes and version are brought up to date).
+- **After adding state to `World` or to a kind:** raise `kStateVersion` (a test in `test_play.cpp` fails until
+  its sizes and version are brought up to date). `goldens.sh` says when the new state isn't all written out or
+  copied: a replay that fails, and matches with `--plain` (the goldens alone).
 - **After a change to how the GPU renderer draws:** `lv-replay --check --gpu` on a replay or two.
 - **What only the eye can judge is tried before it is committed.** Since M7 the user tries a change on the host
   first and says when to commit; stills for them go into `gamedata/previews/` (not in the repository). When a

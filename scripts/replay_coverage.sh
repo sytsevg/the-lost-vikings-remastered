@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# What of the engine the replays reach: lv-replay --check over every replay in the coverage build (the new
-# engine alone, against the goldens), and the line coverage of src/lvr/ from those runs only. The lines no replay
-# reaches are the ones a refactor can break without a replay noticing (docs/HANDOVER.md).
+# What of the engine the replays reach: lv-replay --check over every replay in the coverage build (against the
+# goldens, the world written out, read back and run again as goldens.sh plays them), and the line coverage of
+# src/lvr/ from those runs only. The lines no replay reaches are the ones a refactor can break without a replay
+# noticing (docs/HANDOVER.md).
 #   ./scripts/replay_coverage.sh   report in build/coverage/replays.txt, annotated sources in
 #                                  build/coverage/replays-html/, unreached lines per file in
 #                                  build/coverage/replays-unreached.txt

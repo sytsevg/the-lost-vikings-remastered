@@ -1,6 +1,5 @@
-// Tests for src/replay/golden.*: the comparison on hand-made players, the goldens' format, and [real-data] runs of
-// the engine alone.
-#include <algorithm>
+// Tests for src/replay/golden.*: the comparison on hand-made players, the goldens' format, and [real-data] the
+// game's session against the player. (That the engine plays each replay as its golden has it is goldens.sh's to say.)
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
 #include <cstdint>
@@ -14,8 +13,6 @@
 #include <utility>
 #include <vector>
 
-#include "assets/assets.hpp"
-#include "lvr/play.hpp"
 #include "lvr/render.hpp"
 #include "lvr/session.hpp"
 #include "replay/golden.hpp"
@@ -198,64 +195,6 @@ TEST_CASE("golden: a run as a hash per refresh, written and read back") {
     CHECK(first_difference({}, {7}) == 0);
 }
 
-// The engine alone, a replay's keys to its end, without drawing a picture: where the game is then. (That every
-// refresh on the way is the golden's is ./scripts/goldens.sh's to say.)
-struct PlayedAlone {
-    int scene = 0;
-    bool ended = false;
-    std::string error;
-    int refreshes = 0;
-    std::vector<std::uint16_t> kinds;  // of the entities there at the end
-};
-
-PlayedAlone play_alone(const char* name) {
-    const auto replay = load_replay(std::filesystem::path{LVR_REPLAYS_DIR} / name);
-    REQUIRE(replay);
-    const auto files = lvr::assets::GameFiles::open(LVR_ORIGINAL_DIR);
-    REQUIRE(files);
-    auto loaded = lvr::load_slot(*files, replay->slot, lvr::database::kSpaceship);
-    REQUIRE(loaded);
-    lvr::Play play{*files, std::make_unique<lvr::LoadedLevel>(std::move(*loaded)), replay->slot};
-    PlayedAlone result;
-    for (const Step& step : replay->steps) {
-        if (play.ended) {
-            break;
-        }
-        if (step.typed) {
-            play.world.typed = *step.typed;
-        }
-        if (step.place) {
-            for (std::size_t viking = 0; viking < 3; ++viking) {
-                if (lvr::Entity* entity = play.world.entities.at(viking).get()) {
-                    const auto dx = static_cast<std::int16_t>((*step.place)[0] - entity->x);
-                    const auto dy = static_cast<std::int16_t>((*step.place)[1] - entity->y);
-                    entity->x = (*step.place)[0];
-                    entity->y = (*step.place)[1];
-                    entity->box.left = static_cast<std::int16_t>(entity->box.left + dx);
-                    entity->box.right = static_cast<std::int16_t>(entity->box.right + dx);
-                    entity->box.top = static_cast<std::int16_t>(entity->box.top + dy);
-                    entity->box.bottom = static_cast<std::int16_t>(entity->box.bottom + dy);
-                }
-            }
-        }
-        const auto held = [&step](std::uint8_t scancode) {
-            return std::ranges::find(step.held, scancode) != step.held.end();
-        };
-        play.menu_keys = {
-            .yes = held(0x15), .no = held(0x31), .quit = held(0x44) || (held(0x38) && (held(0x2d) || held(0x10)))};
-        result.refreshes += play.step(step.keyboard, [] {});
-    }
-    result.scene = play.world.scene;
-    result.ended = play.ended;
-    result.error = play.error;
-    for (const auto& entity : play.world.entities) {
-        if (entity) {
-            result.kinds.push_back(entity->kind);
-        }
-    }
-    return result;
-}
-
 TEST_CASE("the game's session shows what the pixel-matched player shows, refresh by refresh", "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
@@ -288,48 +227,3 @@ TEST_CASE("the game's session shows what the pixel-matched player shows, refresh
     REQUIRE(after);
     CHECK_FALSE(*after);  // and the player has no more
 }
-
-TEST_CASE("the engine alone: the ending, to the end of the ship's curtain call", "[real-data]") {
-    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
-        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
-    }
-    const PlayedAlone played = play_alone("ending.replay");
-    CHECK(played.scene == lvr::scene::kShip);
-    CHECK_FALSE(played.ended);
-    CHECK(played.refreshes + 145 == 27580);  // with the start's own
-    // What is left on the stage: the three Vikings, the ship's parts, what dropped in, and the last creature.
-    CHECK(std::ranges::count(played.kinds, std::uint16_t{0x52}) == 1);
-    CHECK(std::ranges::count(played.kinds, std::uint16_t{0x62}) == 1);
-    CHECK(std::ranges::count(played.kinds, std::uint16_t{0x4b}) == 1);
-}
-
-TEST_CASE("the engine alone: every placement of four levels visited", "[real-data]") {
-    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
-        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
-    }
-    // The reach replays of a spaceship level, an Egyptian one, a factory one and a wacky one: the refreshes they
-    // take are the ones their goldens have.
-    CHECK(play_alone("reach-03.replay").refreshes + 145 == 14052);
-    CHECK(play_alone("reach-14.replay").refreshes + 145 == 11848);
-    CHECK(play_alone("reach-24.replay").refreshes + 145 == 16055);
-    CHECK(play_alone("reach-32.replay").refreshes + 145 == 18876);
-}
-
-TEST_CASE("the engine alone: a new game, through the village's two scenes into level 1", "[real-data]") {
-    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
-        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
-    }
-    const PlayedAlone played = play_alone("new-game.replay");
-    CHECK(played.scene == 0);
-    CHECK_FALSE(played.ended);
-    CHECK(played.refreshes + 145 == 13783);
-}
-
-// The reach replays (tools/reach_replays.py): every placement of a level visited. One test a level, so they run
-// side by side.
-// The second set of reach replays: the same visits with Up, Down and the items.
-// The third set: the Vikings put on top of what can be stood on (lifts, blocks, bridges), then Up and Down.
-// The fourth set: the Vikings fight at each placement (Erik's charge, Baleog's sword and bow, each way), so what is
-// there is hurt, killed or broken.
-// The fifth set: only the enemies, each from both sides: Baleog is put beside one, facing it, and strikes and
-// shoots until it is dead or he is.

@@ -5,7 +5,9 @@ plays a replay, and what it shows at every refresh (the Classic picture, 320 × 
 and what the game asks of the sound) is hashed and compared with the replay's golden.
 
 ```
-lv-replay replays/*.replay                  # the engine against the goldens (./scripts/goldens.sh: all, side by side)
+lv-replay replays/*.replay                  # the engine against the goldens, written out and run again at every
+                                            # step (./scripts/goldens.sh: all, side by side)
+lv-replay --plain replays/NAME.replay       # the goldens alone: a change of behaviour or state left out
 lv-replay --record replays/NAME.replay      # NAME.golden next to it, from the engine as it is: for a new replay
 ```
 

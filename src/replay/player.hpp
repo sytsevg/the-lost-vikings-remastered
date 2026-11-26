@@ -33,15 +33,15 @@ class LvrPlayer : public Player {
     std::expected<std::optional<Refresh>, std::string> next() override;
     std::string entities() override;
 
-    // Before every step the world is replaced by a copy of itself: what a snapshot keeps (a rewind, a quicksave)
-    // is then all a replay needs, or the replay differs from its golden.
-    bool copies = false;
-    // The same with the world written out and read back into a world made anew for the level (lvr/archive.hpp):
-    // what a save holds must be all a replay needs. A world that can't be read back ends the run with an error.
+    // Before every step the world is written out and read back into a world made anew for the level
+    // (lvr/archive.hpp): what a save holds must be all a replay needs, or the replay differs from its golden. A
+    // world that can't be read back ends the run with an error.
     bool saves = false;
     // GGPO's sync test (rollback, ADR-0012): before every step the last `rollback` steps are run again from the
     // snapshot before the first of them, without their pictures, and the play goes on from there. They must come
-    // to the state the straight run had (its hash), and the replay must still match its golden.
+    // to the state the straight run had (its hash), and the replay must still match its golden. A snapshot is a
+    // copy of the world (the rewind's and the quicksave's are too): from the steps run again on, the play is a
+    // copy's, so what a copy keeps must be all a replay needs as well.
     std::size_t rollback = 0;
 
   private:

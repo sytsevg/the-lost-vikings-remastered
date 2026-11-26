@@ -338,7 +338,7 @@ TEST_CASE("real data: the spawn sweep: every placement of every scene created an
     CHECK(broken.empty());
 }
 
-TEST_CASE("real data: a world written out reads back the same; its size is this version of the state's",
+TEST_CASE("real data: a world written out is this version of the state's size; under Remaster rules it reads back",
           "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
@@ -359,15 +359,18 @@ TEST_CASE("real data: a world written out reads back the same; its size is this 
             const World world = start_world(*loaded, rules);
             const std::vector<std::uint8_t> bytes = written(world);
             sizes.push_back(bytes.size());
-            // Into a world made anew for the level: all of it is read, and written again it is the same.
-            World read = prepare_world(*loaded, nullptr, rules);
-            Reader from{bytes};
-            REQUIRE(read.load(from));
-            CHECK(from.done());
-            CHECK(written(read) == bytes);
-            CHECK(read.slots() == world.slots());
-            CHECK(read.at(0) != nullptr);
-            // Cut short, or of a world of the other rules' size for a kind: not a world.
+            // Into a world made anew for the level: all of it is read, and written again it is the same. Under
+            // Vanilla rules goldens.sh sees to that before every step of every replay; no replay plays Remaster's.
+            if (rules == Rules::kRemaster) {
+                World read = prepare_world(*loaded, nullptr, rules);
+                Reader from{bytes};
+                REQUIRE(read.load(from));
+                CHECK(from.done());
+                CHECK(written(read) == bytes);
+                CHECK(read.slots() == world.slots());
+                CHECK(read.at(0) != nullptr);
+            }
+            // Cut short: not a world.
             World cut = prepare_world(*loaded, nullptr, rules);
             Reader from_less{std::span{bytes}.first(bytes.size() - 5)};
             CHECK_FALSE(cut.load(from_less));

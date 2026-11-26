@@ -34,17 +34,16 @@ cmake --preset asan-ubsan          # configure (the first run downloads dependen
 cmake --build --preset asan-ubsan
 ctest --preset asan-ubsan
 ./scripts/check.sh                 # format check + ci preset + tests + coverage
-./scripts/goldens.sh               # every replay against its golden, in the release build
+./scripts/goldens.sh               # every replay against its golden, written out and run again, in the release build
 ```
 
 `./scripts/check.sh` is the unit tests, the lint and the coverage. `./scripts/goldens.sh` plays every replay in
-the engine and compares each refresh with its golden (`replays/README.md`), in under a minute: run both before a
-commit that touches the engine.
-
-After adding state to `World` or to a kind, `./scripts/saves.sh` plays the replays with the world written out and
-read back before every step (`lv-replay --saves`; `--copies` does the same with a copy): what the rewind, the
-quicksave and later a network snapshot hold must be all a replay needs. By default a way through each level, the
-demo, the ending and a new game (40 replays, under a minute); `--all` for every replay.
+the engine and compares each refresh with its golden (`replays/README.md`), in about a minute and a half: run both
+before a commit that touches the engine. In the same pass, before every step, the world is written out and read
+back, and the last 8 steps are run again from a snapshot (GGPO's sync test, ADR-0012): what the rewind, the
+quicksave and a snapshot sent online hold must be all a replay needs. A replay that fails is played again with
+`--plain`, the goldens alone, and the script says which it is: the behaviour changed (it differs there too) or
+state is left out of a save or a copy (it matches there).
 
 After a change to the GPU renderer's drawing, `lv-replay --check --gpu REPLAY...` plays replays with it in the
 Classic renderer's place, against the same goldens (all of them take about five minutes on the software driver;

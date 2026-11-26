@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The Windows build (the windows preset: cross-built with llvm-mingw, cmake/windows.cmake) and its checks under Wine:
-# the tests, as check.sh runs them, and every replay against its golden, as goldens.sh plays them. Not part of
+# the tests, as check.sh runs them, and every replay against its golden (--plain: the goldens alone, which is what
+# says the Windows build plays as the other does; the saves and the sync test are the same code). Not part of
 # check.sh. What comes out: build/windows/bin/vikings-remaster.exe, one file, for Windows 10 and later.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -20,7 +21,7 @@ ctest --preset windows --parallel "$(nproc)"
 echo "== replays (windows, under Wine)"
 log=build/windows/goldens.log
 if printf '%s\n' replays/*.replay |
-    xargs -P "$(nproc)" -n 4 cmake/wine.sh build/windows/bin/lv-replay.exe --check >"$log" 2>&1; then
+    xargs -P "$(nproc)" -n 4 cmake/wine.sh build/windows/bin/lv-replay.exe --check --plain >"$log" 2>&1; then
     echo "windows: all $(grep -c 'matches its golden' "$log") replays match"
 else
     grep -v 'matches its golden\|replays match' "$log" >&2 || true

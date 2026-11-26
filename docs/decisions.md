@@ -111,10 +111,10 @@ comments and other docs points here). A decision that was later replaced is not 
   machines will tell each other before a snapshot is sent; another version is refused with a message. It is
   raised by hand when a `Saved`, `EntityState` or `WorldState` changes, and a test that pins the written size
   of four worlds says when that was forgotten.
-- **That nothing is missing** is checked on the replays: `scripts/saves.sh` (`lv-replay --saves`) writes the
-  world out and reads it back before every step, and the replays must still match their goldens (a way through
-  each level and the scenes by default, every replay with `--all`); that every kind keeps its state in its `Saved`
-  is checked without playing (`scripts/kind_state.py`).
+- **That nothing is missing** is checked on the replays: `lv-replay --check` (`scripts/goldens.sh`) writes the
+  world out and reads it back before every step of every replay, and the replays must still match their goldens
+  (a replay that matches with `--plain`, the goldens alone, and not without it is state left out); that every kind
+  keeps its state in its `Saved` is checked without playing (`scripts/kind_state.py`).
 - A world is 22 to 40 KB written out (state version 9): the sprite pieces never used, most of Remaster rules'
   2048, are written as how many in a row (`Pieces::save`; a piece let go keeps its place for the next one to have
   it, so it is written whole). What is sent to a player joining under way (ADR-0012) has its numbers in as few
@@ -350,8 +350,8 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   brought back keeps the view the zoom has, and so does a quicksave brought back.
 - **A world can be copied**, which is what rewind and quicksave are: a snapshot is a copy of the `World` (each
   entity its own copy) with the level it belongs to. The rewind keeps one before every step. That a copy keeps
-  everything is checked on the replays: `lv-replay --copies` replaces the world by a copy of itself before
-  every step, and all 119 still match their goldens.
+  everything is checked on the replays: in `lv-replay --check` (`scripts/goldens.sh`) the play goes on, before
+  every step, from a snapshot taken 8 steps back (the sync test, ADR-0012), and all 119 still match their goldens.
 - **Quicksave** (built), only with the game's own cheat on (its password typed at the title, or `--cheat`): F7
   keeps the play as it is, in a level; F8 brings it back from wherever the game is by then, in this run or a
   later one. One.
@@ -440,7 +440,8 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   pause box, the fades, the demo), slots never pointers (ADR-0018); what is shown and heard only reads the
   simulation, so a step run again without pictures changes the state as a shown one does, and a sound is keyed by
   its step and its entity, so a step run again doesn't play it twice; determinism (ADR-0003). Checked by the sync
-  test, `lv-replay --rollback N`: every replay, each step run again after going back N steps, against its golden.
+  test, part of `lv-replay --check` (`scripts/goldens.sh`): every replay, before each step the last 8 run again
+  from the snapshot before them, against its golden.
   A step that changes the scene runs on confirmed inputs only, so a fade or a level's loading is never undone.
 - **Out of step:** the state of every 8th confirmed step is hashed and the hashes exchanged; on a difference the
   first step that differs is logged, and each machine writes its state and its log of inputs (in `logs/` beside the

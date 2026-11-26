@@ -3,29 +3,29 @@
 // its palette and what the game asks of the sound). The goldens in the repository were recorded from the
 // reference engine before it was retired (replays/README.md).
 //
-//   lv-replay [--check] [options] REPLAY...  the engine against each replay's golden
+//   lv-replay [--check] [options] REPLAY...  the engine against each replay's golden, and before every step two
+//                                           more checks of the play (ADR-0020, ADR-0012): the world written out
+//                                           and read back (lvr/archive.hpp), and the last 8 steps run again from
+//                                           the snapshot before them (GGPO's sync test; a snapshot is a copy of
+//                                           the world, as the rewind's is), which must come to the same state.
+//                                           So a replay that differs from its golden may be state that a save
+//                                           or a copy leaves out, as much as a change of behaviour
+//       --plain        the goldens alone, without the two: what tells them apart (a change of behaviour differs
+//                      here too; state left out matches)
+//       --gpu          the pictures drawn by the GPU renderer (lvr/gpu.hpp) instead of the Classic one: they are
+//                      to be the same
 //   lv-replay --record [options] REPLAY...   write each replay's golden next to it, from the engine as it is: for
 //                                           a new replay only (it pins what the engine does now)
 //   lv-replay --shot FILE.png REPLAY       write what the engine shows at the replay's last refresh (the picture
 //                                           tools/lockstep.py sets beside the original's in DOSBox)
-//       --gpu          the pictures drawn by the GPU renderer (lvr/gpu.hpp) instead of the Classic one: they are
-//                      to be the same
-//       --copies       the world replaced by a copy of itself before every step: a copy (the rewind's snapshot)
-//                      must keep everything a replay needs
-//       --saves        the world written out and read back (lvr/archive.hpp) before every step: what is written
-//                      must be all of it
 //   lv-replay --coop LOG                   a log of a game online that went out of step (NetGame::log) played again:
 //                                           the first step whose state isn't the log's, or that all are
-//       --rollback N   GGPO's sync test (ADR-0012): before every step the last N run again from the snapshot
-//                      before them, without pictures; they must come to the same state, and the play goes on from
-//                      there
 //       --data DIR     the game's files (default gamedata/original)
 //       --out DIR      where a difference is written (default gamedata/previews/match): per replay
 //                      NAME-shown.png (the picture at the first refresh that differs) and NAME.txt (which
 //                      refresh, and the entities then)
 //
 // Exit status 0 when every replay matched.
-#include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -63,13 +63,14 @@ struct Options {
     fs::path out = "gamedata/previews/match";
     fs::path shot;
     bool gpu = false;
-    bool copies = false;
-    bool saves = false;
-    std::size_t rollback = 0;
+    bool plain = false;
     std::vector<fs::path> replays;
 };
 
 using PlayerPtr = std::expected<std::unique_ptr<Player>, std::string>;
+
+// How many steps the sync test runs again before every step (ADR-0012).
+constexpr std::size_t kRollback = 8;
 
 // The GPU renderer, opened when first asked for; the process ends if there is none or it fails.
 void draw_on_gpu(Screen& screen, const View& view, const SceneGraphics& scene, const SharedGraphics& shared) {
@@ -90,9 +91,10 @@ void draw_on_gpu(Screen& screen, const View& view, const SceneGraphics& scene, c
 PlayerPtr open_engine(const Options& options, const Replay& replay) {
     return LvrPlayer::open(options.data, replay, options.gpu ? Draw{draw_on_gpu} : Draw{draw})
         .transform([&options](auto player) {
-            player->saves = options.saves;
-            player->copies = options.copies;
-            player->rollback = options.rollback;
+            if (options.mode == Mode::kCheck && !options.plain) {
+                player->saves = true;
+                player->rollback = kRollback;
+            }
             return player;
         })
         .transform([](auto player) -> std::unique_ptr<Player> { return player; });
@@ -210,7 +212,7 @@ bool run(const Options& options, const fs::path& path) {
 
 void print_usage() {
     std::println(stderr,
-                 "usage: lv-replay [--check | --record | --shot FILE.png] [--gpu] [--copies] [--saves] [--rollback N] "
+                 "usage: lv-replay [--check | --record | --shot FILE.png] [--plain] [--gpu] "
                  "[--data DIR] [--out DIR] "
                  "REPLAY...");
 }
@@ -243,19 +245,8 @@ int run_all(int argc, char** argv) {
             options.mode = Mode::kCheck;
         } else if (arg == "--gpu") {
             options.gpu = true;
-        } else if (arg == "--copies") {
-            options.copies = true;
-        } else if (arg == "--saves") {
-            options.saves = true;
-        } else if (arg == "--rollback" && i + 1 < args.size()) {
-            const std::string_view steps = args[++i];
-            std::size_t back = 0;
-            if (const auto [end, error] = std::from_chars(steps.data(), steps.data() + steps.size(), back);
-                error != std::errc{} || end != steps.data() + steps.size()) {
-                print_usage();  // (not a number)
-                return EXIT_FAILURE;
-            }
-            options.rollback = back;
+        } else if (arg == "--plain") {
+            options.plain = true;
         } else if (arg == "--shot" && i + 1 < args.size()) {
             options.mode = Mode::kShot;
             options.shot = args[++i];

@@ -241,6 +241,7 @@ another pair for the effects, mixed.
   the coverage floor.
 - **Replays against goldens** (`replays/`, `./scripts/goldens.sh`): every replay played in the engine, and a hash of
   each refresh's picture, palette and sound cues compared with the recorded run
-  ([`../replays/README.md`](../replays/README.md)).
+  ([`../replays/README.md`](../replays/README.md)); in the same pass, before every step, the world written out and
+  read back and the last 8 steps run again from a snapshot (ADR-0020, ADR-0012).
 - **The original in DOSBox** (`tools/lockstep.py`, [`dosbox.md`](dosbox.md)): the same input to both and the
   pictures compared, for anything new or in doubt.
