@@ -118,6 +118,9 @@ struct MenuKeys {
     // F5, F6: the level keys, which only do something once the title was given the cheat's password.
     bool previous_level = false;
     bool next_level = false;
+    // Remaster rules: Enter pressed (and not yet taken by a step), which answers the original's pause box and quit
+    // box with the word shown chosen, as F does (the user, 2026-11-26: Enter did nothing there).
+    bool choose = false;
 };
 
 // What a step is given: each player's input, the first player's first; and the first player's character typed
@@ -220,9 +223,12 @@ struct WorldState {
         bool cheat = false;           // the cheat's password was typed: F5 and F6 change the level
         bool quit = false;            // its menu: the game ends
         bool screen_cleared = false;  // its menu cleared the scene's picture; what that showed below is at the top
-        // Remaster rules, offline (ADR-0012): HOST GAME or JOIN GAME was chosen in its menu this tick: the front
-        // end opens that page (none: kNoOnline).
-        std::uint8_t online = 0;
+        // Remaster rules, offline: HOST GAME or JOIN GAME (ADR-0012), or OPTIONS (the user, 2026-11-26), was chosen
+        // in its menu this tick: the front end opens that page (0: none).
+        static constexpr std::uint8_t kHostGame = 1;
+        static constexpr std::uint8_t kJoinGame = 2;
+        static constexpr std::uint8_t kOptions = 3;
+        std::uint8_t page = 0;
     } title;
     std::array<std::uint8_t, 3> tint{};   // how much darker red, green and blue are shown (the title's menu, the alarm)
     std::array<std::uint8_t, 3> tint2{};  // a second one on top of it: a bomb's flash

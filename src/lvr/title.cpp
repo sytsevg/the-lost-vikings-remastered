@@ -43,7 +43,7 @@ class Title : public Entity {
   public:
     void update(World& world) override {
         const bool confirm = (world.host().pressed & key::kEnter) != 0 || (world.host().pressed & key::kF) != 0;
-        world.title.online = 0;  // (asked for one tick: the front end has opened its page meanwhile)
+        world.title.page = 0;  // (asked for one tick: the front end has opened its page meanwhile)
         const int last = choices(world) - 1;
         switch (s.state) {
             case State::kStart:
@@ -85,12 +85,13 @@ class Title : public Entity {
                 world.colour_boxes(0);
                 put(world, 0xff, 14, row_of(world, 0));
                 put(world, 0x100, 14, row_of(world, 1));
-                if (last == kHostJoinQuit) {
+                if (last == kRemasterLast) {
                     write(world, "HOST GAME", 14, row_of(world, 2));
                     write(world, "JOIN GAME", 14, row_of(world, 3));
+                    write(world, "OPTIONS", 14, row_of(world, 4));
                 }
                 put(world, 0x110, 14, row_of(world, last));
-                if (last == kHostJoinQuit) {  // (from the password's screen: the menu's rows again)
+                if (last == kRemasterLast) {  // (from the password's screen: the menu's rows again)
                     point_at(world, s.choice, row_of(world, s.choice));
                 }
                 s.state = State::kMenuShown;
@@ -113,14 +114,16 @@ class Title : public Entity {
                     return;
                 } else if (world.typed == 'P' || (world.typed != 'Q' && confirm && s.choice == 1)) {
                     world.sound(*this, effect::kTitlePassword);
-                    point_at(world, 1, kPasswordRow);  // (the password's screen: the original's rows)
+                    // (The pointer stays on PASSWORD, wherever the menu has it, until the password's screen comes:
+                    // the user, 2026-11-26, saw it jump to the original's row under Remaster rules' five.)
+                    point_at(world, 1, row_of(world, 1));
                     animate_moved(world);
                     s.state = State::kPasswordComing;
                     return;
-                } else if (const int online = online_chosen(world, confirm, last); online != 0) {
+                } else if (const std::uint8_t page = page_chosen(world, confirm, last); page != 0) {
                     world.sound(*this, effect::kTitleChosen);
-                    point_at(world, online == 1 ? 2 : 3, row_of(world, online == 1 ? 2 : 3));
-                    world.title.online = static_cast<std::uint8_t>(online);
+                    point_at(world, page + 1, row_of(world, page + 1));  // (HOST GAME's is the third choice)
+                    world.title.page = page;
                     countdown = kPatience;
                 } else if (world.typed == 'Q' || confirm) {
                     world.title.quit = true;
@@ -136,11 +139,12 @@ class Title : public Entity {
                 s.state = State::kDone;
                 return;
             case State::kPasswordComing:
+                s.moved = 0;  // (the password's screen: the original's rows, PASSWORD's at kPasswordRow)
                 world.play(*this, anim::kTitlePasswordStands);
                 animate_moved(world);
                 world.colour_boxes(0);
-                for (int row = 12; last == kHostJoinQuit && row <= 20; row += kRowsApart) {
-                    put(world, 0x101, 14, row);  // (the five choices' rows, cleared first)
+                for (int choice = 0; last == kRemasterLast && choice <= last; ++choice) {
+                    put(world, 0x101, 14, row_of(world, choice));  // (the six choices' rows, cleared first)
                 }
                 put(world, 0x101, 14, 14);
                 put(world, 0x100, 14, 16);
@@ -199,25 +203,33 @@ class Title : public Entity {
     static constexpr std::uint16_t kPatience = 220;
     static constexpr std::uint16_t kBackspace = 0x80;  // as typed characters
     static constexpr std::uint16_t kReturn = 0x81;
-    // The menu's choices: the original's three, two rows apart; under Remaster rules offline, HOST GAME and JOIN
-    // GAME between PASSWORD and QUIT TO DOS.
+    static constexpr std::uint16_t kEscape = 0x82;  // (Remaster rules only: input::kTypedEscape)
+    // The menu's choices: the original's three, two rows apart; under Remaster rules offline, HOST GAME, JOIN GAME
+    // and OPTIONS between PASSWORD and QUIT TO DOS.
     static constexpr int kRowsApart = 2;
-    static constexpr int kHostJoinQuit = 4;
+    static constexpr int kRemasterLast = 5;
     static constexpr int kPasswordRow = 16;
-    // A choice's row: the original's from 14 on; with five, from 12 (the text layer ends at row 21).
+    // A choice's row: the original's from 14 on; with six, from 11, just under the logo (the text layer ends at row
+    // 21).
     static int row_of(const World& world, int choice) {
-        return (choices(world) == 5 ? 12 : 14) + (choice * kRowsApart);
+        return (choices(world) == kRemasterLast + 1 ? 11 : 14) + (choice * kRowsApart);
     }
-    static int choices(const World& world) { return world.rules == Rules::kRemaster && !world.online ? 5 : 3; }
-    // HOST GAME (1) or JOIN GAME (2) chosen: by their keys, or confirmed on their line; else 0.
-    int online_chosen(const World& world, bool confirm, int last) const {
-        if (last != kHostJoinQuit || world.typed == 'Q' || world.typed == 'N' || world.typed == 'P') {
+    static int choices(const World& world) {
+        return world.rules == Rules::kRemaster && !world.online ? kRemasterLast + 1 : 3;
+    }
+    // HOST GAME, JOIN GAME (by their keys too) or OPTIONS chosen: the page the front end opens (World::Title::page);
+    // else 0.
+    std::uint8_t page_chosen(const World& world, bool confirm, int last) const {
+        if (last != kRemasterLast || world.typed == 'Q' || world.typed == 'N' || world.typed == 'P') {
             return 0;
         }
         if (world.typed == 'H' || (confirm && s.choice == 2)) {
-            return 1;
+            return World::Title::kHostGame;
         }
-        return world.typed == 'J' || (confirm && s.choice == 3) ? 2 : 0;
+        if (world.typed == 'J' || (confirm && s.choice == 3)) {
+            return World::Title::kJoinGame;
+        }
+        return confirm && s.choice == 4 ? World::Title::kOptions : 0;
     }
     // A text of the Remaster's own in the font, a character a cell.
     static void write(World& world, std::string_view text, int column, int row) {
@@ -284,6 +296,13 @@ class Title : public Entity {
 
     // One tick of the password being put in. True if the turn ended here.
     bool password(World& world, bool confirm) {
+        if (world.typed == kEscape) {  // back to the menu, as after a wrong password (the user, 2026-11-26)
+            world.typed = 0;
+            world.clear_text();
+            s.choice = 1;
+            show_menu(world);
+            return true;
+        }
         std::uint8_t& letter = world.password.at(static_cast<std::size_t>(s.at));
         if (world.typed != 0 && world.typed != kBackspace) {
             if (world.typed == kReturn) {

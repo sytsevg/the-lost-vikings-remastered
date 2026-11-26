@@ -106,6 +106,9 @@ Menu::Menu(Settings settings, Choices choices) : settings_{std::move(settings)},
 
 std::vector<Menu::First> Menu::first_lines() const {
     std::vector<First> lines{First::kOptions, First::kKeyboard, First::kGamepad};
+    if (from_title_) {  // (no level to give up, and the title has QUIT TO DOS of its own)
+        return lines;
+    }
     if (choices_.online && choices_.hosting && choices_.lobby) {
         lines.push_back(First::kLobby);
     }
@@ -198,6 +201,13 @@ void Menu::open_host() {
     // (What is filled in already: on to START HOSTING at once.)
     chosen_.at(static_cast<std::size_t>(Page::kHost)) =
         static_cast<std::size_t>(settings_.name.empty() ? Host::kName : Host::kStart);
+}
+
+void Menu::open_options() {
+    page_ = Page::kFirst;
+    from_title_ = true;
+    waiting_ = Waiting::kNothing;
+    chosen_.at(static_cast<std::size_t>(Page::kFirst)) = 0;
 }
 
 void Menu::open_join() {
@@ -339,7 +349,7 @@ std::vector<std::string> Menu::note() const {
     }
     switch (page_) {
         case Page::kFirst:
-            note.emplace_back("ENTER/A CHOOSES, ESC/B RESUMES");
+            note.emplace_back(from_title_ ? "ENTER/A CHOOSES, ESC/B BACK" : "ENTER/A CHOOSES, ESC/B RESUMES");
             break;
         case Page::kOptions:
             note.emplace_back("LEFT/RIGHT CHANGE, ESC/B BACK");
@@ -755,13 +765,16 @@ std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<asset
     // (The lobby's: what the game starts with, a line above them.)
     const bool start_row = players > 0 && menu.in_lobby() && !menu.start().empty();
     const int players_height = players > 0 ? 6 + ((players + 1 + (start_row ? 1 : 0)) * kLine) : 0;
-    const int height =
+    const int content =
         6 + kCharacter + 6 + (shown * kLine) + players_height + 6 + (static_cast<int>(note.size()) * kNoteLine) + 4;
     const int x = (kScreenWidth - width) / 2;
     // The title's pages: under its logo, nothing of the title's own menu showing through (the user: a menu of its
-    // own, not one laid over the game).
-    constexpr int kUnderLogo = 90;
+    // own, not one laid over the game): as far down as that menu goes at least (its six rows to row 21, the pointer
+    // beside them), the notes at the bottom.
+    constexpr int kUnderLogo = 87;  // (the logo's last row is 86)
+    constexpr int kTitleMenuEnd = 179;
     const bool of_title = menu.of_title();
+    const int height = of_title ? std::max(content, kTitleMenuEnd - kUnderLogo) : content;
     const int y = of_title ? std::min(kUnderLogo, kScreenHeight - height - 2) : (kScreenHeight - height) / 2;
     const Colour inside = of_title ? Colour{kDark.r, kDark.g, kDark.b, 255} : kDark;
     const Colour band = of_title ? Colour{kChosenBand.r, kChosenBand.g, kChosenBand.b, 255} : kChosenBand;
@@ -847,7 +860,7 @@ std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<asset
             canvas.text(engine_x, top + 1, player.engine, kGrey, font);
         }
     }
-    const int note_y = lines_y + (shown * kLine) + players_height + 6;
+    const int note_y = y + height - 4 - (static_cast<int>(note.size()) * kNoteLine);
     for (std::size_t i = 0; i < note.size(); ++i) {
         if (i == 0 && menu.note_flashes() && !flash_shown) {
             continue;

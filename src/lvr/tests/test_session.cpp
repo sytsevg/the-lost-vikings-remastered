@@ -13,7 +13,9 @@
 #include <string_view>
 #include <vector>
 
+#include "input/input.hpp"
 #include "lvr/archive.hpp"
+#include "lvr/kinds.hpp"
 #include "lvr/names.hpp"
 #include "lvr/play.hpp"
 #include "lvr/render.hpp"
@@ -1033,7 +1035,10 @@ TEST_CASE("real data: Remaster rules' effects hold still under the original's pa
     CHECK_FALSE(lights_change());
 }
 
-TEST_CASE("real data: Remaster rules' title, offline, has HOST GAME and JOIN GAME before QUIT TO DOS", "[real-data]") {
+TEST_CASE(
+    "real data: Remaster rules' title, offline, has HOST GAME, JOIN GAME and OPTIONS before QUIT TO DOS; "
+    "Escape takes its password back to the menu",
+    "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
@@ -1054,12 +1059,15 @@ TEST_CASE("real data: Remaster rules' title, offline, has HOST GAME and JOIN GAM
     press(*remaster, key::kDown);
     press(*remaster, key::kDown);
     remaster->step(key::kEnter);
-    CHECK(remaster->world().title.online == 1);  // HOST GAME: for the front end, one tick
+    CHECK(remaster->world().title.page == World::Title::kHostGame);  // for the front end, one tick
     remaster->step(0);
-    CHECK(remaster->world().title.online == 0);
+    CHECK(remaster->world().title.page == 0);
     press(*remaster, key::kDown);
     remaster->step(key::kEnter);
-    CHECK(remaster->world().title.online == 2);  // JOIN GAME
+    CHECK(remaster->world().title.page == World::Title::kJoinGame);
+    press(*remaster, key::kDown);
+    remaster->step(key::kEnter);
+    CHECK(remaster->world().title.page == World::Title::kOptions);
     press(*remaster, key::kDown);
     remaster->step(key::kEnter);  // QUIT TO DOS, the last
     remaster->step(0);            // (the game ends as the next step starts)
@@ -1070,13 +1078,27 @@ TEST_CASE("real data: Remaster rules' title, offline, has HOST GAME and JOIN GAM
     around->step(key::kEnter);
     around->step(0);  // (the game ends as the next step starts)
     CHECK(around->quit());
+    // PASSWORD, and Escape (the handler's, under Remaster rules): the menu again, PASSWORD still chosen.
+    auto back = at_menu(Rules::kRemaster);
+    press(*back, key::kDown);
+    press(*back, key::kEnter);
+    for (int step = 0; step < 4; ++step) {
+        back->step(0);
+    }
+    back->key_pressed(input::kTypedEscape);
+    for (int step = 0; step < 8; ++step) {
+        back->step(0);
+    }
+    press(*back, key::kDown);
+    back->step(key::kEnter);
+    CHECK(back->world().title.page == World::Title::kHostGame);
 
     // Vanilla rules: the original's three.
     auto vanilla = at_menu(Rules::kVanilla);
     press(*vanilla, key::kDown);
     press(*vanilla, key::kDown);
     vanilla->step(key::kEnter);
-    CHECK(vanilla->world().title.online == 0);
+    CHECK(vanilla->world().title.page == 0);
     vanilla->step(0);  // (the game ends as the next step starts)
     CHECK(vanilla->quit());
 }
@@ -1128,5 +1150,33 @@ TEST_CASE("real data: Remaster rules: the GAME OVER letters are seen as they fal
         } else {  // (the letters, packed, from the front pool: they had no frame buffer and weren't drawn)
             CHECK(pictures.back().pixels == vanilla);
         }
+    }
+}
+
+TEST_CASE("real data: Remaster rules: Baleog's arrows are drawn in front of the hint boxes; Vanilla's behind",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    // Level 2: Baleog shoots right, past the two hint boxes beside the start. The original takes the arrow's pieces
+    // from the back pool, where the boxes' came first and are drawn in front; Remaster rules from the front pool.
+    for (const Rules rules : {Rules::kVanilla, Rules::kRemaster}) {
+        auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, rules);
+        REQUIRE(opened);
+        Session& session = **opened;
+        std::optional<int> piece;
+        for (int step = 0; step < 40 && !piece; ++step) {
+            std::uint16_t keys = step < 6 && step % 2 != 0 ? key::kF : 0;
+            keys = step == 10 ? key::kNext : (step >= 14 && step < 20 ? key::kD : keys);
+            (void)session.step(keys);
+            for (int slot = 0; slot < session.world().slots(); ++slot) {
+                if (const Entity* arrow = session.world().at(slot); arrow != nullptr && arrow->kind == kind::kArrow) {
+                    piece = arrow->sprite.first;
+                }
+            }
+        }
+        REQUIRE(piece);
+        const PieceLayout& layout = session.world().pieces.layout();
+        CHECK((rules == Rules::kRemaster ? *piece < layout.front_end : *piece >= layout.back_begin));
     }
 }

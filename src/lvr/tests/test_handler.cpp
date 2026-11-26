@@ -103,6 +103,17 @@ TEST_CASE(
     const Tick taken = hands.tick(nothing_held, *level);
     CHECK((taken.keys & bits(Action::kPause)) == 0);
     CHECK_FALSE(taken.menu_keys.quit);
+
+    // Enter (Remaster rules): the boxes' word shown chosen, kept until a step takes it; not the original's.
+    (void)hands.pressed("Return", false, false, *level);
+    hands.stepped(false, *level);
+    CHECK(hands.tick(nothing_held, *level).menu_keys.choose);
+    hands.stepped(true, *level);
+    CHECK_FALSE(hands.tick(nothing_held, *level).menu_keys.choose);
+    InputHandler original{input::original_controls(), false};
+    auto vanilla = opened(0, Rules::kVanilla);
+    (void)original.pressed("Return", false, false, *vanilla);
+    CHECK_FALSE(original.tick(nothing_held, *vanilla).menu_keys.choose);
 }
 
 TEST_CASE("handler: what a gamepad holds as the menu closes is quiet until it is let go") {

@@ -339,6 +339,13 @@ World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rule
         // their pieces from the middle pool, as the Vikings' figures, and they end up under them.)
         world.kinds.at(game_over_kind::kLetters).pool = Pool::kFront;
     }
+    if (rules == Rules::kRemaster) {
+        // Baleog's arrows fly in front of what is there (the user, 2026-11-26: behind the hint boxes, in level 2).
+        // (The original takes their pieces from the back pool, as the hint boxes', doors' and items', where what
+        // came first is drawn in front: an arrow shot later goes behind them.)
+        world.kinds.at(kind::kArrow).pool = Pool::kFront;
+        world.kinds.at(kind::kFireArrow).pool = Pool::kFront;
+    }
     world.has_hud = level.hud;
     world.cleared_cell = loaded.cleared_cell;
     world.filled_cell = loaded.filled_cell;
@@ -554,7 +561,7 @@ bool Play::menu_pass(const StepInput& input, const std::function<void()>& pictur
         moved = true;
     }
     std::optional<std::uint16_t> choice;
-    if ((host.pressed & key::kF) != 0) {
+    if ((host.pressed & key::kF) != 0 || menu_keys.choose) {
         choice = state_.menu_choice;
     } else if ((host.pressed & key::kEnter) != 0 || (!menu_keys.yes && menu_keys.no)) {
         choice = 1;

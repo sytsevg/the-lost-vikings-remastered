@@ -123,5 +123,8 @@ PadActions read_pad(const Controls& controls, const PadReading& reading, bool an
 // scancode; docs/original/input.md): the digits and the consonants as ASCII (no vowels: the passwords have none), 0x80
 // for Backspace, 0x81 for Return, Space, [ and ]; 0 for every other key. `key` is SDL's key name.
 std::uint16_t typed_character(std::string_view key) noexcept;
+// Remaster rules' own (the handler gives it; the original's table has none): Escape, which takes the title's
+// password back to its menu (the user, 2026-11-26).
+inline constexpr std::uint16_t kTypedEscape = 0x82;
 
 }  // namespace lvr::input

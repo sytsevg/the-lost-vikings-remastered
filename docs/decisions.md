@@ -298,6 +298,11 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   stop at walls only and fly on through a slope's ground; zoomed out that is seen, so they burst there.
 - **The game-over letters drop in front of the Vikings** (Remaster rules): their pieces come from the front
   pool instead of the middle one, where they end up under the Vikings' figures in the original.
+- **Arrows fly in front** (Remaster rules; the user, 2026-11-26): Baleog's arrows, fire arrows too, take their
+  pieces from the front pool. The original takes them from the back pool, where what came first is drawn in front:
+  an arrow went behind the hint boxes (level 2), the doors and the items. And Enter answers the original's pause box
+  and quit box with the word shown chosen, as F does (`MenuKeys::choose`; Return is no key of the game's under
+  Remaster rules); Escape takes the title's password back to its menu (`input::kTypedEscape`).
 - **Rewind** (built): while Backspace is held, time runs backwards at twice its speed; let go, the play goes on
   from where it is. Only in a level being played (one of the 37; not a demo, a menu, or the game-over scene),
   and never back past the level's start: what was kept is let go whenever a scene starts. A level has 10
@@ -450,8 +455,10 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   own row: none): the network's (answered at once by the transport's own thread) and the game's (an Echo answered
   by the other game's loop, once a refresh). No rewind online, and so no rewind bar (the user). Hosting and joining
   from the title's own menu only (the user: the game's main menu, not the Escape menu in a level, so going online
-  is easier; the command line's ways dropped, 2026-11-26): under Remaster rules offline it has HOST GAME and JOIN GAME between PASSWORD
-  and QUIT TO DOS (its five choices from row 12, the text layer ending at row 21; the pointer's choices further on
+  is easier; the command line's ways dropped, 2026-11-26): under Remaster rules offline it has HOST GAME, JOIN GAME
+  and OPTIONS (the menu's first page without GIVE UP LEVEL and QUIT GAME: the user, 2026-11-26) between PASSWORD
+  and QUIT TO DOS (its six choices from row 11, just under the logo, the text layer ending at row 21; a page over
+  the title covers all of them, `menu_picture`; the pointer's choices further on
   placed from as many rows further down, `Title::animate_moved`, the camera not following). Each opens its page of
   the Remaster menu over the title: a name, a port and a level's password; a name and the host's IP:PORT; typed
   into, kept in the profile (`settings.txt`). Either leads into the **lobby** (the user), over the title: who is

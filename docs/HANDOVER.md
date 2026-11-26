@@ -435,7 +435,8 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   `test_online.cpp` (a third joins at step 60 and plays Olaf; the guest leaves and another comes into his place and
   plays Baleog; every machine the same state, the host's log played again). Hosting and joining from the title
   (part 9, ADR-0012): under Remaster rules offline the title's menu has HOST GAME and JOIN GAME (`Title`, the
-  choice asked for one tick in `World::Title::online`, state version 10); the front end opens that page of the menu
+  choice asked for one tick in `World::Title::page`, state version 10, OPTIONS too since 2026-11-26:
+  `Menu::open_options`); the front end opens that page of the menu
   (`Menu::open_host`, `open_join`; lines typed into: `Menu::Waiting::kText`, SDL's text input), `play` ends with
   the wish, and `main` connects (`connect_online`: hosting at once, or a box over the title while joining, Escape
   giving up), plays the lobby over the title (the user: a lobby to wait for players in; `play(..., lobby)`,

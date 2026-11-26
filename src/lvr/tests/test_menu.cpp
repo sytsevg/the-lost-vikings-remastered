@@ -58,6 +58,14 @@ TEST_CASE("menu: the first page leads to the others, and back resumes") {
     CHECK(menu.title() == "MENU");
     CHECK(menu.chosen() == 0);  // where it was
     CHECK(menu.press(Key::kBack) == Menu::Asked::kResume);
+
+    // The title's OPTIONS: the same, without GIVE UP LEVEL and QUIT GAME, over the title.
+    Menu options{Settings{}, all_choices()};
+    options.open_options();
+    CHECK(labels(options) == std::vector<std::string>{"OPTIONS", "KEYBOARD", "GAMEPAD"});
+    CHECK(options.of_title());
+    CHECK_FALSE(menu.of_title());
+    CHECK(options.press(Key::kBack) == Menu::Asked::kResume);
 }
 
 TEST_CASE("menu: the gamepad's page binds only with a gamepad there, and says whether one is") {

@@ -29,8 +29,8 @@ std::uint16_t get16(const net::Input& input, std::size_t at) {
 
 std::uint8_t menu_bits(const MenuKeys& menu) {
     unsigned bits = 0;
-    const std::array<bool, 7> each{menu.yes,       menu.no, menu.quit, menu.effects, menu.music, menu.previous_level,
-                                   menu.next_level};
+    const std::array<bool, 8> each{
+        menu.yes, menu.no, menu.quit, menu.effects, menu.music, menu.previous_level, menu.next_level, menu.choose};
     for (std::size_t i = 0; i < each.size(); ++i) {
         bits |= each.at(i) ? 1U << i : 0U;
     }
@@ -45,7 +45,8 @@ MenuKeys menu_of(std::uint8_t bits) {
                     .effects = bit(3),
                     .music = bit(4),
                     .previous_level = bit(5),
-                    .next_level = bit(6)};
+                    .next_level = bit(6),
+                    .choose = bit(7)};
 }
 
 }  // namespace

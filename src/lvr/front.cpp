@@ -128,8 +128,12 @@ Stepped OfflinePlace::step(const Tick& tick, Ui& ui) {
                         .page = false};
         return stepped;
     }
-    if (may_go_online_ && session_->world().title.online != 0) {  // the title's HOST GAME or JOIN GAME
-        open_page(ui, session_->world().title.online == 1, {});
+    const std::uint8_t page = session_->world().title.page;
+    if (page == World::Title::kOptions) {  // the title's OPTIONS: the menu's settings, over the title
+        ui.open_menu().open_options();
+        ui.redraw();
+    } else if (may_go_online_ && page != 0) {  // its HOST GAME or JOIN GAME
+        open_page(ui, page == World::Title::kHostGame, {});
     }
     return stepped;
 }

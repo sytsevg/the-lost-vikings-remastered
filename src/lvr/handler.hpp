@@ -79,6 +79,7 @@ class InputHandler {
     bool give_up_ = false;
     bool quit_box_ = false;
     bool escaped_ = false;  // Escape pressed since the last step
+    bool choose_ = false;   // Remaster rules: Enter pressed, until a step takes it (MenuKeys::choose)
 };
 
 }  // namespace lvr

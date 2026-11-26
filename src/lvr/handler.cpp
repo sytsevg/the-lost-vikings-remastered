@@ -55,10 +55,11 @@ InputHandler::Asks InputHandler::pressed(std::string_view key, bool repeat, bool
         return Asks::kMenu;
     }
     escaped_ = escaped_ || (key == "Escape" && !repeat);
+    choose_ = choose_ || (remaster_ && !repeat && (key == "Return" || key == "Keypad Enter"));
     // A press, or the keyboard's own repeat of a held key, which reaches the original's handler as a press too.
     // Remaster's own (not repeated) go first; one they take isn't the game's.
     const input::Actions actions = key_actions(key);
-    session.key_pressed(input::typed_character(key));
+    session.key_pressed(remaster_ && key == "Escape" ? input::kTypedEscape : input::typed_character(key));
     if (!(remaster_ && !repeat && act(actions, session))) {
         keyboard_ |= input::game_bits(actions);
     }
@@ -128,7 +129,8 @@ Tick InputHandler::tick(const std::function<bool(std::string_view)>& held, Sessi
                             .effects = sound_keys_.effects,
                             .music = sound_keys_.music,
                             .previous_level = held("F5"),
-                            .next_level = held("F6")},
+                            .next_level = held("F6"),
+                            .choose = choose_},
               .pace = Pace{.across = part(Action::kLeft, Action::kRight, from_pads.walk),
                            .up_down = part(Action::kUp, Action::kDown, from_pads.climb)},
               .escaped = std::exchange(escaped_, false)};
@@ -142,7 +144,7 @@ Tick InputHandler::tick(const std::function<bool(std::string_view)>& held, Sessi
 
 void InputHandler::stepped(bool took_input, const Session& session) {
     if (took_input) {
-        give_up_ = quit_box_ = false;
+        give_up_ = quit_box_ = choose_ = false;
     }
     sound_keys_.effects = session.menu_keys().effects;
     sound_keys_.music = session.menu_keys().music;

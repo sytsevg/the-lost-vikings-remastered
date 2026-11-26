@@ -207,7 +207,8 @@ TEST_CASE("real data: giving up in the pause menu leads to the game-over scene w
     (void)step(0x1000);
     (void)step(0x0200);  // left: "yes"
     (void)step(0);
-    CHECK(step(0x8000) > 145);  // the choice taken, and the change of scene
+    play.menu_keys.choose = true;  // Enter, under Remaster rules: the word shown chosen, as F (above)
+    CHECK(step(0) > 145);          // the choice taken, and the change of scene
     CHECK(play.world.scene == scene::kGameOver);
     CHECK(
         std::ranges::none_of(play.world.game_over_scene.kept_health, [](std::uint16_t health) { return health == 0; }));

@@ -79,12 +79,16 @@ class Menu {
     // Opens on HOST GAME or JOIN GAME (the title's menu asked for it): going back from it closes the menu.
     void open_host();
     void open_join();
+    // The title's OPTIONS: the first page without GIVE UP LEVEL and QUIT TO DOS, over the title; back closes it.
+    void open_options();
     // Opens on the lobby: the host's has the password to start with and START GAME; going back leaves it.
     void open_lobby(bool hosting);
     bool in_lobby() const noexcept { return page_ == Page::kLobby; }
     // HOST GAME, JOIN GAME and the lobby: pages of the title's (a menu of their own under its logo, not laid over a
     // game going on).
-    bool of_title() const noexcept { return page_ == Page::kHost || page_ == Page::kJoin || page_ == Page::kLobby; }
+    bool of_title() const noexcept {
+        return from_title_ || page_ == Page::kHost || page_ == Page::kJoin || page_ == Page::kLobby;
+    }
     // What the lobby's game starts with, as the front end words it (NEW GAME, or a level and its password).
     void set_start(std::string start) { start_ = std::move(start); }
     const std::string& start() const noexcept { return start_; }
@@ -155,6 +159,7 @@ class Menu {
     Settings settings_;
     Choices choices_;
     Page page_ = Page::kFirst;
+    bool from_title_ = false;  // opened by the title's OPTIONS
     std::array<std::size_t, kPages> chosen_{};
     Waiting waiting_ = Waiting::kNothing;
     std::string said_;  // what the last key did, if it says something (a key that can't be bound)
