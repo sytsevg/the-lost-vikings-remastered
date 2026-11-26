@@ -31,12 +31,12 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
   same day after his play-test and its fixes):
   a module for each place (`GLOSSARY.md`: Offline, Connecting, Lobby, Online), the protocol in `src/net` tested on
   a toy game over a simulated network ("Open", "M9 restructured"). What each part is and where it lives: "Open",
-  the M9 entries. Not yet tried by the user: the lobby and the title's pages in two windows, and a game over a real
-  network.
+  the M9 entries. Tried by the user over a real network (2026-11-26): a Linux and a Windows machine over wireless,
+  the lobby, a game and back to the lobby.
 - **A Windows build** (2026-11-26, ADR-0021): cross-built in the container with llvm-mingw, one `.exe` for
   Windows 10 and later (`scripts/windows.sh`, `docs/development.md`); its unit tests and every replay pass under
-  Wine. Not yet tried on a Windows PC: the GPU window (Vulkan), the gamepad, the sound, and co-op between a Linux
-  and a Windows machine.
+  Wine. Tried on a Windows PC by the user (2026-11-26): both rules (Remaster's GPU window on Vulkan), the sound,
+  and co-op with a Linux machine over wireless. Not yet: a gamepad on Windows.
 
 ## What the Remaster rules have
 

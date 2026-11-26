@@ -224,7 +224,8 @@ publishing: its author asks not to link his download files directly.
   game's logic is in whole numbers (floating point only in what is shown, and in a stick's reading before it is a
   whole pace), so the Windows build plays as the Linux one does, and the same sources give the same build ID: the
   two play co-op together. What Wine can't show is tried on a Windows PC: the GPU window, the gamepad, the sound,
-  the firewall when hosting, and a program without a console (Wine writes its output somewhere all the same).
+  the firewall when hosting, and a program without a console (Wine writes its output somewhere all the same). The
+  user, 2026-11-26: both rules, the sound, and co-op with a Linux machine over wireless work.
 - The GPU renderer's shaders are SPIR-V only, so on Windows SDL_GPU draws with Vulkan, never Direct3D 12. DXIL
   shaders would add it, if Vulkan turns out to be missing too often.
 - SDL3_net's patch has one more change, for mingw-w64: its `read()` and `write()` for sockets collide with
