@@ -306,7 +306,7 @@ class OnlinePlace final : public Place {
     void names_to_session();
     // The menu's page of the players: each one there, his round trips to the host.
     std::vector<Menu::PlayerLine> player_lines() const;
-    // The last picture, `left` of `of` as bright.
+    // The last picture, `left` of `of` as bright (and all dark without the minimap, as the lobby that comes).
     Screen faded(int left, int of) const;
 
     std::unique_ptr<net::Connection> connection_;
@@ -319,8 +319,7 @@ class OnlinePlace final : public Place {
     Screen last_;                           // the last picture: shown again while the game waits
     bool logged_ = false;
     bool leaving_ = false;  // back to the lobby: the game fades out first (its messages left for the lobby)
-    // Rising from black (a game's start, or one joining under way once he is there): since which refresh.
-    bool rise_wanted_ = false;
+    // One joining under way rising from black once he is there: since which refresh.
     std::optional<std::uint64_t> rise_since_;
     bool faded_ = false;
 };

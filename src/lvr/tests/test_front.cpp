@@ -34,11 +34,12 @@ struct Machine {
     std::unique_ptr<Places> places;
     std::optional<Menu> kept;  // the menu of the place it shows, when open
     std::unique_ptr<Ui> ui;
-    Place* shown = nullptr;   // the place the menu is for
-    int due = 0;              // refreshes until its next step
-    Screen last;              // the last picture it showed
-    std::uint64_t turns = 0;  // its refreshes so far (the places time themselves by them)
-    bool paused = false;      // it has no turns (its machine stopped)
+    Place* shown = nullptr;                    // the place the menu is for
+    int due = 0;                               // refreshes until its next step
+    Screen last;                               // the last picture it showed
+    std::vector<Screen>* shown_all = nullptr;  // when given: every picture it shows, added to it
+    std::uint64_t turns = 0;                   // its refreshes so far (the places time themselves by them)
+    bool paused = false;                       // it has no turns (its machine stopped)
 
     Place& place() { return places->current(); }
     template <typename P>
@@ -66,6 +67,9 @@ struct Machine {
             go = stepped.go;
             if (!stepped.frames.empty()) {
                 last = stepped.frames.back();
+            }
+            if (shown_all != nullptr) {
+                shown_all->insert(shown_all->end(), stepped.frames.begin(), stepped.frames.end());
             }
         }
         places->go(go);
@@ -242,6 +246,54 @@ TEST_CASE("online stills: the lobby, the names under the portraits, the waiting 
     host.paused = true;
     REQUIRE(room.until([&] { return !guest.place().overlay().waiting.empty(); }));
     save_still(guest, coop_picture(guest.place().overlay(), guest.place().session().font()), "waiting.png");
+}
+
+TEST_CASE(
+    "real data: a game online rises from black as the original's level does, and goes dark to the lobby, the minimap "
+    "with it",
+    "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    Room room;
+    Machine& host = room.machine("host");
+    Machine& guest = room.machine("guest");
+    REQUIRE(room.until([&] { return host.title->world().scene == scene::kTitle; }));
+    host.ask(Menu::Asked::kHost);
+    guest.ask(Menu::Asked::kJoin);
+    REQUIRE(room.until([&] { return guest.at<LobbyPlace>() != nullptr && !guest.last.pixels.empty(); }));
+    const auto& password = host.title->world().passwords.at(0);
+    host.press(Menu::Key::kChoose);
+    host.type(std::string(password.begin(), password.end()));
+    REQUIRE(room.until([&] { return host.menu().menu()->start().starts_with("LEVEL 1"); }));
+    host.press(Menu::Key::kDown);
+    host.press(Menu::Key::kChoose);  // START GAME
+    // The level's start, from the lobby gone dark (the user, 2026-11-26): the original's start's tick and fade in, the
+    // start's picture rising from black, all of it (the minimap goes by Screen::bright) in step; not two seconds of
+    // black with the minimap on it, nor a rise of its own after them.
+    REQUIRE(room.until([&] { return host.at<OnlinePlace>() != nullptr; }));
+    const std::vector<Screen>& start = host.place().session().start_frames;
+    REQUIRE(start.size() == 75);
+    CHECK(start.front().bright == 0);
+    CHECK(start.front().palette == assets::Palette{});
+    CHECK(start.back().bright == 1);
+    CHECK(start.front().minimap != nullptr);
+    CHECK(std::ranges::is_sorted(start, {}, &Screen::bright));
+    REQUIRE(room.online_to(60));
+    std::vector<Screen> shown;
+    host.shown_all = &shown;
+    CHECK(room.until([&] { return shown.size() >= 3; }));
+    CHECK(std::ranges::all_of(shown, [](const Screen& picture) { return picture.bright == 1; }));
+    // Back to the lobby: the game goes dark, the minimap with it; all dark, it has none, as the lobby that comes.
+    shown.clear();
+    host.ask(Menu::Asked::kLobby);
+    REQUIRE(room.until([&] { return host.at<LobbyPlace>() != nullptr; }));
+    host.shown_all = nullptr;
+    const auto dark = std::ranges::find_if(shown, [](const Screen& picture) { return picture.bright == 0; });
+    REQUIRE(dark != shown.end());
+    CHECK(dark->minimap == nullptr);
+    CHECK(std::ranges::is_sorted(shown.begin(), dark, std::ranges::greater{}, &Screen::bright));
+    CHECK(dark - shown.begin() >= 20);  // (a moment)
 }
 
 TEST_CASE(

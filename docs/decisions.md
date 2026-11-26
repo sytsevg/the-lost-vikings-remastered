@@ -512,6 +512,10 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   joins under way comes in 16 steps on (he loads the level meanwhile, so nobody waits for him), runs the steps
   before then at once and unseen (`net::Match::run_to_arrival`, `Rollback::advance(false)`; their effects' sounds dropped, the
   music kept), and fades in (`Session::fade_in`); the pictures of the level's start as it was opened aren't shown.
+  A game started from the lobby, which has gone dark, shows of the original's level start only its tick and its
+  fade in: the start's picture rising from black, the minimap going by its brightness (`Screen::bright`; the
+  user, 2026-11-26: not two seconds of black with the minimap on it). Back to the lobby the game goes dark, the
+  minimap with it.
   Online the menu darkens the game going on under it, as offline (`Session::set_dimmed`). Those waiting in a
   Viking's line are one name above his portrait, A/B in their order (the user: two rows didn't fit). GIVE UP
   LEVEL is only on the menu of whoever drives the game (offline, or the host). When a game online ends for this machine (left, or the host gone), the game offline is back at

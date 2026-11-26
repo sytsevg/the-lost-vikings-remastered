@@ -26,6 +26,23 @@ std::optional<int> parse_number(std::string_view text) {
     }
 }
 
+// A picture `share` (0 to 1) as bright: its colours, the lights on it, and what is laid over it (the minimap goes by
+// Screen::bright), as a scene's fade has them.
+void darken(Screen& picture, float share) {
+    const auto part = [share](std::uint8_t level) {
+        return static_cast<std::uint8_t>(static_cast<float>(level) * share);
+    };
+    for (assets::Rgb& colour : picture.palette) {
+        colour = {.r = part(colour.r), .g = part(colour.g), .b = part(colour.b)};
+    }
+    for (Light& light : picture.lights) {
+        for (float& colour : light.colour) {
+            colour *= share;
+        }
+    }
+    picture.bright *= share;
+}
+
 }  // namespace
 
 Menu::Choices menu_choices(const Session& session, bool hosting, bool lobby) {
@@ -400,18 +417,30 @@ std::expected<std::unique_ptr<OnlinePlace>, std::string> OnlinePlace::open(std::
     if (started.cheat) {
         (*opened)->cheat();
     }
-    if (started.state.empty()) {  // (from the lobby; one joining under way fades in once he is there)
-        for (Screen& picture : (*opened)->start_frames) {  // its first pictures dark, the steps' rising from them
-            picture.palette.fill({});
+    if (started.state.empty()) {
+        // From the lobby, which has gone dark: of the original's level start (Session::open) only its tick and its fade
+        // in, the start's picture rising from black as the original's level does, its sound with it (the user,
+        // 2026-11-26: online a level came after two seconds of black, the minimap already there). One joining under
+        // way fades in once he is there.
+        constexpr std::size_t kTick = 4;
+        constexpr std::size_t kFadeIn = 71;
+        std::vector<Screen>& frames = (*opened)->start_frames;
+        if (frames.size() > kTick + kFadeIn) {
+            const auto dropped = static_cast<std::ptrdiff_t>(frames.size() - (kTick + kFadeIn));
+            if (std::vector<std::vector<SoundCue>>& cues = (*opened)->cues; cues.size() == frames.size()) {
+                cues.erase(cues.begin(), cues.begin() + dropped);
+            }
+            frames.erase(frames.begin(), frames.begin() + dropped);
+        }
+        for (std::size_t i = 0; i < frames.size(); ++i) {
+            const float share = i < kTick ? 0.0F : static_cast<float>(i + 1 - kTick) / static_cast<float>(kFadeIn);
+            darken(frames[i], std::min(share, 1.0F));
         }
     }
     std::println("vikings-remaster: the game starts: player {}, {} step(s) of input delay", started.player + 1,
                  started.delay);
-    const bool rises = started.state.empty();
-    std::unique_ptr<OnlinePlace> place{
+    return std::unique_ptr<OnlinePlace>{
         new OnlinePlace{std::move(connection), std::move(started), std::move(*opened), needs.logs}};
-    place->rise_wanted_ = rises;  // (one joining under way rises once he is there)
-    return place;
 }
 
 OnlinePlace::OnlinePlace(std::unique_ptr<net::Connection> connection, net::Started started,
@@ -462,9 +491,6 @@ std::vector<Menu::PlayerLine> OnlinePlace::player_lines() const {
 }
 
 Go OnlinePlace::refresh(Ui& ui) {
-    if (std::exchange(rise_wanted_, false)) {
-        rise_since_ = ui.refreshes();
-    }
     if (rise_since_) {  // the pictures made from now on as dark as half a second of refreshes from black has left
         const int left = kFadeInRefreshes - static_cast<int>(ui.refreshes() - *rise_since_);
         if (left > 0) {
@@ -613,10 +639,9 @@ std::unique_ptr<net::Connection> OnlinePlace::take_connection() {
 
 Screen OnlinePlace::faded(int left, int of) const {
     Screen picture = last_;
-    for (assets::Rgb& colour : picture.palette) {
-        colour = {.r = static_cast<std::uint8_t>(colour.r * left / of),
-                  .g = static_cast<std::uint8_t>(colour.g * left / of),
-                  .b = static_cast<std::uint8_t>(colour.b * left / of)};
+    darken(picture, static_cast<float>(left) / static_cast<float>(of));
+    if (left == 0) {
+        picture.minimap.reset();  // (all dark: as what comes is, the lobby, which has none)
     }
     return picture;
 }
