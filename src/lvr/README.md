@@ -43,6 +43,12 @@ Target `lvr::engine`, plain C++ on `lvr::assets`.
 - `inventory.*`: the inventory screen: what the Vikings carry looked through, handed over, thrown away.
 - `session.*`, `main.cpp`: the engine as a game to play (the scenes one after another, a picture and the sound
   for every refresh), and `vikings-remaster`, the front end with its window and devices.
+- `front.*`: the game's places (`GLOSSARY.md`; not `places.*` below): Offline, Connecting, Lobby, Online, and the
+  moves between them (`Places`); the window's loop in `main.cpp` plays one at a time.
+- `handler.*`: `InputHandler`, the player's input between steps as the window gives it: the keyboard word as the
+  original's handler keeps it, the gamepads, a step's input.
+- `coop.*`: co-op online's side of the game (ADR-0012): a step's input as 16 bytes a player, the session as
+  rollback's game (`CoopGame`), a game online's log played again.
 - `places.*`: where each world keeps the animation programs that the kinds name by their place in their home
   database; paired up as a level is loaded.
 

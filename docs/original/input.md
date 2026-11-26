@@ -75,9 +75,11 @@ reading at or below `86D2` sets `0x100`, at or above `86D4` `0x200`; y at or bel
 the reading (`79FB`, a PIT count) grows to the right and down; if it does, the axes would be the arrows' mirror
 image, so it probably counts the other way. Not checked in DOSBox (the control channel has no joystick).
 
-**In the game** (`src/input/input.*`, the front end): the default keys above; `--keys FILE` rebinds them, a line
-per key: `KEY NAME = action[, action]` (SDL's key names; actions `right`, `left`, `up`, `down`, `previous-viking`,
-`next-viking`, `use-item`, `act`, `ability-d`, `ability-f`, `pause`, `inventory`, `none`). A gamepad works as the
+**In the game** (`src/input/input.*`, the front end; the keyboard word kept as the original's handler keeps it by
+`InputHandler`, `src/lvr/handler.*`): under Vanilla rules the default keys above and only those (the keys file,
+`--keys`, is gone, 2026-11-26); under Remaster rules the player's, changed in the menu and kept in the profile
+(actions `right`, `left`, `up`, `down`, `previous-viking`, `next-viking`, `use-item`, `act`, `ability-d`,
+`ability-f`, `pause`, `inventory`, `none`, and Remaster's own). A gamepad works as the
 original's joystick: A/B/X/Y (south, east, west, north) are buttons 1–4, the d-pad or the left stick (past half
 way) the arrows, and beyond the joystick the shoulders switch Vikings, Start pauses and Back opens the inventory.
 The keyboard's and the gamepad's bits are or-ed into the word as the original or-s the joystick's; during a demo

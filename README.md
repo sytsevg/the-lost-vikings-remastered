@@ -101,12 +101,12 @@ of their own. Everyone needs the same build and the same game files, and the hos
 LAN, a forwarded port, or a VPN such as Tailscale). Under Remaster rules the title's menu has HOST GAME (a name, a
 port, a level's password, or none for a new game) and JOIN GAME (a name, the host's IP:PORT). Everyone waits in the
 lobby until the host starts the game; the host can bring everyone back there from the game, to start another.
-Who comes later joins the game while it goes on. Or from the command line:
+Who comes later joins the game while it goes on. To try it on one machine, a second window with a profile of its
+own:
 
 ```sh
-./build/release/bin/vikings-remaster --rules remaster   # then HOST GAME or JOIN GAME in the title's menu
-./build/release/bin/vikings-remaster --host 47230 --players 2 --name erik   # waits for the others, then starts
-./build/release/bin/vikings-remaster --join 192.168.1.10:47230 --name baleog
+./build/release/bin/vikings-remaster --rules remaster   # then HOST GAME in the title's menu
+./build/release/bin/vikings-remaster --rules remaster --profile build/release/bin/profiles-guest   # JOIN GAME, 127.0.0.1
 ```
 
 Everything else about building, the checks and the code style is in

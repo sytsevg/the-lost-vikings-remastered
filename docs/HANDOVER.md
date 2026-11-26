@@ -27,8 +27,11 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
   a level's password, or none for a new game from the intro) until the host starts it after a countdown; the host
   can bring everyone back there for another; who comes later joins the game under way. The game's messages go by
   UDP and TCP both, numbered, the newest taken. Reviewed by an ultrareview of its code (ten findings, all fixed).
-  What each part is and where it lives: "Open", the M9 entries. Not yet tried by the user: the lobby and the
-  title's pages in two windows, and a game over a real network.
+  Restructured after an architecture review with the user (2026-11-26, on the branch `m9-places`, not yet merged):
+  a module for each place (`GLOSSARY.md`: Offline, Connecting, Lobby, Online), the protocol in `src/net` tested on
+  a toy game over a simulated network ("Open", "M9 restructured"). What each part is and where it lives: "Open",
+  the M9 entries. Not yet tried by the user: the lobby and the title's pages in two windows, and a game over a real
+  network.
 
 ## What the Remaster rules have
 
@@ -116,11 +119,13 @@ were dropped by the user, 2026-11-25). The screen's look is built ("Screen look"
 The state at the end of 2026-11-25: M8 is done (the user). What is next, what the user still has to judge on the
 host, and what is open:
 
-- **Next (2026-11-26): the user tries M9** in two windows (`vikings-remaster --rules remaster`, and a second with
-  `--profile build/release/bin/profiles-guest`: HOST GAME, JOIN GAME at 127.0.0.1), then over a real network; what
-  he finds is fixed before anything else. Then the tests are to be cut back a lot (the user: "WAY too many": a
-  proposal first, "Open"). Then M10, the extra sound effects (footsteps by surface, the bow, Olaf's shield, an
-  electric buzz).
+- **Next (2026-11-26): the user tries M9 as restructured** (the branch `m9-places`) in two windows
+  (`vikings-remaster --rules remaster`, and a second with `--profile build/release/bin/profiles-guest`: HOST GAME,
+  JOIN GAME at 127.0.0.1), then over a real network, and Vanilla rules too (its keys now go through
+  `InputHandler`); what he finds is fixed before anything else. Then `m9-places` merged into main (the user's
+  word). Then the tests are to be cut back a lot (the user: "WAY too many": a proposal first, "Open"; the three
+  copies of the protocol and the loopback tests are gone already). Then M10, the extra sound effects (footsteps by
+  surface, the bow, Olaf's shield, an electric buzz).
 - **The Modern sound's effects placed by position (built and checked 2026-11-25; being heard on the host):**
   ADR-0015. To judge by ear: how far to the sides the view's edges are (`kEdge`, 48 of 63, in `Session::placed`)
   and how fast an effect fades outside the view (silent half a view away). The fire jets' roar, one sound for every
@@ -312,6 +317,33 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   per entity under Remaster rules): to be measured before anything is made flatter (ADR-0012). Written out, the
   unused sprite pieces are a count (state version 9), and what a player joining under way is sent has numbers of
   variable length (ADR-0020).
+- **M9 restructured** (2026-11-26, the branch `m9-places`; the user, after an architecture review:
+  `gamedata/previews/architecture/`; the words in `GLOSSARY.md`). Four commits, each checked (check.sh; the goldens
+  and `lv-replay --rollback 8` after the second and at the end):
+  - The places, `src/lvr/front.*`: `OfflinePlace` (the game alone; the only place under Vanilla rules),
+    `ConnectingPlace`, `LobbyPlace`, `OnlinePlace`, each behind `Place` (its session, the menu's choices, `begin`,
+    `refresh` every refresh, `step` when the pictures are used up, `asked`, `overlay`, `leave`); every move in
+    `Places::go` (the connection handed from the lobby to the game and back, unread messages with it). The window's
+    loop is `run(Window&, Place&)` in `main.cpp`, the menu a place reaches through `Ui` (`HeadlessUi`: none).
+  - The window's input, `src/lvr/handler.*` (`InputHandler`): the keyboard word as the original's handler keeps it,
+    the gamepads, Remaster's own keys, the menu's GIVE UP and QUIT kept until a step takes them, a step's input
+    (`Tick`); driven by the window, `--dump` (a held key repeating, a tapped one let go) and `test_handler.cpp`.
+  - The protocol, `src/net`: `Connection` (who is who, names, round trips, the game's number, what came a message at
+    a time), `Lobby` (`host_lobby`, `guest_lobby`), `Match` (one game online, the host's duties apart), knowing the
+    game only as `net::Game` (with `state_bytes` and `here` for one joining under way) and the network only as
+    `net::Transport` (`SdlTransport`, or `SimulatedNetwork`'s for tests: seeded, the test's clock, a reliable message
+    may be lost and held back as over TCP). The message `Lobby` is `LobbyStatus` (the bytes unchanged).
+  - Tests: the protocol on a toy game (`src/net/tests/toy.hpp`, `table.hpp`, `test_lobby.cpp`, `test_match.cpp`,
+    each checked against the fault it is for), the real game in `test_coop.cpp` (joining under way) and
+    `test_front.cpp` (a walk through every move; `lvr_tests "[scratch]"`, hidden, writes stills of the lobby, the
+    names under the portraits and the waiting box into `gamedata/previews/online/`).
+  - Gone: `NetGame` (`src/lvr/online.*`), `connect_online`, `open_game`, `play()`'s modes and `main()`'s loops, the
+    command line's `--host`, `--join`, `--players`, `--name` and `--delay` (with the terminal lobby and two `--dump`
+    processes online), `--keys` (Vanilla rules play the original's keys only), `test_online.cpp` and the rollback
+    test's own network. The entries below are as M9 was built: their names of those are of before.
+  - Fixed on the way, found by the new tests (the user's yes): the host said who is there (`net::Decided`) only when
+    it changed; its bundle lost and overtaken by the next was never taken (the fast way takes the newest only), and
+    a guest waited for it for good, the host for him. It is said every pass now.
 - **Players in the world** (M9's first part in code, 2026-11-25): a world has up to three players
   (`WorldState::players`, `Player`), each with his keys, his stick's pace, his Viking and his camera; a step is given
   each one's input (`StepInput`). A Viking goes by the keys of the player who plays him, or of the last who did

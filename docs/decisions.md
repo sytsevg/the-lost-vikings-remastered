@@ -364,7 +364,8 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   original's pause box). Gamepads through
   SDL's gamepad API, which maps every pad it knows (XInput, PlayStation, Switch, ...) onto one layout; several
   are read as one, as the original or-s its joystick into the keyboard. Vanilla rules don't change: the
-  original's keys and joystick, and a keys file (`--keys`) if the player wants others.
+  original's keys and joystick, and only those (the user, 2026-11-26: the keys file, `--keys`, is gone; the
+  controls are Remaster rules' menu's).
 - **Walking as fast as a stick is pushed** (built, 2026-11-25; the user's): a stick bound to left or right walks
   the Viking from a little past its middle, as fast as it is pushed: his top speed and his walk's animation in
   16ths (`World::pace`, part of the step's input like the keys), his walk's animation at the square root of
@@ -417,7 +418,8 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   10 s is gone though its socket wasn't closed. The host takes a player's inputs and hashes from his own
   connection only. Who is there when is the host's to decide: the others count a place away only as far as he has
   said it is decided (`net::Decided`, before his own next step, sent both ways with the comings and goings it
-  covers), so word of an arrival coming late stalls a moment, never puts a machine out of step. Through the host
+  covers, every pass: the fast way takes only the newest, so one said only when it changed could be lost for good),
+  so word of an arrival coming late stalls a moment, never puts a machine out of step. Through the host
   at first, so only the host needs a port that can be reached; direct, no relay server.
 - **Only the host drives the game** (the user): the title, the passwords, the scenes, the pause box and giving up,
   game over, the cheat's keys. The others play their Viking.
@@ -444,8 +446,8 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   divider (the user: not a page of its own), as the host measures them and so the same on every screen (the host's
   own row: none): the network's (answered at once by the transport's own thread) and the game's (an Echo answered
   by the other game's loop, once a refresh). No rewind online, and so no rewind bar (the user). Hosting and joining
-  from the command line, and from the title's own menu (the user: the game's main menu, not the Escape menu in a
-  level, so going online is easier): under Remaster rules offline it has HOST GAME and JOIN GAME between PASSWORD
+  from the title's own menu only (the user: the game's main menu, not the Escape menu in a level, so going online
+  is easier; the command line's ways dropped, 2026-11-26): under Remaster rules offline it has HOST GAME and JOIN GAME between PASSWORD
   and QUIT TO DOS (its five choices from row 12, the text layer ending at row 21; the pointer's choices further on
   placed from as many rows further down, `Title::animate_moved`, the camera not following). Each opens its page of
   the Remaster menu over the title: a name, a port and a level's password; a name and the host's IP:PORT; typed
@@ -466,7 +468,7 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   (`World::watch_recording`, `followed_by`; the user: everyone watches the Viking the intro plays). Under Remaster
   rules a scene that plays by itself ends on an action key, Enter or Escape only, not any key (the user). One who
   joins under way comes in 16 steps on (he loads the level meanwhile, so nobody waits for him), runs the steps
-  before then at once and unseen (`NetGame::step`, `Rollback::advance(false)`; their effects' sounds dropped, the
+  before then at once and unseen (`net::Match::run_to_arrival`, `Rollback::advance(false)`; their effects' sounds dropped, the
   music kept), and fades in (`Session::fade_in`); the pictures of the level's start as it was opened aren't shown.
   Online the menu darkens the game going on under it, as offline (`Session::set_dimmed`). Those waiting in a
   Viking's line are one name above his portrait, A/B in their order (the user: two rows didn't fit). GIVE UP
@@ -483,3 +485,13 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   living one. One who left comes back the same way, into a free place; his Viking may be someone else's by then.
   His own machine starts at the state's step (`net::Settings::first_step`), so its log can't be played from the
   start: the host's can.
+- **How it is built** (the user, 2026-11-26, after an architecture review: the code had cut the flow by layer, each
+  layer keeping its own copy of where the player was). A module for each place (`GLOSSARY.md`: Offline,
+  Connecting, Lobby, Online; `src/lvr/front.*`), the moves between them in one spot (`Places`), the window's loop
+  playing one place at a time and its input a module of its own (`src/lvr/handler.*`). The protocol in `src/net`
+  (`Connection`, `Lobby` for the host and for a guest, `Match`), knowing the game only as `net::Game` and the
+  network only as `net::Transport`, each with two adapters: the real game and a toy game, SDL3_net and a simulated
+  network; so the protocol is tested on the toy game without sockets or the game's files, and the real game's
+  online tests are few (a walk through every move, joining under way). The replays don't go through the window's
+  loop: they hold what the engine reads, and check the engine against the original; the loop's input is tested on
+  its own.
