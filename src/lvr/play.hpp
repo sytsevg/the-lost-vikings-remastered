@@ -114,6 +114,13 @@ class Play {
         bool said = false;
         scene_loaded = false;
         take(input);
+        // Remaster rules: what the menu asks of the original's boxes (GIVE UP LEVEL: the pause key; QUIT GAME) isn't
+        // held up by a text waiting for its key: it stops waiting, and the box opens (what is still to be said comes
+        // after it).
+        if (world.rules == Rules::kRemaster && world.waiting_for_key && world.has_vikings &&
+            (menu_keys.quit || (input.players.at(0).keys & key::kEnter) != 0)) {
+            world.waiting_for_key = false;
+        }
         if (world.waiting_for_key) {
             world.read_keys(input);
             if ((world.host().pressed & key::kAction) == 0) {
@@ -152,7 +159,7 @@ class Play {
                 }
                 // Remaster rules: the quit box opens at once, as the pause box does (the menu's QUIT GAME goes
                 // straight into it, the picture dark throughout); the original opens it after the tick (below).
-                if (world.rules == Rules::kRemaster && menu_keys.quit && world.lines.empty() && !state_.playback &&
+                if (world.rules == Rules::kRemaster && menu_keys.quit && !state_.playback &&
                     !loaded_->level.quits_at_once) {
                     open_menu(true);
                     picture();

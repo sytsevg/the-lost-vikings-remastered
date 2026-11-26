@@ -377,7 +377,9 @@ struct Window {
 Go run(Window& in, Place& place) {
     using input::Action;
     using input::bit;
-    const auto failed = [] { return Go{.to = Go::To::kDone, .why = {}, .failed = true, .host = false, .level = 0}; };
+    const auto failed = [] {
+        return Go{.to = Go::To::kDone, .why = {}, .failed = true, .host = false, .level = 0, .page = false};
+    };
     Session& session = place.session();
     SDL_Window* window = in.window;
     GpuRenderer* gpu = in.gpu;
@@ -633,7 +635,7 @@ Go run(Window& in, Place& place) {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
                 running = false;
-                go = Go{.to = Go::To::kDone, .why = {}, .failed = false, .host = false, .level = 0};
+                go = Go{.to = Go::To::kDone, .why = {}, .failed = false, .host = false, .level = 0, .page = false};
             } else if (event.type == SDL_EVENT_GAMEPAD_ADDED || event.type == SDL_EVENT_GAMEPAD_REMOVED) {
                 if (event.type == SDL_EVENT_GAMEPAD_REMOVED) {
                     std::erase_if(pads, [&event](SDL_Gamepad* pad) {
@@ -1088,7 +1090,7 @@ int main(int argc, char* argv[]) try {
     while (!places.done()) {
         const Go go = run(shown, places.current());
         places.go(go.to == Go::To::kStay
-                      ? Go{.to = Go::To::kDone, .why = {}, .failed = false, .host = false, .level = 0}
+                      ? Go{.to = Go::To::kDone, .why = {}, .failed = false, .host = false, .level = 0, .page = false}
                       : go);
     }
     const int status = places.failed() ? EXIT_FAILURE : EXIT_SUCCESS;

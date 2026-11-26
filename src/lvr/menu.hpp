@@ -74,6 +74,8 @@ class Menu {
     void tell(std::string said) { said_ = std::move(said); }
     // JOIN GAME's JOIN under way (the connection being made): a mark turning beside it, at this phase; none: not.
     void set_joining(std::optional<int> phase) { joining_ = phase; }
+    // Or what it came to (it couldn't be made: why), in the mark's place; empty: nothing.
+    void set_join_said(std::string said) { join_said_ = std::move(said); }
     // Opens on HOST GAME or JOIN GAME (the title's menu asked for it): going back from it closes the menu.
     void open_host();
     void open_join();
@@ -162,6 +164,7 @@ class Menu {
     int level_ = -1;
     bool lobby_host_ = false;
     std::optional<int> joining_;
+    std::string join_said_;
     std::string start_;
     int countdown_ = 0;
     std::string title_;  // (a title made of the countdown, for title())

@@ -1054,3 +1054,26 @@ TEST_CASE("real data: Remaster rules' title, offline, has HOST GAME and JOIN GAM
     vanilla->step(0);  // (the game ends as the next step starts)
     CHECK(vanilla->quit());
 }
+
+TEST_CASE("real data: Remaster rules: the menu's QUIT GAME isn't held up by a text waiting for its key",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    auto opened = Session::open(LVR_ORIGINAL_DIR, 0, {}, Rules::kRemaster);
+    REQUIRE(opened);
+    Session& session = **opened;
+    for (int step = 0; step < 200 && !session.waiting_for_key(); ++step) {
+        (void)session.step(0);
+    }
+    REQUIRE(session.waiting_for_key());  // (the level's opening lines)
+    Play::MenuKeys quit;
+    quit.quit = true;
+    (void)session.step(0, quit);  // the quit box, the text put away
+    Play::MenuKeys yes;
+    yes.yes = true;
+    for (int step = 0; step < 20 && !session.quit(); ++step) {
+        (void)session.step(0, yes);
+    }
+    CHECK(session.quit());
+}

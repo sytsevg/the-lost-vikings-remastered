@@ -489,8 +489,9 @@ void Play::scene_sound() {
 }
 
 bool Play::pause_wanted() const noexcept {
-    return world.has_vikings && !leaving() && (world.host().pressed & key::kEnter) != 0 && world.lines.empty() &&
-           !world.host().inventory.open;
+    // (Under Remaster rules what is being said doesn't hold up the menu's GIVE UP LEVEL: it goes on after the box.)
+    return world.has_vikings && !leaving() && (world.host().pressed & key::kEnter) != 0 &&
+           (world.lines.empty() || world.rules == Rules::kRemaster) && !world.host().inventory.open;
 }
 
 void Play::menu_text(int number, int column) {

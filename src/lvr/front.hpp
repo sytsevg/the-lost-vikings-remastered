@@ -42,6 +42,7 @@ struct Go {
     bool failed = false;  // the game ended with an error (the program's status)
     bool host = false;    // from Offline to the Lobby: hosting; and the level its password named (-1: a new game)
     int level = 0;
+    bool page = false;  // to Offline: back on the title's page it went from (HOST GAME or JOIN GAME), as it was
 };
 
 // A step's input as the window's loop gathered it: the keyboard word and the gamepads' (with what the menu asked
@@ -152,7 +153,8 @@ class OfflinePlace final : public Place {
 
     Session& session() override { return *session_; }
     Menu::Choices choices() override { return menu_choices(*session_); }
-    // Back from a game online that ended for a reason not the player's wish: its page (HOST or JOIN) says why.
+    // Back from a game online that ended for a reason not the player's wish, or a join that failed: its page (HOST or
+    // JOIN) open again (saying why, if `why` isn't empty).
     void tell(bool host, std::string why);
     void begin(Ui& ui) override;
     Stepped step(const Tick& tick, Ui& ui) override;
@@ -204,7 +206,9 @@ class ConnectingPlace final : public Place {
     std::unique_ptr<net::Connection> connection_;
     std::unique_ptr<net::GuestLobby> lobby_;
     std::optional<net::Started> started_;
-    std::uint32_t began_ = 0;  // when the connection was made (the connection's clock)
+    std::uint32_t began_ = 0;            // when the connection was made (the connection's clock)
+    std::optional<std::string> failed_;  // it couldn't be made: why, as the page says it
+    std::optional<int> failed_said_at_;  // the refresh it began to say so
     // The connection being made: its thread, what it came to, and the word to give up.
     std::thread joining_;
     std::mutex joined_lock_;
@@ -318,7 +322,7 @@ class Places {
 
   private:
     net::Identity identity() const;  // (the name the settings' now)
-    void offline(bool host, const std::string& why);
+    void offline(bool host, const std::string& why, bool page = false);
     void host(int level);
     void online(std::unique_ptr<net::Connection> connection, const net::Started& started);
     // Into a place online, out of the one it was (what it hands on taken already).

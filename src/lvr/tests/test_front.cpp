@@ -299,3 +299,32 @@ TEST_CASE(
         CHECK(page->of_title());
     }
 }
+
+TEST_CASE(
+    "real data: a join that fails: the mark turns two seconds, why beside JOIN three, then JOIN GAME's page again",
+    "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    Room room;
+    Machine& guest = room.machine("guest");  // (nobody hosts)
+    guest.ask(Menu::Asked::kJoin);
+    const auto join_line = [&] {
+        const Menu* page = guest.menu().menu();
+        REQUIRE(page != nullptr);
+        const auto lines = page->lines();
+        const auto join = std::ranges::find(lines, std::string{"JOIN"}, &Menu::Line::label);
+        REQUIRE(join != lines.end());
+        return *join;
+    };
+    const std::uint32_t began = room.network.now();
+    const auto after = [&](std::uint32_t ms) { return room.until([&] { return room.network.now() >= began + ms; }); };
+    REQUIRE(after(1000));  // a second: still turning
+    CHECK(guest.at<ConnectingPlace>() != nullptr);
+    CHECK(join_line().turning.has_value());
+    REQUIRE(after(3000));  // three seconds: why
+    CHECK(join_line().value == "NO GAME THERE");
+    REQUIRE(room.until([&] { return guest.at<OfflinePlace>() != nullptr; }));
+    CHECK(room.network.now() >= began + 5000);
+    CHECK(join_line().value.empty());  // JOIN GAME's page again, to try once more
+}

@@ -120,8 +120,12 @@ Stepped OfflinePlace::step(const Tick& tick, Ui& ui) {
         if (!session_->error().empty()) {
             std::println(stderr, "vikings-remaster: {}", session_->error());
         }
-        stepped.go =
-            Go{.to = Go::To::kDone, .why = {}, .failed = !session_->error().empty(), .host = false, .level = 0};
+        stepped.go = Go{.to = Go::To::kDone,
+                        .why = {},
+                        .failed = !session_->error().empty(),
+                        .host = false,
+                        .level = 0,
+                        .page = false};
         return stepped;
     }
     if (may_go_online_ && session_->world().title.online != 0) {  // the title's HOST GAME or JOIN GAME
@@ -138,7 +142,8 @@ Place::Answer OfflinePlace::asked(Menu::Asked asked, Menu& menu) {
                          .why = {},
                          .failed = false,
                          .host = host,
-                         .level = menu.level()}};
+                         .level = menu.level(),
+                         .page = false}};
     }
     return {};
 }
@@ -165,23 +170,44 @@ void ConnectingPlace::begin(Ui& ui) {
 Place::Answer ConnectingPlace::asked(Menu::Asked asked, Menu& /*menu*/) {
     if (asked == Menu::Asked::kResume) {  // BACK, or Escape: given up, the title as it was
         return {.handled = false,
-                .go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0}};
+                .go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0, .page = false}};
     }
     return {.handled = true, .go = {}};  // (JOIN again, or a line typed into: it is under way already)
 }
 
 Go ConnectingPlace::refresh(Ui& ui) {
+    constexpr int kTurnEvery = 6;       // refreshes a phase of the turning mark
+    constexpr int kLeastTurning = 120;  // a failure is said no sooner than two seconds in, the mark turning till then
+    constexpr int kSaidFor = 180;       // and what it was beside JOIN for three seconds; then the page as it was
     const std::string where = std::format("{}:{}", address_, port_);
-    const auto back = [](std::string why) {
-        return Go{.to = Go::To::kOffline, .why = std::move(why), .failed = false, .host = false, .level = 0};
-    };
-    constexpr int kTurnEvery = 6;  // refreshes a phase of the turning mark
-    if (Menu* menu = ui.menu(); menu != nullptr && refreshes_ % kTurnEvery == 0) {
+    Menu* menu = ui.menu();
+    ++refreshes_;
+    if (failed_) {
+        if (!failed_said_at_ && refreshes_ >= kLeastTurning && menu != nullptr) {
+            failed_said_at_ = refreshes_;
+            menu->set_joining(std::nullopt);
+            menu->set_join_said(*failed_);
+            ui.redraw();
+        }
+        if (failed_said_at_ && refreshes_ - *failed_said_at_ >= kSaidFor) {
+            return Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0, .page = true};
+        }
+    }
+    if (menu != nullptr && !failed_said_at_ && refreshes_ % kTurnEvery == 0) {
         menu->set_joining(refreshes_ / kTurnEvery % 4);
         ui.redraw();
     }
+    if (failed_) {
+        return {};
+    }
+    const auto fail = [&](std::string_view why, std::string_view shown) {
+        std::println(stderr, "vikings-remaster: {}", why);
+        failed_ = said(shown);
+        connection_.reset();  // (the host told this one goes: a place in his lobby given back)
+        lobby_.reset();
+        return Go{};
+    };
     if (connection_ == nullptr) {
-        ++refreshes_;
         if (!joining_.joinable()) {  // the connection made on a thread of its own: the page goes on meanwhile
             joining_ = std::thread{[this] {
                 auto joined = join_(address_, port_, cancelled_);
@@ -198,8 +224,7 @@ Go ConnectingPlace::refresh(Ui& ui) {
             return {};  // (still being made)
         }
         if (!*joined) {
-            std::println(stderr, "vikings-remaster: {}", joined->error());
-            return back(said(std::format("NO GAME AT {}", where)));
+            return fail(joined->error(), "NO GAME THERE");
         }
         connection_ = std::make_unique<net::Connection>(std::move(**joined), identity_);
         lobby_ = std::make_unique<net::GuestLobby>(*connection_, false);
@@ -207,23 +232,27 @@ Go ConnectingPlace::refresh(Ui& ui) {
     }
     auto polled = lobby_->poll();
     if (!polled) {
-        std::println(stderr, "vikings-remaster: {}", polled.error());
-        return back(said(polled.error()));
+        const std::string& why = polled.error();  // (turned away, or the host gone: in words that fit beside JOIN)
+        const std::string_view shown = why.contains("version")      ? "ANOTHER VERSION"
+                                       : why.contains("build")      ? "ANOTHER BUILD"
+                                       : why.contains("game files") ? "OTHER GAME FILES"
+                                       : why.contains("full")       ? "THE GAME IS FULL"
+                                                                    : "THE HOST IS GONE";
+        return fail(why, shown);
     }
     if (*polled) {  // the game is under way: into it
         started_ = **polled;
         std::println("vikings-remaster: joined {}", where);
-        return Go{.to = Go::To::kOnline, .why = {}, .failed = false, .host = false, .level = 0};
+        return Go{.to = Go::To::kOnline, .why = {}, .failed = false, .host = false, .level = 0, .page = false};
     }
     if (lobby_->welcomed()) {
         std::println("vikings-remaster: joined {}", where);
-        return Go{.to = Go::To::kLobby, .why = {}, .failed = false, .host = false, .level = 0};
+        return Go{.to = Go::To::kLobby, .why = {}, .failed = false, .host = false, .level = 0, .page = false};
     }
     constexpr std::uint32_t kPatienceMs = 10000;
     if (connection_->now_ms() - began_ > kPatienceMs) {
-        return back(said(std::format("NO ANSWER FROM {}", where)));
+        return fail(std::format("no answer from {}", where), "NO ANSWER");
     }
-    ++refreshes_;
     return {};
 }
 
@@ -233,7 +262,7 @@ Stepped ConnectingPlace::step(const Tick& tick, Ui& /*ui*/) {
     stepped.cues.assign(stepped.frames.size(), {});
     (void)std::exchange(offline_->cues, {});
     if (tick.escaped) {  // given up: the title as it was
-        stepped.go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0};
+        stepped.go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0, .page = false};
     }
     return stepped;
 }
@@ -257,11 +286,16 @@ Go LobbyPlace::refresh(Ui& ui) {
     auto polled = host_ != nullptr ? host_->poll() : guest_->poll();
     if (!polled) {
         std::println(stderr, "vikings-remaster: {}", polled.error());
-        return Go{.to = Go::To::kOffline, .why = said(polled.error()), .failed = false, .host = false, .level = 0};
+        return Go{.to = Go::To::kOffline,
+                  .why = said(polled.error()),
+                  .failed = false,
+                  .host = false,
+                  .level = 0,
+                  .page = false};
     }
     if (*polled) {
         started_ = **polled;
-        return Go{.to = Go::To::kOnline, .why = {}, .failed = false, .host = false, .level = 0};
+        return Go{.to = Go::To::kOnline, .why = {}, .failed = false, .host = false, .level = 0, .page = false};
     }
     if (Menu* menu = ui.menu(); menu != nullptr && menu->in_lobby()) {
         if (const std::optional<int> level = menu->level_typed(); level && host_ != nullptr) {
@@ -307,8 +341,9 @@ Place::Answer LobbyPlace::asked(Menu::Asked asked, Menu& menu) {
             }
             return {.handled = true, .go = {}};
         case Menu::Asked::kLeave:  // (the connection dropped: the title again)
-            return {.handled = false,
-                    .go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0}};
+            return {
+                .handled = false,
+                .go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0, .page = false}};
         default:
             return {};
     }
@@ -334,8 +369,11 @@ std::expected<std::unique_ptr<OnlinePlace>, std::string> OnlinePlace::open(std::
     if (started.cheat) {
         (*opened)->cheat();
     }
-    if (started.state.empty()) {
-        (*opened)->fade_in();  // (from the lobby; one joining under way fades in once he is there)
+    if (started.state.empty()) {  // (from the lobby; one joining under way fades in once he is there)
+        (*opened)->fade_in();
+        for (Screen& picture : (*opened)->start_frames) {  // its first pictures dark, the steps' rising from them
+            picture.palette.fill({});
+        }
     }
     std::println("vikings-remaster: the game starts: player {}, {} step(s) of input delay", started.player + 1,
                  started.delay);
@@ -400,7 +438,7 @@ Go OnlinePlace::refresh(Ui& ui) {
     if (!polled) {
         const std::string why = logged(polled.error());
         std::println(stderr, "vikings-remaster: {}", why);
-        return Go{.to = Go::To::kOffline, .why = said(why), .failed = false, .host = false, .level = 0};
+        return Go{.to = Go::To::kOffline, .why = said(why), .failed = false, .host = false, .level = 0, .page = false};
     }
     names_to_session();
     if (*polled == net::Match::Polled::kBack) {  // the host: back to the lobby, once the game has faded out
@@ -422,7 +460,7 @@ Stepped OnlinePlace::step(const Tick& tick, Ui& ui) {
         constexpr int kFadeOut = 30;
         stepped.took_input = false;
         if (std::exchange(faded_, true)) {
-            stepped.go = Go{.to = Go::To::kLobby, .why = {}, .failed = false, .host = false, .level = 0};
+            stepped.go = Go{.to = Go::To::kLobby, .why = {}, .failed = false, .host = false, .level = 0, .page = false};
             stepped.frames = {faded(0, kFadeOut)};
             stepped.cues = {{}};
             return stepped;
@@ -435,7 +473,7 @@ Stepped OnlinePlace::step(const Tick& tick, Ui& ui) {
     }
     const bool in_menu = ui.menu() != nullptr;
     if (!connection_->hosting() && tick.menu_keys.quit) {  // a guest's F10 or Alt+X: he leaves the game
-        stepped.go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0};
+        stepped.go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0, .page = false};
         return stepped;
     }
     // This machine's input when it can be given (in the menu: nothing held, the game goes on), and the next step
@@ -461,7 +499,8 @@ Stepped OnlinePlace::step(const Tick& tick, Ui& ui) {
     if (auto flushed = match_.flush(); !flushed) {  // (this machine's input on its way at once)
         const std::string why = logged(flushed.error());
         std::println(stderr, "vikings-remaster: {}", why);
-        stepped.go = Go{.to = Go::To::kOffline, .why = said(why), .failed = false, .host = false, .level = 0};
+        stepped.go =
+            Go{.to = Go::To::kOffline, .why = said(why), .failed = false, .host = false, .level = 0, .page = false};
     }
     if (ran) {
         stepped.frames = game_.take_pictures();
@@ -486,7 +525,8 @@ Stepped OnlinePlace::step(const Tick& tick, Ui& ui) {
                         .why = why,
                         .failed = false,
                         .host = false,
-                        .level = 0};
+                        .level = 0,
+                        .page = false};
     }
     return stepped;
 }
@@ -494,7 +534,7 @@ Stepped OnlinePlace::step(const Tick& tick, Ui& ui) {
 Place::Answer OnlinePlace::asked(Menu::Asked asked, Menu& /*menu*/) {
     if (asked == Menu::Asked::kQuit && !connection_->hosting()) {  // a guest quitting leaves the game
         return {.handled = false,
-                .go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0}};
+                .go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0, .page = false}};
     }
     if (asked == Menu::Asked::kLobby && connection_->hosting()) {  // the host: everyone back to the lobby, told now
         match_.back_to_lobby();
@@ -551,7 +591,7 @@ void Places::go(const Go& go) {
             done_ = true;
             return;
         case Go::To::kOffline:
-            offline(hosting_, go.why);
+            offline(hosting_, go.why, go.page);
             return;
         case Go::To::kConnecting:  // JOIN GAME
             hosting_ = false;
@@ -596,12 +636,12 @@ net::Identity Places::identity() const {
     return identity;
 }
 
-void Places::offline(bool host, const std::string& why) {
+void Places::offline(bool host, const std::string& why, bool page) {
     current_ = offline_;
     connecting_.reset();  // (the connection dropped: the others see this one go now)
     lobby_.reset();
     game_.reset();
-    if (!why.empty()) {
+    if (!why.empty() || page) {
         offline_->tell(host, why);
     }
 }

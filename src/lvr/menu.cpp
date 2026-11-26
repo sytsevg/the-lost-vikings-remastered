@@ -276,8 +276,10 @@ std::vector<Menu::Line> Menu::lines() const {
         case Page::kJoin:
             line("NAME", typed(static_cast<std::size_t>(Join::kName), "PLAYER 2"));
             line("ADDRESS", typed(static_cast<std::size_t>(Join::kAddress)));
-            line("JOIN");
-            lines.back().turning = joining_;
+            line("JOIN", join_said_.substr(0, kValueColumns));
+            if (join_said_.empty()) {
+                lines.back().turning = joining_;
+            }
             line("BACK");
             break;
         case Page::kOptions: {
