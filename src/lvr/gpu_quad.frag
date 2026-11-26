@@ -1,9 +1,11 @@
 #version 450
 // A pixel of a picture: its palette index, as the atlas has it. Nothing is filtered or blended: an index is
-// written or it isn't.
+// written or it isn't; and with it the place in the picture's order of what wrote it (what shows: the last).
 layout(location = 0) in vec2 at;
 layout(location = 1) flat in vec4 how;
+layout(location = 2) flat in uint order_drawn;
 layout(location = 0) out uint index;
+layout(location = 1) out uint order;
 layout(set = 2, binding = 0) uniform usampler2D atlas;
 
 void main() {
@@ -22,4 +24,5 @@ void main() {
         discard;
     }
     index = colour;
+    order = order_drawn;
 }

@@ -109,6 +109,12 @@ struct Light {
     float half_height = 0;
     float reach = 0;
     std::array<float, 3> colour{};
+    // What gives it off, so that what is in front of that hides its halo (the user, 2026-11-26: a laser behind a
+    // column, an enemy behind a Viking): the view's sprite (its place in View::sprites), the map (kFromMap: behind
+    // every sprite), or nothing in particular (kAnywhere: laid over all).
+    static constexpr std::int32_t kAnywhere = -1;
+    static constexpr std::int32_t kFromMap = -2;
+    std::int32_t from = kAnywhere;
 
     bool operator==(const Light&) const = default;
 };
@@ -214,6 +220,7 @@ struct DrawnSprite {
     bool mirrored = false;
     bool flipped = false;
     std::array<int, 2> moves{};  // how far its entity moves in this tick (x, y)
+    int piece = -1;              // the piece it is (the effects find an entity's sprites by them)
 };
 
 // What the HUD shows.

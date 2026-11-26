@@ -14,6 +14,7 @@ layout(set = 2, binding = 0) uniform usampler2D picture;
 layout(set = 2, binding = 1) uniform sampler2D palette;
 layout(set = 2, binding = 2) uniform usampler2D atlas;
 layout(set = 2, binding = 3) uniform usampler2D solid;
+layout(set = 2, binding = 4) uniform usampler2D order;  // the place in the picture's order of what shows
 layout(set = 3, binding = 0) uniform Sampled {
     vec4 within;    // the part of the picture this is taken from: left, top, right, bottom
     vec4 backdrop;  // in the atlas: left, top, width, height; a width of 0: none
@@ -25,8 +26,9 @@ layout(set = 3, binding = 0) uniform Sampled {
                     // the picture was kept (x, y)
     vec4 ground;    // where the picture's corner is in the level (x, y); what stops light: its width and height (0:
                     // nothing does)
-    vec4 lights[2 * 64];  // each: the box that gives it off (its middle x, y, half its width, height), then its
-                          // colour and how far from the box it reaches
+    vec4 lights[3 * 64];  // each: the box that gives it off (its middle x, y, half its width, height), then its
+                          // colour and how far from the box it reaches, then the place in the picture's order of
+                          // what gives it off (x): what was drawn after that hides its halo
 };
 
 uint index_at(ivec2 texel) {
@@ -77,13 +79,15 @@ vec3 stepped(vec3 light) {
     return most > 0.0 ? light * ((floor((most * 6.0) + 0.3) / 6.0) / most) : light;
 }
 
-// The lights at `spot`: what they cast on what is there, and their glow laid over it (fainter in the ground).
-vec3 cast_at(vec2 spot, out vec3 halo) {
+// The lights at `spot`: what they cast on what is there, and their glow laid over it (fainter in the ground), where
+// what shows (`here`, its place in the picture's order) isn't in front of what gives it off.
+vec3 cast_at(vec2 spot, uint here, out vec3 halo) {
     vec3 light = vec3(0.0);
     halo = vec3(0.0);
     for (int i = 0; i < int(lit.x); ++i) {
-        vec4 box = lights[2 * i];
-        vec4 shade = lights[(2 * i) + 1];
+        vec4 box = lights[3 * i];
+        vec4 shade = lights[(3 * i) + 1];
+        bool behind = float(here) <= lights[(3 * i) + 2].x;
         vec2 middle = box.xy - lit.zw;
         vec2 nearest = clamp(spot, middle - box.zw, middle + box.zw);
         float near = 1.0 - (distance(spot, nearest) / shade.a);
@@ -93,7 +97,7 @@ vec3 cast_at(vec2 spot, out vec3 halo) {
             vec3 shown = reached > 1.5 ? mix(shade.rgb, vec3(max(shade.r, max(shade.g, shade.b))), 0.6) * 1.8
                                        : shade.rgb * reached;
             light += shown * near * near;
-            halo += shade.rgb * near * near * (reached > 0.5 ? 1.0 : 0.35);
+            halo += behind ? shade.rgb * near * near * (reached > 0.5 ? 1.0 : 0.35) : vec3(0.0);
         }
     }
     halo = stepped(halo * 0.55);
@@ -101,8 +105,9 @@ vec3 cast_at(vec2 spot, out vec3 halo) {
 }
 
 // The glow around the colours that give light at `spot`: every pixel of the picture within reach, the nearer
-// counting for more.
-vec3 glow_at(vec2 spot) {
+// counting for more; not from one that what shows here (`here`) was drawn in front of (the user, 2026-11-26: a
+// Viking before a screen).
+vec3 glow_at(vec2 spot, uint here) {
     vec3 glow = vec3(0.0);
     int reach = int(lit.y);
     for (int y = -reach; y <= reach; ++y) {
@@ -110,8 +115,10 @@ vec3 glow_at(vec2 spot) {
             float near = 1.0 - (length(vec2(x, y)) / (lit.y + 1.0));
             if (near > 0.0) {
                 ivec2 texel = clamp(ivec2(floor((spot + vec2(x, y)) * scale)), ivec2(within.xy), ivec2(within.zw) - 1);
-                vec4 colour_there = texelFetch(palette, ivec2(int(texelFetch(picture, texel, 0).r), 0), 0);
-                glow += colour_there.rgb * colour_there.a * near;
+                if (here <= texelFetch(order, texel, 0).r) {
+                    vec4 colour_there = texelFetch(palette, ivec2(int(texelFetch(picture, texel, 0).r), 0), 0);
+                    glow += colour_there.rgb * colour_there.a * near;
+                }
             }
         }
     }
@@ -131,14 +138,16 @@ void main() {
     }
     vec3 seen = sum / float(count * count);
     vec2 spot = floor(at / scale) + 0.5;  // the middle of the picture's pixel this is in
+    // What shows here: its place in the picture's order (what was drawn after what gives light hides its glow).
+    uint here = texelFetch(order, clamp(ivec2(floor(at)), ivec2(within.xy), ivec2(within.zw) - 1), 0).r;
     if (lit.x > 0.0) {
         vec3 halo;
-        vec3 light = cast_at(spot, halo);
+        vec3 light = cast_at(spot, here, halo);
         seen = min(seen + (seen * light * 2.0) + (light * 0.06), vec3(1.0));
         seen += halo * (1.0 - seen);
     }
     if (lit.y > 0.0) {
-        seen += glow_at(spot) * (1.0 - seen);
+        seen += glow_at(spot, here) * (1.0 - seen);
     }
     colour = vec4(seen, 1.0);
 }

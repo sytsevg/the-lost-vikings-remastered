@@ -354,7 +354,8 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
                               .half_width = width / 2,
                               .half_height = 2,
                               .reach = 15,
-                              .colour = {0.2F * flicker, 0.55F * flicker, 0.85F * flicker}};
+                              .colour = {0.2F * flicker, 0.55F * flicker, 0.85F * flicker},
+                              .from = Light::kFromMap};
             if (screen.lights.size() < kMostLights &&
                 in_picture(light.x, light.y, light.half_width, light.half_height, light.reach)) {
                 add_light(light);
@@ -397,6 +398,14 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
             continue;
         }
         const auto [left, top, right, bottom] = *box;
+        // Its sprite drawn last: what is drawn after it is in front of it, and hides its halo.
+        std::int32_t drawn_last = Light::kAnywhere;
+        for (std::size_t i = 0; i < view.sprites.size(); ++i) {
+            const int piece = view.sprites[i].piece;
+            if (piece >= entity->sprite.first && piece < entity->sprite.first + entity->sprite.count) {
+                drawn_last = static_cast<std::int32_t>(i);
+            }
+        }
         const float middle_x = static_cast<float>(left + right) / 2;
         const float middle_y = static_cast<float>(top + bottom) / 2;
         const float size = static_cast<float>(std::max(right - left, bottom - top));
@@ -408,7 +417,8 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
                         .half_width = static_cast<float>(right - left) / 4,
                         .half_height = static_cast<float>(bottom - top) / 4,
                         .reach = 0,
-                        .colour = {}};
+                        .colour = {},
+                        .from = drawn_last};
             switch (rule.glow) {
                 case Glow::kFire: {
                     // Round: from a small box in its middle.

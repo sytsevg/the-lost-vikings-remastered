@@ -102,6 +102,9 @@ struct Quad {
     float left = 0, top = 0, width = 0, height = 0;
     float source_x = 0, source_y = 0, mirrored = 0, flipped = 0;
     float mask_dx = 0, mask_dy = 0, see_through = 0, masked = 0;
+    // Its place in the picture's order, from 1 (drawn into `order` as it is drawn: a light's halo is hidden where
+    // what was drawn after what gives it off shows).
+    float order = 0, unused_a = 0, unused_b = 0, unused_c = 0;
 };
 
 // The atlas as the CPU keeps it: pictures placed in rows, each row as tall as its tallest. What is placed after a
@@ -194,6 +197,9 @@ struct GpuRenderer::State {
     SDL_GPUSampler* smooth = nullptr;  // for what is shown at a size not its own (the minimap)
     SDL_GPUTexture* target = nullptr;  // a picture drawn to be read back: the original's size
     SDL_GPUTexture* work = nullptr;    // a kept picture drawn to be shown: as large as it is shown
+    // With each: at every pixel the place in the picture's order of what shows there (Quad::order; 0: nothing).
+    SDL_GPUTexture* target_order = nullptr;
+    SDL_GPUTexture* work_order = nullptr;
     int work_width = 0;
     int work_height = 0;
     SDL_GPUBuffer* quads_buffer = nullptr;
@@ -281,6 +287,10 @@ struct GpuRenderer::State {
         std::vector<Quad> quads;
         std::vector<std::int32_t> moves_with;  // a quad's: kWithCamera, kStays, or the view's sprite it is
         std::size_t in_playfield = 0;          // the first quads: those cut at the HUD
+        // The place in the order (Quad::order) of the map's last quad behind the sprites, and of each of the view's
+        // sprites (0: none drawn): a light's (Light::from).
+        std::uint16_t map_order = 0;
+        std::vector<std::uint16_t> sprite_orders;
         int width = 0;
         int height = 0;
         // The scene's backdrop (backdrop.hpp), laid in where the map shows it when the picture is shown: where it
@@ -323,6 +333,7 @@ struct GpuRenderer::State {
                 SDL_ReleaseGPUTexture(device, each->texture);
             }
             SDL_ReleaseGPUTexture(device, work);
+            SDL_ReleaseGPUTexture(device, work_order);
             SDL_ReleaseGPUTransferBuffer(device, palette_upload);
             SDL_ReleaseGPUTransferBuffer(device, over_upload);
             SDL_ReleaseGPUTexture(device, over_texture);
@@ -353,6 +364,7 @@ struct GpuRenderer::State {
             SDL_ReleaseGPUTransferBuffer(device, atlas_upload);
             SDL_ReleaseGPUBuffer(device, quads_buffer);
             SDL_ReleaseGPUTexture(device, target);
+            SDL_ReleaseGPUTexture(device, target_order);
             SDL_ReleaseGPUSampler(device, sampler);
             SDL_ReleaseGPUSampler(device, smooth);
             SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
@@ -369,10 +381,12 @@ struct GpuRenderer::State {
                   const std::array<float, 4>& screen, const std::array<float, 4>& grid, bool own, Look which);
     SDL_GPUTexture* texture(SDL_GPUTextureFormat format, SDL_GPUTextureUsageFlags usage, int width, int height);
     SDL_GPUTexture* picture_texture(int width, int height);
+    SDL_GPUTexture* order_texture(int width, int height);
     std::expected<Picture, std::string> make(SDL_GPUCommandBuffer* commands, const View& view,
                                              const SceneGraphics& graphics, const SharedGraphics& common);
     std::expected<void, std::string> render(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* onto,
-                                            const Picture& picture, int scale, const Motion* motion, float between);
+                                            SDL_GPUTexture* order_onto, const Picture& picture, int scale,
+                                            const Motion* motion, float between);
     // `whole` > 0: the view alone (without the rows the HUD lies over, or the HUD), this many pixels a pixel of it,
     // onto a target as large as that: a picture of a whole level.
     std::expected<void, std::string> show(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* onto, int width, int height,
@@ -420,22 +434,24 @@ std::expected<void, std::string> GpuRenderer::State::set_up() {
     const SDL_GPUVertexAttribute attributes[] = {
         {.location = 0, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, .offset = 0},
         {.location = 1, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, .offset = kFour},
-        {.location = 2, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, .offset = 2 * kFour}};
-    SDL_GPUColorTargetDescription colour{};
-    colour.format = SDL_GPU_TEXTUREFORMAT_R8_UINT;
+        {.location = 2, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, .offset = 2 * kFour},
+        {.location = 3, .buffer_slot = 0, .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, .offset = 3 * kFour}};
+    std::array<SDL_GPUColorTargetDescription, 2> colour{};  // the indices, and the order
+    colour[0].format = SDL_GPU_TEXTUREFORMAT_R8_UINT;
+    colour[1].format = SDL_GPU_TEXTUREFORMAT_R16_UINT;
     SDL_GPUGraphicsPipelineCreateInfo info{};
     info.vertex_shader = vertex;
     info.fragment_shader = fragment;
     info.vertex_input_state = {.vertex_buffer_descriptions = &buffer,
                                .num_vertex_buffers = 1,
                                .vertex_attributes = attributes,
-                               .num_vertex_attributes = 3};
+                               .num_vertex_attributes = 4};
     info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
     info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
     info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
     info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
-    info.target_info.color_target_descriptions = &colour;
-    info.target_info.num_color_targets = 1;
+    info.target_info.color_target_descriptions = colour.data();
+    info.target_info.num_color_targets = static_cast<Uint32>(colour.size());
     pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
     SDL_ReleaseGPUShader(device, vertex);
     SDL_ReleaseGPUShader(device, fragment);
@@ -453,6 +469,7 @@ std::expected<void, std::string> GpuRenderer::State::set_up() {
     smooth = SDL_CreateGPUSampler(device, &linear);
 
     target = picture_texture(kScreenWidth, kPlayfieldHeight);
+    target_order = order_texture(kScreenWidth, kPlayfieldHeight);
     palette_texture = texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, kColours, 1);
     const auto transfer = [this](SDL_GPUTransferBufferUsage usage, std::size_t size) {
         const SDL_GPUTransferBufferCreateInfo made{.usage = usage, .size = static_cast<Uint32>(size), .props = 0};
@@ -462,15 +479,16 @@ std::expected<void, std::string> GpuRenderer::State::set_up() {
     download = transfer(SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, std::size_t{kScreenWidth} * kScreenHeight);
     palette_upload = transfer(SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, kColours * 4);
     ground_texture = texture(SDL_GPU_TEXTUREFORMAT_R8_UINT, SDL_GPU_TEXTUREUSAGE_SAMPLER, 1, 1);
-    if (sampler == nullptr || smooth == nullptr || target == nullptr || atlas_upload == nullptr ||
-        download == nullptr || palette_texture == nullptr || palette_upload == nullptr || ground_texture == nullptr) {
+    if (sampler == nullptr || smooth == nullptr || target == nullptr || target_order == nullptr ||
+        atlas_upload == nullptr || download == nullptr || palette_texture == nullptr || palette_upload == nullptr ||
+        ground_texture == nullptr) {
         return sdl_error("the textures");
     }
 
     // Showing: the same two shaders onto the window's format and onto our own.
     SDL_GPUShader* show_vertex = shader(kShowVertexShader, sizeof(kShowVertexShader), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
     SDL_GPUShader* show_fragment =
-        shader(kShowFragmentShader, sizeof(kShowFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 4, 1);
+        shader(kShowFragmentShader, sizeof(kShowFragmentShader), SDL_GPU_SHADERSTAGE_FRAGMENT, 5, 1);
     if (show_vertex == nullptr || show_fragment == nullptr) {
         return sdl_error("the shaders");
     }
@@ -565,6 +583,12 @@ SDL_GPUTexture* GpuRenderer::State::texture(SDL_GPUTextureFormat format, SDL_GPU
 // A picture of palette indices, to draw into and to show from.
 SDL_GPUTexture* GpuRenderer::State::picture_texture(int width, int height) {
     return texture(SDL_GPU_TEXTUREFORMAT_R8_UINT, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                   std::max(width, kScreenWidth), height + kHudHeight);
+}
+
+// With one: the place in the picture's order of what shows at each pixel (Quad::order).
+SDL_GPUTexture* GpuRenderer::State::order_texture(int width, int height) {
+    return texture(SDL_GPU_TEXTUREFORMAT_R16_UINT, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
                    std::max(width, kScreenWidth), height + kHudHeight);
 }
 
@@ -886,6 +910,8 @@ bool GpuRenderer::State::list(Page& on, const View& view, const SceneGraphics& g
         picture.moves_with.push_back(kWithCamera);
     }
     list_tiles(on, view, graphics, false, picture);
+    picture.map_order = static_cast<std::uint16_t>(picture.quads.size());
+    picture.sprite_orders.assign(view.sprites.size(), 0);
     for (std::size_t i = 0; i < view.sprites.size(); ++i) {
         const DrawnSprite& sprite = view.sprites[i];
         if (sprite.image == nullptr) {
@@ -898,6 +924,7 @@ bool GpuRenderer::State::list(Page& on, const View& view, const SceneGraphics& g
         piece.see_through = 1;
         picture.quads.push_back(piece);
         picture.moves_with.push_back(static_cast<std::int32_t>(i));
+        picture.sprite_orders[i] = static_cast<std::uint16_t>(picture.quads.size());
     }
     list_tiles(on, view, graphics, true, picture);
     for (int row = 0; row < std::min(view.height / kTileSize, kTextRows); ++row) {
@@ -1061,9 +1088,12 @@ std::expected<GpuRenderer::State::Picture, std::string> GpuRenderer::State::make
 // A picture's quads drawn onto a texture of palette indices, `scale` pixels a pixel of the picture. With a
 // `motion` of a tick's picture, what moves is moved as it is `between` (0 to 1) into the refresh it is shown for.
 std::expected<void, std::string> GpuRenderer::State::render(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* onto,
-                                                            const Picture& picture, int scale, const Motion* motion,
-                                                            float between) {
+                                                            SDL_GPUTexture* order_onto, const Picture& picture,
+                                                            int scale, const Motion* motion, float between) {
     quads = picture.quads;
+    for (std::size_t i = 0; i < quads.size(); ++i) {
+        quads[i].order = static_cast<float>(i + 1);
+    }
     if (motion != nullptr && motion->phase >= 0) {
         const std::array<float, 2> camera = camera_moved(*motion, between);
         std::vector<std::array<float, 2>> sprites(motion->sprites.size());
@@ -1102,11 +1132,15 @@ std::expected<void, std::string> GpuRenderer::State::render(SDL_GPUCommandBuffer
         SDL_EndGPUCopyPass(copy);
     }
 
-    SDL_GPUColorTargetInfo colour{};
-    colour.texture = onto;
-    colour.load_op = SDL_GPU_LOADOP_CLEAR;
-    colour.store_op = SDL_GPU_STOREOP_STORE;
-    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &colour, 1, nullptr);
+    std::array<SDL_GPUColorTargetInfo, 2> colour{};  // the indices, and the order (0: nothing drawn)
+    colour[0].texture = onto;
+    colour[1].texture = order_onto;
+    for (SDL_GPUColorTargetInfo& each : colour) {
+        each.load_op = SDL_GPU_LOADOP_CLEAR;
+        each.store_op = SDL_GPU_STOREOP_STORE;
+    }
+    SDL_GPURenderPass* pass =
+        SDL_BeginGPURenderPass(commands, colour.data(), static_cast<Uint32>(colour.size()), nullptr);
     if (!quads.empty() && picture.page < pages.size()) {
         constexpr std::uint32_t kCorners = 6;
         const int wide = std::max(picture.width, kScreenWidth);
@@ -1391,8 +1425,15 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         const int high = (picture->height + kHudHeight) * drawn;
         if (work == nullptr || work_width != wide || work_height != high) {
             SDL_ReleaseGPUTexture(device, work);
+            SDL_ReleaseGPUTexture(device, work_order);
             work = texture(SDL_GPU_TEXTUREFORMAT_R8_UINT,
                            SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER, wide, high);
+            work_order = texture(SDL_GPU_TEXTUREFORMAT_R16_UINT,
+                                 SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER, wide, high);
+            if (work_order == nullptr) {
+                SDL_ReleaseGPUTexture(device, work);
+                work = nullptr;
+            }
             work_width = work != nullptr ? wide : 0;
             work_height = work != nullptr ? high : 0;
             in_work.reset();
@@ -1409,8 +1450,8 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         const bool still = whole_pixels || screen.motion.phase < 0 || screen.motion.phase > 2;
         times.redrawn = !still || in_work != kept_picture || in_work_scale != drawn || in_work_look != shown_look;
         if (times.redrawn) {
-            if (auto rendered =
-                    render(commands, work, *picture, drawn, whole_pixels ? nullptr : &screen.motion, between);
+            if (auto rendered = render(commands, work, work_order, *picture, drawn,
+                                       whole_pixels ? nullptr : &screen.motion, between);
                 !rendered) {
                 in_work.reset();
                 return rendered;
@@ -1455,18 +1496,28 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
             float scale;               // the drawn picture's pixels a pixel of it
             std::array<float, 4> lit;  // the Modern visuals' light: how many lights, a glow's reach, the camera moved
             std::array<float, 4> ground;  // where the picture's corner is in the level; what stops light: its size
-            std::array<std::array<float, 4>, 2 * kMostLights> lights;
+            std::array<std::array<float, 4>, 3 * kMostLights> lights;
         };
         // The Modern visuals' light (effects.hpp), for the playfield.
         const std::array<float, 2> camera_now =
             whole_pixels ? std::array<float, 2>{} : camera_moved(screen.motion, between);
         std::array<float, 4> lit{};
-        std::array<std::array<float, 4>, 2 * kMostLights> lights{};
+        std::array<std::array<float, 4>, 3 * kMostLights> lights{};
         const std::size_t light_count = std::min(screen.lights.size(), kMostLights);
         for (std::size_t i = 0; i < light_count; ++i) {
             const Light& light = screen.lights[i];
-            lights.at(2 * i) = {light.x, light.y, light.half_width, light.half_height};
-            lights.at((2 * i) + 1) = {light.colour[0], light.colour[1], light.colour[2], std::max(light.reach, 1.0F)};
+            lights.at(3 * i) = {light.x, light.y, light.half_width, light.half_height};
+            lights.at((3 * i) + 1) = {light.colour[0], light.colour[1], light.colour[2], std::max(light.reach, 1.0F)};
+            // Its halo shows where what shows was drawn no later than what gives it off (Light::from).
+            constexpr float kInFrontOfAll = 65535;
+            float order = kInFrontOfAll;
+            if (light.from == Light::kFromMap) {
+                order = picture->map_order;
+            } else if (light.from >= 0 && std::cmp_less(light.from, picture->sprite_orders.size()) &&
+                       picture->sprite_orders[static_cast<std::size_t>(light.from)] != 0) {
+                order = picture->sprite_orders[static_cast<std::size_t>(light.from)];
+            }
+            lights.at((3 * i) + 2) = {order, 0, 0, 0};
         }
         const bool glows = std::ranges::any_of(screen.glow, [](std::uint8_t glow) { return glow != 0; });
         lit = {static_cast<float>(light_count), glows ? kGlowReach : 0.0F, camera_now[0], camera_now[1]};
@@ -1497,10 +1548,11 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         }
         SDL_BindGPUGraphicsPipeline(pass, with);
         SDL_GPUTexture* atlas = picture->page < pages.size() ? pages[picture->page]->texture : work;
-        const std::array<SDL_GPUTextureSamplerBinding, 4> pictures{{{.texture = work, .sampler = sampler},
+        const std::array<SDL_GPUTextureSamplerBinding, 5> pictures{{{.texture = work, .sampler = sampler},
                                                                     {.texture = palette_texture, .sampler = sampler},
                                                                     {.texture = atlas, .sampler = sampler},
-                                                                    {.texture = ground_texture, .sampler = sampler}}};
+                                                                    {.texture = ground_texture, .sampler = sampler},
+                                                                    {.texture = work_order, .sampler = sampler}}};
         SDL_BindGPUFragmentSamplers(pass, 0, pictures.data(), pictures.size());
         const auto part = [&](std::array<float, 4> dest, std::array<float, 4> source, std::array<float, 4> within,
                               bool playfield) {
@@ -1764,7 +1816,7 @@ std::expected<void, std::string> GpuRenderer::draw(Screen& screen, const View& v
         SDL_CancelGPUCommandBuffer(commands);
         return std::unexpected{picture.error()};
     }
-    if (auto drawn = s.render(commands, s.target, *picture, 1, nullptr, 0); !drawn) {
+    if (auto drawn = s.render(commands, s.target, s.target_order, *picture, 1, nullptr, 0); !drawn) {
         SDL_CancelGPUCommandBuffer(commands);
         return drawn;
     }

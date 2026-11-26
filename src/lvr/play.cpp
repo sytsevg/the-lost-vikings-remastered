@@ -769,7 +769,8 @@ View view_of(const World& world, const LoadedLevel& loaded, PiecePainter& painte
                         .y = picture.y,
                         .mirrored = picture.mirrored,
                         .flipped = picture.flipped,
-                        .moves = picture.piece < moves.size() ? moves[picture.piece] : std::array<int, 2>{}});
+                        .moves = picture.piece < moves.size() ? moves[picture.piece] : std::array<int, 2>{},
+                        .piece = static_cast<int>(picture.piece)});
     }
     if (world.online) {
         compose_text(view, world, player, camera);

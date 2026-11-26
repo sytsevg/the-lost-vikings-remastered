@@ -862,3 +862,57 @@ TEST_CASE("gpu: the xbr look rounds off stair-steps, blending their edges; flat 
     }
     CHECK(not_grey == 0);
 }
+
+TEST_CASE("gpu: a light's halo, and the glow round a colour, hidden where what was drawn after what gives it shows") {
+    auto opened = GpuRenderer::open_headless();
+    if (!opened) {
+        SKIP("no graphics device: " << opened.error());
+    }
+    GpuRenderer& gpu = **opened;
+    const SharedGraphics shared = sample_shared();
+    const SceneGraphics scene = sample_scene();
+    // Two blocks, the second over the first's right half; a light given off by the first (as a laser behind a
+    // column, an enemy behind a Viking), or by nothing in particular.
+    assets::IndexedImage block = assets::make_image(16, 16);
+    std::ranges::fill(block.pixels, std::uint8_t{7});
+    View view;
+    view.palette[7] = {.r = 60, .g = 60, .b = 60};
+    view.sprites = {{.image = &block, .x = 100, .y = 80}, {.image = &block, .x = 108, .y = 80}};
+    const auto shown_with = [&](std::int32_t from) {
+        Screen screen;
+        screen.lights = {Light{
+            .x = 104, .y = 88, .half_width = 2, .half_height = 2, .reach = 30, .colour = {1, 1, 1}, .from = from}};
+        REQUIRE(gpu.keep(screen, view, scene, shared));
+        auto shown = gpu.shown(screen, 1);
+        REQUIRE(shown);
+        return *shown;
+    };
+    const auto red = [](const std::vector<std::uint8_t>& pixels, int x, int y) {
+        return pixels.at(static_cast<std::size_t>((y * kScreenWidth) + x) * 4);
+    };
+    const auto behind = shown_with(0);
+    const auto anywhere = shown_with(Light::kAnywhere);
+    CHECK(red(behind, 102, 88) == red(anywhere, 102, 88));  // on the first block: its halo
+    CHECK(red(behind, 92, 88) == red(anywhere, 92, 88));    // around it, nothing in front: its halo
+    CHECK(red(behind, 112, 88) < red(anywhere, 112, 88));   // on the second, in front of it: none
+
+    // The glow round a colour that gives light (the spaceship's screens): the first block's; the second, of a colour
+    // that gives none, in front of it has none of it, what is beside the first does.
+    assets::IndexedImage other = assets::make_image(16, 16);
+    std::ranges::fill(other.pixels, std::uint8_t{8});
+    view.sprites[1].image = &other;
+    view.palette[7] = {.r = 250, .g = 250, .b = 250};  // (bright: a glow comes in the game's steps of brightness)
+    view.palette[8] = {.r = 40, .g = 40, .b = 40};
+    const auto glowing = [&](bool glows) {
+        Screen screen;
+        screen.glow[7] = glows ? 255 : 0;
+        REQUIRE(gpu.keep(screen, view, scene, shared));
+        auto shown = gpu.shown(screen, 1);
+        REQUIRE(shown);
+        return *shown;
+    };
+    const auto lit = glowing(true);
+    const auto plain = glowing(false);
+    CHECK(red(lit, 97, 88) > red(plain, 97, 88));     // beside the first: its glow
+    CHECK(red(lit, 109, 88) == red(plain, 109, 88));  // on the second, in front of it: none
+}
