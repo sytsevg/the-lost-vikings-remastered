@@ -221,6 +221,7 @@ struct GpuRenderer::State {
     SDL_GPUGraphicsPipeline* panel_pipeline = nullptr;
     SDL_GPUGraphicsPipeline* panel_pipeline_own = nullptr;
     std::vector<std::uint8_t> overlay;
+    bool mailbox = false;  // pictures shown without waiting for the refresh (the newest taken at each)
     bool overlay_sent = false;
     SDL_GPUTexture* overlay_texture = nullptr;
     SDL_GPUTransferBuffer* overlay_upload = nullptr;
@@ -942,6 +943,10 @@ std::size_t GpuRenderer::pages_set_up() const noexcept {
     return state_->pages_set_up;
 }
 
+bool GpuRenderer::waits_for_refresh() const noexcept {
+    return !state_->mailbox;
+}
+
 const GpuRenderer::ShowTimes& GpuRenderer::show_times() const noexcept {
     return state_->times;
 }
@@ -983,6 +988,11 @@ std::expected<std::unique_ptr<GpuRenderer>, std::string> GpuRenderer::open_for(S
         return sdl_error("the window");
     }
     state->window = window;
+    if (SDL_WindowSupportsGPUPresentMode(state->device, window, SDL_GPU_PRESENTMODE_MAILBOX) &&
+        SDL_SetGPUSwapchainParameters(state->device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+                                      SDL_GPU_PRESENTMODE_MAILBOX)) {
+        state->mailbox = true;
+    }
     if (auto ready = state->set_up(); !ready) {
         return std::unexpected{ready.error()};
     }

@@ -102,6 +102,10 @@ class GpuRenderer {
 
     // How many times a page of the atlas was set up (a scene's pictures put in anew): for finding what is slow.
     std::size_t pages_set_up() const noexcept;
+    // Whether showing a picture waits for the screen's refresh (vsync). Where the window can, it doesn't: the newest
+    // picture is taken at each refresh (mailbox), and the window's loop paces itself (some compositors take only
+    // every second picture of a game that waits: the user's, 2026-11-26).
+    bool waits_for_refresh() const noexcept;
     // How the last show() went, for finding what is slow: milliseconds waiting for the window's picture to draw
     // on (long when the card is behind), recording the drawing, and handing it over; and what was drawn.
     struct ShowTimes {

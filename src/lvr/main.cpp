@@ -85,6 +85,9 @@ constexpr const char* kWindowTitle = "The Lost Vikings";
 // showing longer than the other (which includes the wait for the screen's refresh: up to a 60 Hz one's).
 constexpr double kSlowStepMilliseconds = 8;
 constexpr double kSlowShowMilliseconds = 20;
+// The most pictures shown a second where showing doesn't wait for the screen's refresh (GpuRenderer::waits_for_refresh;
+// the user: "max 200fps or something"): smooth movement shows each where it is at that moment.
+constexpr std::uint64_t kMostShows = 200;
 
 bool write_wav(const std::filesystem::path& path, const std::vector<std::int16_t>& samples, std::uint32_t rate) {
     std::ofstream out(path, std::ios::binary);
@@ -625,6 +628,7 @@ Go run(Window& in, Place& place) {
         place.begin(ui);
     }
     while (running) {
+        const std::uint64_t pass_began = SDL_GetPerformanceCounter();
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
@@ -786,6 +790,12 @@ Go run(Window& in, Place& place) {
                 std::println(stderr, "vikings-remaster: {}", done.error());
                 go = failed();
                 running = false;
+            }
+            if (!gpu->waits_for_refresh()) {  // (showing doesn't wait for the screen: no more than kMostShows a second)
+                const std::uint64_t pass_ends = pass_began + (frequency / kMostShows);
+                if (const std::uint64_t now = SDL_GetPerformanceCounter(); now < pass_ends) {
+                    SDL_DelayPrecise((pass_ends - now) * 1'000'000'000 / frequency);
+                }
             }
             continue;
         }
