@@ -916,3 +916,46 @@ TEST_CASE("gpu: a light's halo, and the glow round a colour, hidden where what w
     CHECK(red(lit, 97, 88) > red(plain, 97, 88));     // beside the first: its glow
     CHECK(red(lit, 109, 88) == red(plain, 109, 88));  // on the second, in front of it: none
 }
+
+TEST_CASE("gpu: the glow round a colour goes on over the next tile of the map behind, as the game-over scene's water") {
+    auto opened = GpuRenderer::open_headless();
+    if (!opened) {
+        SKIP("no graphics device: " << opened.error());
+    }
+    GpuRenderer& gpu = **opened;
+    const SharedGraphics shared = sample_shared();
+    // Two tiles behind the sprites: the first all of a colour that gives light, the second of one that gives none. A
+    // map of the first's cells, the second's from the fifth cell across on (drawn after the first's beside them).
+    SceneGraphics scene;
+    scene.tileset = {assets::make_image(8, 8), assets::make_image(8, 8)};
+    std::ranges::fill(scene.tileset[0].pixels, std::uint8_t{7});
+    std::ranges::fill(scene.tileset[1].pixels, std::uint8_t{8});
+    scene.tile_masks.assign(16, 0);
+    const auto all_of = [](std::uint16_t tile) {
+        const assets::TileRef ref{.tile = tile, .flags = 0};
+        return assets::Metatile{.parts = {ref, ref, ref, ref}};
+    };
+    scene.metatiles = {all_of(0), all_of(1)};
+    Map map{.width = 20, .height = 12, .cells = std::vector<Cell>(240)};
+    for (std::size_t cell = 0; cell < map.cells.size(); ++cell) {
+        map.cells[cell].metatile = cell % 20 >= 4 ? 1 : 0;
+    }
+    View view;
+    view.map = &map;
+    view.palette[7] = {.r = 250, .g = 250, .b = 250};
+    view.palette[8] = {.r = 40, .g = 40, .b = 40};
+    const auto glowing = [&](bool glows) {
+        Screen screen;
+        screen.glow[7] = glows ? 255 : 0;
+        REQUIRE(gpu.keep(screen, view, scene, shared));
+        auto shown = gpu.shown(screen, 1);
+        REQUIRE(shown);
+        return *shown;
+    };
+    const auto red = [](const std::vector<std::uint8_t>& pixels, int x, int y) {
+        return pixels.at(static_cast<std::size_t>((y * kScreenWidth) + x) * 4);
+    };
+    const auto lit = glowing(true);
+    const auto plain = glowing(false);
+    CHECK(red(lit, 66, 40) > red(plain, 66, 40));  // just past the fifth cell's edge (4 cells of 16): the glow
+}

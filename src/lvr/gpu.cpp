@@ -292,6 +292,9 @@ struct GpuRenderer::State {
         // sprites (0: none drawn): a light's (Light::from).
         std::uint16_t map_order = 0;
         std::vector<std::uint16_t> sprite_orders;
+        // Where the map's foreground starts among the quads, after the sprites, and the text after it (render).
+        std::size_t foreground_from = 0;
+        std::size_t text_from = 0;
         int width = 0;
         int height = 0;
         // The scene's backdrop (backdrop.hpp), laid in where the map shows it when the picture is shown: where it
@@ -928,7 +931,9 @@ bool GpuRenderer::State::list(Page& on, const View& view, const SceneGraphics& g
         picture.moves_with.push_back(static_cast<std::int32_t>(i));
         picture.sprite_orders[i] = static_cast<std::uint16_t>(picture.quads.size());
     }
+    picture.foreground_from = picture.quads.size();
     list_tiles(on, view, graphics, true, picture);
+    picture.text_from = picture.quads.size();
     for (int row = 0; row < std::min(view.height / kTileSize, kTextRows); ++row) {
         for (int column = 0; column < std::min(view.width / kTileSize, kTextColumns); ++column) {
             const std::uint8_t character =
@@ -1092,9 +1097,21 @@ std::expected<GpuRenderer::State::Picture, std::string> GpuRenderer::State::make
 std::expected<void, std::string> GpuRenderer::State::render(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* onto,
                                                             SDL_GPUTexture* order_onto, const Picture& picture,
                                                             int scale, const Motion* motion, float between) {
+    // Each quad's place in the picture's order, which is the depth (what is drawn after what gives off light hides its
+    // halo and its glow): a layer's quads in one place, so that a glow goes on over the next tile of its own layer (the
+    // user, 2026-11-26: the game-over scene's water, each tile cut off its neighbours' glow). The map behind the
+    // sprites, each sprite in its own, the map's foreground, the text; what is under the playfield, each its own.
     quads = picture.quads;
     for (std::size_t i = 0; i < quads.size(); ++i) {
-        quads[i].order = static_cast<float>(i + 1);
+        std::size_t place = i + 1;
+        if (i < picture.map_order) {
+            place = picture.map_order;
+        } else if (i >= picture.foreground_from && i < picture.text_from) {
+            place = picture.text_from;
+        } else if (i >= picture.text_from && i < picture.in_playfield) {
+            place = picture.in_playfield;
+        }
+        quads[i].order = static_cast<float>(place);
     }
     if (motion != nullptr && motion->phase >= 0) {
         const std::array<float, 2> camera = camera_moved(*motion, between);
@@ -1880,6 +1897,7 @@ std::expected<void, std::string> GpuRenderer::keep(Screen& screen, const View& v
     if (last != nullptr && last->page == picture->page && last->quads.size() == picture->quads.size() &&
         last->moves_with == picture->moves_with && last->width == picture->width && last->height == picture->height &&
         last->in_playfield == picture->in_playfield && last->drawn_below == picture->drawn_below &&
+        last->foreground_from == picture->foreground_from && last->text_from == picture->text_from &&
         last->backdrop == picture->backdrop &&
         std::memcmp(last->quads.data(), picture->quads.data(), picture->quads.size() * sizeof(Quad)) == 0) {
         keeping = before.picture;

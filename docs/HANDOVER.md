@@ -262,7 +262,9 @@ pixel and in steps of brightness), subtle.
   hides its glow (the user, 2026-11-26: a laser behind a column, an enemy behind a Viking, a Viking before a
   screen): the kept picture is drawn with a second target, at each pixel the place in its order of the quad that
   shows there (`Quad::order`, `work_order`; the order is the depth: the map behind, the sprites, the map's
-  foreground, the text); a light says what gives it off (`Light::from`: its entity's last sprite, the map for the
+  foreground, the text, a layer's quads in one place, each sprite in its own: a tile drawn after its neighbour
+  cut off its glow, the user, 2026-11-26, the game-over water's tiles); a light says what gives it off
+  (`Light::from`: its entity's last sprite, the map for the
   electricity), and its halo, as a glowing colour's glow, is laid only where what shows was drawn no later. The
   light it casts still falls on what is in front.
 - **Particles** are pixels of the colours 1-15 put after the view's sprites (`Effects::add`), moved a picture at
