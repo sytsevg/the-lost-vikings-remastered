@@ -231,13 +231,13 @@ std::array<float, 2> Effects::fuse_of(const Entity& bomb) {
             static_cast<float>(bomb.y - kUp)};
 }
 
-// Four sparks a picture on a twirl round (x, from top to bottom in the level), a funnel wider higher up: going, from
+// Three sparks a picture on a twirl round (x, from top to bottom in the level), a funnel wider higher up: going, from
 // anywhere on him, rising and widening; coming, from wide around him, closing in. They turn the same way round, a
 // turn in about 11 pictures (the user, 2026-11-26: narrower, and swirling more).
 void Effects::twirl(float x, float top, float bottom, bool in) {
     const auto chance = [this] { return std::uniform_real_distribution<float>{0.0F, 1.0F}(random_); };
     constexpr float kTurn = 0.55F;  // radians a picture
-    for (int one = 0; one < 4; ++one) {
+    for (int one = 0; one < 3; ++one) {
         const float up = chance();  // how far up him, 0 his feet
         const int life = 16 + static_cast<int>(chance() * 12);
         const float wide = 5 + (up * 11);

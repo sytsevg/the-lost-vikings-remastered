@@ -237,7 +237,7 @@ pixel and in steps of brightness), subtle.
   is), or none (the place is then taken as it is). The animation that was called `burns` is the death from a long
   fall (`dies_from_a_fall`; its sound, called `kBurnt`, is a ledge's or a ball's landing too: `kHeavyLanding`).
 - **Teleporting** (the user, 2026-11-26: a twirl with particles; `kVikingBeamedAway`, `kVikingBeamedIn`, the
-  spaceship's): a cool light that shimmers, and four sparks a picture on a twirl round him, a funnel wider higher up
+  spaceship's): a cool light that shimmers, and three sparks a picture on a twirl round him, a funnel wider higher up
   (`Effects::twirl`; particles that orbit, `Particle::radius`, `angle`, `turn`, `widen`), the near side white, the
   far side blue, each with a trail of three along its way so it draws an arc (a turn in about 11 pictures): going, rising and widening; coming,
   closing in on him.
