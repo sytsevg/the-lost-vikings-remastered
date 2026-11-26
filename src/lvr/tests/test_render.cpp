@@ -312,9 +312,11 @@ TEST_CASE("render: a picture darkened, and all that goes dark with it") {
     Screen picture;
     picture.palette[1] = {.r = 200, .g = 100, .b = 50};
     picture.lights = {Light{.colour = {1, 0.5F, 0.25F}}};
+    // Half as bright: as a scene's fade has it, half of the VGA's 63 levels off each colour (32).
     Screen half = picture;
     darken(half, 0.5F);
-    CHECK(half.palette[1] == assets::Rgb{.r = 100, .g = 50, .b = 25});
+    CHECK(half.palette == darkened(picture.palette, {32, 32, 32}, true));
+    CHECK(half.palette[1] == assets::Rgb{.r = 73, .g = 0, .b = 0});
     CHECK(half.lights[0].colour == std::array<float, 3>{0.5F, 0.25F, 0.125F});
     CHECK(half.bright == 0.5F);  // (the minimap goes by it)
     // A scene's fade has darkened the colours as they were drawn: the rest goes as dark.

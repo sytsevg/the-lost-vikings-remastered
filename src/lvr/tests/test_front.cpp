@@ -34,12 +34,13 @@ struct Machine {
     std::unique_ptr<Places> places;
     std::optional<Menu> kept;  // the menu of the place it shows, when open
     std::unique_ptr<Ui> ui;
-    Place* shown = nullptr;                    // the place the menu is for
-    int due = 0;                               // refreshes until its next step
-    Screen last;                               // the last picture it showed
-    std::vector<Screen>* shown_all = nullptr;  // when given: every picture it shows, added to it
-    std::uint64_t turns = 0;                   // its refreshes so far (the places time themselves by them)
-    bool paused = false;                       // it has no turns (its machine stopped)
+    Place* shown = nullptr;                      // the place the menu is for
+    int due = 0;                                 // refreshes until its next step
+    Screen last;                                 // the last picture it showed
+    std::vector<Screen>* shown_all = nullptr;    // when given: every picture it shows, added to it
+    std::vector<SoundCue>* heard_all = nullptr;  // when given: what it asks of the sound, added to it
+    std::uint64_t turns = 0;                     // its refreshes so far (the places time themselves by them)
+    bool paused = false;                         // it has no turns (its machine stopped)
 
     Place& place() { return places->current(); }
     template <typename P>
@@ -70,6 +71,11 @@ struct Machine {
             }
             if (shown_all != nullptr) {
                 shown_all->insert(shown_all->end(), stepped.frames.begin(), stepped.frames.end());
+            }
+            for (const std::vector<SoundCue>& asked : stepped.cues) {
+                if (heard_all != nullptr) {
+                    heard_all->insert(heard_all->end(), asked.begin(), asked.end());
+                }
             }
         }
         places->go(go);
@@ -268,11 +274,25 @@ TEST_CASE(
     REQUIRE(room.until([&] { return host.menu().menu()->start().starts_with("LEVEL 1"); }));
     std::vector<Screen> lobby;
     host.shown_all = &lobby;
+    std::vector<SoundCue> heard;
+    std::vector<SoundCue> heard_by_guest;
+    host.heard_all = &heard;
+    guest.heard_all = &heard_by_guest;
     host.press(Menu::Key::kDown);
     host.press(Menu::Key::kChoose);  // START GAME
     // The lobby goes dark first, all of it (render.hpp darken).
-    REQUIRE(room.until([&] { return host.at<OnlinePlace>() != nullptr; }));
+    REQUIRE(room.until([&] { return host.at<OnlinePlace>() != nullptr && guest.at<OnlinePlace>() != nullptr; }));
     host.shown_all = nullptr;
+    host.heard_all = nullptr;
+    guest.heard_all = nullptr;
+    // The countdown's three seconds, a tick each, the original's menus' (the user, 2026-11-26), on every machine.
+    const auto ticks = [](const std::vector<SoundCue>& asked) {
+        return std::ranges::count_if(asked, [](const SoundCue& cue) {
+            return cue.kind == SoundCue::Kind::kEffect && cue.value == effect::kMenuMoves;
+        });
+    };
+    CHECK(ticks(heard) == 3);
+    CHECK(ticks(heard_by_guest) == 3);
     REQUIRE_FALSE(lobby.empty());
     CHECK(lobby.back().bright < 0.1F);
     CHECK(std::ranges::all_of(lobby.back().palette, [](const assets::Rgb& colour) {

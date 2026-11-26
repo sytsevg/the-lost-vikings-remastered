@@ -254,12 +254,15 @@ class LobbyPlace final : public Place {
     const std::optional<net::Started>& started() const noexcept { return started_; }
 
   private:
+    // Its page as the lobby is now: the players, what the game starts with, the countdown. True if that changed.
+    bool show_lobby(Menu& menu);
     Session* offline_;
     std::unique_ptr<net::Connection> connection_;
     std::unique_ptr<net::HostLobby> host_;  // (one of the two)
     std::unique_ptr<net::GuestLobby> guest_;
     std::optional<net::Started> started_;
     int fading_ = 0;  // the game started: the lobby going dark, refreshes left (what comes is the game's meanwhile)
+    bool tick_due_ = false;  // the countdown went on a second: its tick, with the next picture
     std::uint64_t fading_since_ = 0;
 };
 

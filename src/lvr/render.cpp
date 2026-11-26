@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <format>
 #include <utility>
 
@@ -265,13 +266,10 @@ assets::Palette darkened(const assets::Palette& palette, std::array<std::uint8_t
 }
 
 void darken(Screen& picture, float share, bool colours_drawn_dark) {
-    if (!colours_drawn_dark) {
-        const auto part = [share](std::uint8_t level) {
-            return static_cast<std::uint8_t>(static_cast<float>(level) * share);
-        };
-        for (assets::Rgb& colour : picture.palette) {
-            colour = {.r = part(colour.r), .g = part(colour.g), .b = part(colour.b)};
-        }
+    if (!colours_drawn_dark) {  // (as a scene's fade: of the VGA's 63 levels a colour, as many off each)
+        constexpr float kLevels = 63;
+        const auto off = static_cast<std::uint8_t>(std::lround((1 - std::clamp(share, 0.0F, 1.0F)) * kLevels));
+        picture.palette = darkened(picture.palette, {off, off, off}, true);
     }
     for (Light& light : picture.lights) {
         for (float& colour : light.colour) {

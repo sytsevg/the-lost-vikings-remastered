@@ -10,6 +10,7 @@ layout(set = 3, binding = 0) uniform Over {
     vec4 window;      // the square that is shown: left, top, right, bottom
     vec4 view;        // what the view shows now, the same way
     vec4 vikings[3];  // Erik, Baleog, Olaf: where (x, y); there at all; the one being played
+    vec4 dark;        // the levels a picture's fade takes off its colours, of all of them (as many off these)
 };
 
 // How much of the pixel at `point` is in the box: 1 inside, 0 outside, between at its edge.
@@ -60,4 +61,5 @@ void main() {
     }
     bool framed = outside(pixel, half_square - 1.0, radius - 1.0) > 0.0;
     colour = (framed ? vec4(0.59, 0.60, 0.67, 1.0) : vec4(shown, 0.94)) * vec4(1.0, 1.0, 1.0, size.w);
+    colour.rgb = max(colour.rgb - vec3(dark.x), vec3(0.0));  // (as the picture's own colours lose them)
 }

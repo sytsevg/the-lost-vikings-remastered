@@ -7,7 +7,8 @@ layout(location = 0) in vec2 at;  // in the original's pixels, from the box's to
 layout(location = 0) out vec4 colour;
 layout(set = 3, binding = 0) uniform Gauge {
     vec4 size;  // the box's width and height; its corners' radius; how wide its frame is
-    vec4 left;  // how much of the rewind is left (0 to 1); how much of the minimap is there (0 to 1); then unused
+    vec4 left;  // how much of the rewind is left (0 to 1); how much of the minimap is there (0 to 1); the levels a
+                // picture's fade takes off its colours (0 to 1, as many off these); unused
 };
 
 // How far `point` is outside a box of `half_size` around (0, 0) with corners of radius `radius`; less than 0 inside.
@@ -37,5 +38,5 @@ void main() {
     bool on_mark = mark.x >= 0 && mark.x < 2 * kTriangle && mark.y >= 0 && mark.y < (2 * kTriangle) - 1 &&
                    mark.x % kTriangle >= abs(mark.y - (kTriangle - 1));
     vec3 inside = filled != on_mark ? fill : empty;
-    colour = vec4(on_frame ? frame : inside, opacity * left.y);
+    colour = vec4(max((on_frame ? frame : inside) - vec3(left.z), vec3(0.0)), opacity * left.y);
 }

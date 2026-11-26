@@ -286,8 +286,33 @@ LobbyPlace::LobbyPlace(Session& offline, std::unique_ptr<net::Connection> connec
     : offline_{&offline}, connection_{std::move(connection)}, guest_{std::move(lobby)} {}
 
 void LobbyPlace::begin(Ui& ui) {
-    ui.open_menu().open_lobby(connection_->hosting());
+    Menu& menu = ui.open_menu();
+    menu.open_lobby(connection_->hosting());
+    (void)show_lobby(menu);  // (its first picture as it is, not empty: the user, 2026-11-26, a flash of it so)
     ui.redraw();
+}
+
+bool LobbyPlace::show_lobby(Menu& menu) {
+    if (std::optional<int> level = menu.level_typed(); level && host_ != nullptr) {
+        host_->set_slot(*level < 0 ? scene::kIntro : *level);  // (the others see it as it is typed)
+    }
+    std::vector<Menu::PlayerLine> lines;
+    for (int who = 0; std::cmp_less(who, connection_->names().size()); ++who) {
+        lines.push_back({.name = connection_->names().at(static_cast<std::size_t>(who)),
+                         .network = round_trip_words(connection_->network_ms(who)),
+                         .engine = round_trip_words(connection_->engine_ms(who))});
+    }
+    std::string start_with = start_words(*offline_, host_ != nullptr ? host_->slot() : guest_->slot());
+    const int countdown = host_ != nullptr ? host_->countdown() : guest_->countdown();
+    if (lines == menu.players() && start_with == menu.start() && countdown == menu.countdown()) {
+        return false;
+    }
+    // A tick for each second of the countdown (the user, 2026-11-26), the original's menus' own.
+    tick_due_ = tick_due_ || (countdown > 0 && countdown != menu.countdown());
+    menu.set_players(std::move(lines));
+    menu.set_start(std::move(start_with));
+    menu.set_countdown(countdown);
+    return true;
 }
 
 namespace {
@@ -319,24 +344,8 @@ Go LobbyPlace::refresh(Ui& ui) {
         fading_since_ = ui.refreshes();
         return {};
     }
-    if (Menu* menu = ui.menu(); menu != nullptr && menu->in_lobby()) {
-        if (const std::optional<int> level = menu->level_typed(); level && host_ != nullptr) {
-            host_->set_slot(*level < 0 ? scene::kIntro : *level);  // (the others see it as it is typed)
-        }
-        std::vector<Menu::PlayerLine> lines;
-        for (int who = 0; std::cmp_less(who, connection_->names().size()); ++who) {
-            lines.push_back({.name = connection_->names().at(static_cast<std::size_t>(who)),
-                             .network = round_trip_words(connection_->network_ms(who)),
-                             .engine = round_trip_words(connection_->engine_ms(who))});
-        }
-        std::string start_with = start_words(*offline_, host_ != nullptr ? host_->slot() : guest_->slot());
-        const int countdown = host_ != nullptr ? host_->countdown() : guest_->countdown();
-        if (lines != menu->players() || start_with != menu->start() || countdown != menu->countdown()) {
-            menu->set_players(std::move(lines));
-            menu->set_start(std::move(start_with));
-            menu->set_countdown(countdown);
-            ui.redraw();
-        }
+    if (Menu* menu = ui.menu(); menu != nullptr && menu->in_lobby() && show_lobby(*menu)) {
+        ui.redraw();
     }
     return {};
 }
@@ -350,6 +359,10 @@ Stepped LobbyPlace::step(const Tick& /*tick*/, Ui& ui) {
         for (Screen& picture : stepped.frames) {
             darken(picture, static_cast<float>(fading_) / static_cast<float>(kLobbyFade));
         }
+    }
+    if (std::exchange(tick_due_, false) && !stepped.frames.empty()) {  // (heard with the next picture)
+        stepped.cues.resize(stepped.frames.size());
+        stepped.cues.front().push_back({.kind = SoundCue::Kind::kEffect, .value = effect::kMenuMoves});
     }
     return stepped;
 }
