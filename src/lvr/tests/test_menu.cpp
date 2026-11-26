@@ -268,10 +268,10 @@ TEST_CASE("menu: HOST GAME and JOIN GAME, from the title: lines typed into, chec
                .passwords = {"AAAA", "BBBB", "CCCC"}}};
     menu.open_host();
     CHECK(menu.title() == "HOST GAME");
-    CHECK(labels(menu) == std::vector<std::string>{"NAME", "PORT", "PASSWORD", "START HOSTING", "BACK"});
-    CHECK(menu.lines()[0].value == "PLAYER 1");  // (no name yet: the one the game gives)
+    CHECK(labels(menu) ==
+          std::vector<std::string>{"NAME", "PORT", "START HOSTING", "BACK"});  // (the password: the lobby's)
+    CHECK(menu.lines()[0].value == "PLAYER 1");                                // (no name yet: the one the game gives)
     CHECK(menu.lines()[1].value == "47230");
-    CHECK(menu.lines()[2].value == "NEW GAME");  // no password: a new game, from the intro
 
     // The name: typed (letters made capitals, what the font hasn't left out), at most 8; erased; done with Enter.
     CHECK(menu.press(Key::kChoose) == Menu::Asked::kNothing);
@@ -299,7 +299,7 @@ TEST_CASE("menu: HOST GAME and JOIN GAME, from the title: lines typed into, chec
     menu.take_text("0x");
     menu.stop_waiting();
     CHECK(menu.settings().host_port == 0);
-    go_to(menu, 3);
+    go_to(menu, 2);
     CHECK(menu.press(Key::kChoose) == Menu::Asked::kNothing);
     CHECK(menu.note().front() == "THE PORT IS 1 TO 65535");
     go_to(menu, 1);
@@ -309,36 +309,38 @@ TEST_CASE("menu: HOST GAME and JOIN GAME, from the title: lines typed into, chec
     menu.stop_waiting();
     CHECK(menu.settings().host_port == 4000);
 
-    // The password: a level's, or none (a new game: level -1); another, and nothing starts.
-    go_to(menu, 3);
+    // No password kept: a new game (level -1); one kept from the lobby before: its level; one naming none: a new game.
+    go_to(menu, 2);
     CHECK(menu.press(Key::kChoose) == Menu::Asked::kHost);
     CHECK(menu.level() == -1);
-    go_to(menu, 2);
-    (void)menu.press(Key::kChoose);
-    menu.take_text("x");
-    menu.stop_waiting();
-    go_to(menu, 3);
-    CHECK(menu.press(Key::kChoose) == Menu::Asked::kNothing);
-    CHECK(menu.note().front() == "NO LEVEL HAS THAT PASSWORD");
-    go_to(menu, 2);
-    (void)menu.press(Key::kChoose);
-    for (int i = 0; i < 4; ++i) {
-        menu.erase();
-    }
-    menu.take_text("cccc");  // (four at most)
-    menu.take_text("D");
-    menu.stop_waiting();
-    go_to(menu, 3);
-    CHECK(menu.press(Key::kChoose) == Menu::Asked::kHost);
-    CHECK(menu.level() == 2);
-    CHECK(menu.settings().host_password == "CCCC");
+    Settings kept = menu.settings();
+    kept.host_password = "CCCC";
+    Menu with{kept,
+              {.has_modern = false,
+               .screens = {"none"},
+               .online = false,
+               .hosting = false,
+               .passwords = {"AAAA", "BBBB", "CCCC"}}};
+    with.open_host();
+    CHECK(with.press(Key::kChoose) == Menu::Asked::kHost);
+    CHECK(with.level() == 2);
+    kept.host_password = "XXXX";
+    Menu none{kept,
+              {.has_modern = false,
+               .screens = {"none"},
+               .online = false,
+               .hosting = false,
+               .passwords = {"AAAA", "BBBB", "CCCC"}}};
+    none.open_host();
+    CHECK(none.press(Key::kChoose) == Menu::Asked::kHost);
+    CHECK(none.level() == -1);
 
     // Back from it: back to the title, the menu closed.
     CHECK(menu.press(Key::kBack) == Menu::Asked::kResume);
 
     Menu again{menu.settings(), {}};
     again.open_host();
-    CHECK(again.chosen() == 3);  // a name there already: START HOSTING at once
+    CHECK(again.chosen() == 2);  // a name there already: START HOSTING at once
     Menu join{menu.settings(), {}};
     join.open_join();
     CHECK(join.chosen() == 1);  // a name, no address yet: ADDRESS

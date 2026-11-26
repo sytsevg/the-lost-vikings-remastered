@@ -19,7 +19,7 @@ using input::Action;
 constexpr std::array<std::string_view, 6> kFirstLines{"OPTIONS",         "KEYBOARD",      "GAMEPAD",
                                                       "RETURN TO LOBBY", "GIVE UP LEVEL", "QUIT GAME"};
 // HOST GAME's lines and JOIN GAME's.
-enum class Host : std::uint8_t { kName, kPort, kPassword, kStart, kBack };
+enum class Host : std::uint8_t { kName, kPort, kStart, kBack };  // (the password: the lobby's)
 constexpr std::size_t kHostLines = 5;
 enum class Join : std::uint8_t { kName, kAddress, kJoin, kBack };
 constexpr std::size_t kJoinLines = 4;
@@ -123,8 +123,6 @@ Menu::Field Menu::field_of(std::size_t line) const noexcept {
                 return Field::kName;
             case Host::kPort:
                 return Field::kPort;
-            case Host::kPassword:
-                return Field::kPassword;
             case Host::kStart:
             case Host::kBack:
                 break;
@@ -269,7 +267,6 @@ std::vector<Menu::Line> Menu::lines() const {
         case Page::kHost:
             line("NAME", typed(static_cast<std::size_t>(Host::kName), "PLAYER 1"));
             line("PORT", typed(static_cast<std::size_t>(Host::kPort)));
-            line("PASSWORD", typed(static_cast<std::size_t>(Host::kPassword), "NEW GAME"));
             line("START HOSTING");
             line("BACK");
             break;
@@ -279,6 +276,7 @@ std::vector<Menu::Line> Menu::lines() const {
             line("JOIN", join_said_.substr(0, kValueColumns));
             if (join_said_.empty()) {
                 lines.back().turning = joining_;
+                lines.back().dim = joining_.has_value();  // (greyed while it joins)
             }
             line("BACK");
             break;
@@ -479,17 +477,13 @@ Menu::Asked Menu::choose() {
             if (chosen == (host ? static_cast<std::size_t>(Host::kBack) : static_cast<std::size_t>(Join::kBack))) {
                 return Asked::kResume;
             }
-            if (host) {
-                const std::optional<int> level = level_typed();
+            if (host) {  // (the lobby starts with the password kept from before: the lobby's page changes it)
                 if (settings_.host_port < 1 || settings_.host_port > kMostPortNumber) {
                     said_ = "THE PORT IS 1 TO 65535";
-                } else if (!level) {
-                    said_ = "NO LEVEL HAS THAT PASSWORD";
-                } else {
-                    level_ = *level;
-                    return Asked::kHost;
+                    break;
                 }
-                break;
+                level_ = level_typed().value_or(-1);  // (one naming no level: a new game)
+                return Asked::kHost;
             }
             if (settings_.join_address.empty()) {
                 said_ = "TYPE THE HOST'S IP FIRST";

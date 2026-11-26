@@ -67,8 +67,9 @@ struct Stepped {
 // choices, as Escape opens it), its picture drawn again. A window's, or one without (headless_ui).
 class Ui {
   public:
-    Ui(std::optional<Menu>& menu, std::function<Menu&()> open, std::function<void()> redraw)
-        : menu_{&menu}, open_{std::move(open)}, redraw_{std::move(redraw)} {}
+    Ui(std::optional<Menu>& menu, std::function<Menu&()> open, std::function<void()> redraw,
+       std::function<void(int, int)> fade = {})
+        : menu_{&menu}, open_{std::move(open)}, redraw_{std::move(redraw)}, fade_{std::move(fade)} {}
     Menu* menu() { return *menu_ ? &**menu_ : nullptr; }
     Menu& open_menu() { return open_(); }
     void redraw() {
@@ -76,11 +77,18 @@ class Ui {
             redraw_();
         }
     }
+    // The menu's picture `left` of `of` as bright (going dark with what is under it); drawn again.
+    void fade(int left, int of) {
+        if (fade_) {
+            fade_(left, of);
+        }
+    }
 
   private:
     std::optional<Menu>* menu_;
     std::function<Menu&()> open_;
     std::function<void()> redraw_;
+    std::function<void(int, int)> fade_;
 };
 
 class Place {
@@ -242,6 +250,7 @@ class LobbyPlace final : public Place {
     std::unique_ptr<net::HostLobby> host_;  // (one of the two)
     std::unique_ptr<net::GuestLobby> guest_;
     std::optional<net::Started> started_;
+    int fading_ = 0;  // the game started: the lobby going dark, refreshes left (what comes is the game's meanwhile)
 };
 
 // A game online, played: its own session under rollback (net::Match) over the connection. The names under the

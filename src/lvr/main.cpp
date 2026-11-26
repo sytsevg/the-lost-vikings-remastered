@@ -86,8 +86,8 @@ constexpr const char* kWindowTitle = "The Lost Vikings";
 constexpr double kSlowStepMilliseconds = 8;
 constexpr double kSlowShowMilliseconds = 20;
 // The most pictures shown a second where showing doesn't wait for the screen's refresh (GpuRenderer::waits_for_refresh;
-// the user: "max 200fps or something"): smooth movement shows each where it is at that moment.
-constexpr std::uint64_t kMostShows = 200;
+// the user: 120): smooth movement shows each where it is at that moment.
+constexpr std::uint64_t kMostShows = 120;
 
 bool write_wav(const std::filesystem::path& path, const std::vector<std::int16_t>& samples, std::uint32_t rate) {
     std::ofstream out(path, std::ios::binary);
@@ -446,9 +446,18 @@ Go run(Window& in, Place& place) {
             (void)(now ? SDL_StartTextInput(window) : SDL_StopTextInput(window));
         }
     };
+    std::pair<int, int> menu_bright{1, 1};  // the menu's picture this bright (a place going dark with it)
     const auto draw_menu = [&] {
         type_into(menu && menu->waiting() == Menu::Waiting::kText);
-        gpu->set_overlay(menu_picture(*menu, session.font(), flash_shown));
+        std::vector<std::uint8_t> picture = menu_picture(*menu, session.font(), flash_shown);
+        if (const auto [left, of] = menu_bright; left < of) {
+            for (std::size_t at = 0; at + 3 < picture.size(); at += 4) {  // (red, green, blue; alpha as it was)
+                for (std::size_t part = 0; part < 3; ++part) {
+                    picture.at(at + part) = static_cast<std::uint8_t>(picture.at(at + part) * left / of);
+                }
+            }
+        }
+        gpu->set_overlay(std::move(picture));
     };
     const auto menu_changed = [&] {
         use_settings(session, gpu, menu->settings());
@@ -622,7 +631,12 @@ Go run(Window& in, Place& place) {
         }
     };
     // What the place asks of the menu.
-    Ui ui{menu, open_menu, menu_changed};
+    Ui ui{menu, open_menu, menu_changed, [&](int left, int of) {
+              menu_bright = {left, of};
+              if (menu) {
+                  draw_menu();
+              }
+          }};
     if (remaster && gpu != nullptr && place.own_session()) {
         use_settings(session, gpu, remastered->settings);
     }
@@ -1080,20 +1094,24 @@ int main(int argc, char* argv[]) try {
                                        .state_version = kStateVersion,
                                        .name = {}};
     }
-    Places places{offline, std::move(needs)};
-    Window shown{.window = window,
-                 .gpu = gpu.get(),
-                 .remastered = remastered ? &*remastered : nullptr,
-                 .showcase = showcase ? &*showcase : nullptr,
-                 .report_slow = report_slow,
-                 .last = {}};
-    while (!places.done()) {
-        const Go go = run(shown, places.current());
-        places.go(go.to == Go::To::kStay
-                      ? Go{.to = Go::To::kDone, .why = {}, .failed = false, .host = false, .level = 0, .page = false}
-                      : go);
+    int status = EXIT_SUCCESS;
+    {  // (the places end here, a game online's connection with them, before SDL does: its thread stops its sockets)
+        Places places{offline, std::move(needs)};
+        Window shown{.window = window,
+                     .gpu = gpu.get(),
+                     .remastered = remastered ? &*remastered : nullptr,
+                     .showcase = showcase ? &*showcase : nullptr,
+                     .report_slow = report_slow,
+                     .last = {}};
+        while (!places.done()) {
+            const Go go = run(shown, places.current());
+            places.go(
+                go.to == Go::To::kStay
+                    ? Go{.to = Go::To::kDone, .why = {}, .failed = false, .host = false, .level = 0, .page = false}
+                    : go);
+        }
+        status = places.failed() ? EXIT_FAILURE : EXIT_SUCCESS;
     }
-    const int status = places.failed() ? EXIT_FAILURE : EXIT_SUCCESS;
     if (const auto saved = (*session)->save_profile(); !saved) {
         std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
     }

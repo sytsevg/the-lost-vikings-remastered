@@ -300,9 +300,8 @@ TEST_CASE(
     }
 }
 
-TEST_CASE(
-    "real data: a join that fails: the mark turns two seconds, why beside JOIN three, then JOIN GAME's page again",
-    "[real-data]") {
+TEST_CASE("real data: a join that fails: the mark turns two seconds, why beside JOIN four, then JOIN GAME's page again",
+          "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
@@ -322,9 +321,10 @@ TEST_CASE(
     REQUIRE(after(1000));  // a second: still turning
     CHECK(guest.at<ConnectingPlace>() != nullptr);
     CHECK(join_line().turning.has_value());
-    REQUIRE(after(3000));  // three seconds: why
+    CHECK(join_line().dim);  // (greyed while it joins)
+    REQUIRE(after(3000));    // three seconds: why
     CHECK(join_line().value == "NO GAME THERE");
     REQUIRE(room.until([&] { return guest.at<OfflinePlace>() != nullptr; }));
-    CHECK(room.network.now() >= began + 5000);
+    CHECK(room.network.now() >= began + 6000);
     CHECK(join_line().value.empty());  // JOIN GAME's page again, to try once more
 }

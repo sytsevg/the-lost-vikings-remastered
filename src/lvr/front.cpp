@@ -178,7 +178,7 @@ Place::Answer ConnectingPlace::asked(Menu::Asked asked, Menu& /*menu*/) {
 Go ConnectingPlace::refresh(Ui& ui) {
     constexpr int kTurnEvery = 6;       // refreshes a phase of the turning mark
     constexpr int kLeastTurning = 120;  // a failure is said no sooner than two seconds in, the mark turning till then
-    constexpr int kSaidFor = 180;       // and what it was beside JOIN for three seconds; then the page as it was
+    constexpr int kSaidFor = 240;       // and what it was beside JOIN for four seconds; then the page as it was
     const std::string where = std::format("{}:{}", address_, port_);
     Menu* menu = ui.menu();
     ++refreshes_;
@@ -282,7 +282,18 @@ void LobbyPlace::begin(Ui& ui) {
     ui.redraw();
 }
 
+namespace {
+constexpr int kLobbyFade = 30;  // refreshes the lobby takes to go dark as its game starts
+}  // namespace
+
 Go LobbyPlace::refresh(Ui& ui) {
+    if (started_) {  // going dark, the page with it; then the game (rising from black)
+        if (--fading_ <= 0) {
+            return Go{.to = Go::To::kOnline, .why = {}, .failed = false, .host = false, .level = 0, .page = false};
+        }
+        ui.fade(fading_, kLobbyFade);
+        return {};
+    }
     auto polled = host_ != nullptr ? host_->poll() : guest_->poll();
     if (!polled) {
         std::println(stderr, "vikings-remaster: {}", polled.error());
@@ -295,7 +306,8 @@ Go LobbyPlace::refresh(Ui& ui) {
     }
     if (*polled) {
         started_ = **polled;
-        return Go{.to = Go::To::kOnline, .why = {}, .failed = false, .host = false, .level = 0, .page = false};
+        fading_ = kLobbyFade;
+        return {};
     }
     if (Menu* menu = ui.menu(); menu != nullptr && menu->in_lobby()) {
         if (const std::optional<int> level = menu->level_typed(); level && host_ != nullptr) {
@@ -324,6 +336,15 @@ Stepped LobbyPlace::step(const Tick& /*tick*/, Ui& ui) {
     const Menu* menu = ui.menu();
     stepped.frames = offline_->held(menu != nullptr && !menu->of_title());  // (its page under the logo, lit)
     stepped.cues = std::move(offline_->cues);
+    if (started_) {
+        for (Screen& picture : stepped.frames) {
+            for (assets::Rgb& colour : picture.palette) {
+                colour = {.r = static_cast<std::uint8_t>(colour.r * fading_ / kLobbyFade),
+                          .g = static_cast<std::uint8_t>(colour.g * fading_ / kLobbyFade),
+                          .b = static_cast<std::uint8_t>(colour.b * fading_ / kLobbyFade)};
+            }
+        }
+    }
     return stepped;
 }
 
