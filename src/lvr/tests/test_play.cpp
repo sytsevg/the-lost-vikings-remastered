@@ -411,3 +411,24 @@ TEST_CASE("real data: with the SNES image a scene that has a backdrop there is l
     CHECK_FALSE(load_slot(*files, -1, database::kSpaceship, &*snes));
     CHECK_FALSE(load_slot(*files, kSceneSlots, database::kSpaceship, &*snes));
 }
+
+TEST_CASE("real data: Remaster rules: a title's demo whose Vikings are all gone ends, back to the logos",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    const auto files = assets::GameFiles::open(LVR_ORIGINAL_DIR);
+    REQUIRE(files);
+    auto title = load_slot(*files, scene::kTitle, 0);
+    REQUIRE(title);
+    Play play{*files, std::make_unique<LoadedLevel>(std::move(*title)), scene::kTitle, Rules::kRemaster};
+    for (int step = 0; step < 400 && !play.playing_demo(); ++step) {  // (left alone, the title plays a demo)
+        (void)play.step(0, [] {});
+    }
+    REQUIRE(play.playing_demo());
+    (void)play.step(0, [] {});
+    play.world.game_over = true;  // (as when the last of them dies: the recording no longer the play)
+    (void)play.step(0, [] {});
+    CHECK(play.world.scene == scene::kLogo);
+    CHECK_FALSE(play.playing_demo());
+}

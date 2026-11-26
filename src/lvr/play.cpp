@@ -601,6 +601,15 @@ bool Play::menu_pass(const StepInput& input, const std::function<void()>& pictur
 int Play::change_scene(const std::function<void()>& picture) {
     constexpr std::uint8_t kFadeSteps = 70;
     scene_loaded = true;
+    if (world.rules == Rules::kRemaster && state_.playback && world.game_over && !world.leave) {
+        // A demo whose Vikings are all gone ends as its recording's end does: the logos and the title again, the
+        // next demo the next time (the user, 2026-11-26: it went to the game-over scene, and "yes" played the
+        // level). Under Remaster rules what the recording does can come out otherwise, the rules being others.
+        state_.demo_index = (state_.demo_index + 1) % 6;
+        world.next_scene = scene::kLogo;
+        state_.playback = false;
+        world.leave = true;
+    }
     const Level& leaving_level = loaded_->level;
     // What is left of the scene: its music's end, every entity's turn as when it leaves the active area, and
     // the picture going dark, a refresh a step.
