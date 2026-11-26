@@ -744,7 +744,10 @@ Go run(Window& in, Place& place) {
               return static_cast<std::uint64_t>(static_cast<double>(SDL_GetPerformanceCounter() - start) /
                                                 static_cast<double>(frequency) * kDisplayHz);
           }};
-    if (remaster && gpu != nullptr && place.own_session()) {
+    // The player's settings to the place's session as it begins, a game online's or the title's again after one: what
+    // was changed in the one is the other's too (the user, 2026-11-26: the zoom set online was lost when the lobby
+    // or the title, whose session the game online's never was, gave theirs back as they were left).
+    if (remaster && gpu != nullptr) {
         use_settings(session, gpu, remastered->settings);
     }
     if (remaster && gpu != nullptr) {

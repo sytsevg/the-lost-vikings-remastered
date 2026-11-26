@@ -112,8 +112,6 @@ class Place {
     // keys act on it (zoom, minimap, quicksave: where it takes them).
     virtual Session& session() = 0;
     virtual bool heard() const { return true; }
-    // Its session is its own, new: the player's settings go to it as it begins (a game online's).
-    virtual bool own_session() const { return false; }
     // Whether the game holds while the menu is open (online it goes on under it).
     virtual bool holds() const { return true; }
     // The menu's choices here.
@@ -282,7 +280,6 @@ class OnlinePlace final : public Place {
                                                                          net::Started started, const Needs& needs);
 
     Session& session() override { return *session_; }
-    bool own_session() const override { return true; }
     bool holds() const override { return false; }
     Menu::Choices choices() override { return menu_choices(*session_, connection_->hosting(), true); }
     Go refresh(Ui& ui) override;
