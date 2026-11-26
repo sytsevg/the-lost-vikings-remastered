@@ -771,7 +771,7 @@ std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<asset
     // The title's pages: under its logo, nothing of the title's own menu showing through (the user: a menu of its
     // own, not one laid over the game): as far down as that menu goes at least (its six rows to row 21, the pointer
     // beside them), the notes at the bottom.
-    constexpr int kUnderLogo = 87;  // (the logo's last row is 86)
+    constexpr int kUnderLogo = 87 - kTitleLower;  // (the logo's last row: 86, raised for the six choices)
     constexpr int kTitleMenuEnd = 179;
     const bool of_title = menu.of_title();
     const int height = of_title ? std::max(content, kTitleMenuEnd - kUnderLogo) : content;

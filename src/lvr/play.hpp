@@ -58,6 +58,8 @@ inline constexpr int kSceneSlots = 48;
 // The original's pause menu and quit box show the picture this much darker (World::tint, of the VGA's 64 levels
 // a colour); Remaster rules' menu (menu.hpp) does it too.
 inline constexpr std::array<std::uint8_t, 3> kMenuTint{8, 8, 8};
+// Remaster rules, offline: how much further down the title starts, its picture as much higher (its six choices).
+inline constexpr int kTitleLower = 8;
 std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files, int slot, int database_entry,
                                                   const assets::SnesRom* snes = nullptr);
 

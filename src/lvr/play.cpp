@@ -371,9 +371,12 @@ World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rule
     }
     world.has_vikings = level.start.size() == kVikingSlots;
     world.first_placed_slot = world.has_vikings ? kVikingSlots : 1;
+    // Remaster rules, offline: the title (and the camera on it) 8 pixels further down, its picture 8 higher, so its
+    // six choices fit under the logo with the pointer whole on the last (the user, 2026-11-26).
+    const int lower = rules == Rules::kRemaster && players == 1 && world.scene == scene::kTitle ? kTitleLower : 0;
     for (const Placement& start : level.start) {
         Entity* entity = world.create(
-            {.kind = start.kind, .x = start.x, .y = start.y, .flags = start.flags, .argument = start.argument});
+            {.kind = start.kind, .x = start.x, .y = start.y + lower, .flags = start.flags, .argument = start.argument});
         if (entity != nullptr && world.has_vikings) {
             entity->health = kFullHealth;
         }

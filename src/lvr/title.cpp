@@ -139,13 +139,15 @@ class Title : public Entity {
                 s.state = State::kDone;
                 return;
             case State::kPasswordComing:
-                s.moved = 0;  // (the password's screen: the original's rows, PASSWORD's at kPasswordRow)
+                s.moved = 0;  // (the password's screen: the original's rows, PASSWORD's at 16)
                 world.play(*this, anim::kTitlePasswordStands);
                 animate_moved(world);
-                world.colour_boxes(0);
-                for (int choice = 0; last == kRemasterLast && choice <= last; ++choice) {
-                    put(world, 0x101, 14, row_of(world, choice));  // (the six choices' rows, cleared first)
+                if (last == kRemasterLast) {
+                    // (The six choices' rows cleared first. Not with the blank line the original puts on its own
+                    // rows: on rows 17 and 19 that covers the box around the letter being put in.)
+                    world.clear_text();
                 }
+                world.colour_boxes(0);
                 put(world, 0x101, 14, 14);
                 put(world, 0x100, 14, 16);
                 put(world, 0x101, 14, 18);
@@ -174,7 +176,7 @@ class Title : public Entity {
                 }
                 world.clear_text();
                 s.choice = 1;  // (pointed at as the menu comes)
-                return show_menu(world);
+                return back_to_menu(world, last);
             case State::kDone:
                 return;
         }
@@ -208,11 +210,10 @@ class Title : public Entity {
     // and OPTIONS between PASSWORD and QUIT TO DOS.
     static constexpr int kRowsApart = 2;
     static constexpr int kRemasterLast = 5;
-    static constexpr int kPasswordRow = 16;
-    // A choice's row: the original's from 14 on; with six, from 11, just under the logo (the text layer ends at row
-    // 21).
+    // A choice's row: the original's from 14 on; with six, from 10, under the logo raised a row for them
+    // (kTitleLower; the text layer ends at row 21, the pointer reaching a little below its row).
     static int row_of(const World& world, int choice) {
-        return (choices(world) == kRemasterLast + 1 ? 11 : 14) + (choice * kRowsApart);
+        return (choices(world) == kRemasterLast + 1 ? 10 : 14) + (choice * kRowsApart);
     }
     static int choices(const World& world) {
         return world.rules == Rules::kRemaster && !world.online ? kRemasterLast + 1 : 3;
@@ -260,6 +261,16 @@ class Title : public Entity {
         animate_moved(world);
         s.state = State::kMenuComing;
     }
+    // From the password's screen to the menu, PASSWORD chosen. Under Remaster rules the pointer is put at its row
+    // first: the menu's first tick runs the animation there is (the pointer's at PASSWORD never runs, the next
+    // replacing it), and what the password's screen left is at the original's row, between two of six (the user,
+    // 2026-11-26). The original's three keep the original's way.
+    void back_to_menu(World& world, int last) {
+        if (last == kRemasterLast) {
+            point_at(world, 1, row_of(world, 1));
+        }
+        show_menu(world);
+    }
     void chosen(World& world, int choice) {
         countdown = kPatience;
         world.sound(*this, effect::kMenuMoves);
@@ -300,7 +311,7 @@ class Title : public Entity {
             world.typed = 0;
             world.clear_text();
             s.choice = 1;
-            show_menu(world);
+            back_to_menu(world, choices(world) - 1);
             return true;
         }
         std::uint8_t& letter = world.password.at(static_cast<std::size_t>(s.at));
@@ -385,7 +396,7 @@ class Title : public Entity {
             world.sound(*this, effect::kTitleChosen);
             world.clear_text();
             world.hide_pieces(*this);
-            point_at(world, 1, kPasswordRow);
+            point_at(world, 1, row_of(world, 1));
             show_menu(world);
             return true;
         }

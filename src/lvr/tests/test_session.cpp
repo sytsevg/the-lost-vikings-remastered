@@ -1078,17 +1078,40 @@ TEST_CASE(
     around->step(key::kEnter);
     around->step(0);  // (the game ends as the next step starts)
     CHECK(around->quit());
-    // PASSWORD, and Escape (the handler's, under Remaster rules): the menu again, PASSWORD still chosen.
+    // PASSWORD, and Escape (the handler's, under Remaster rules): the menu again, PASSWORD still chosen, the pointer
+    // where choosing it puts it. On the password's screen the box around the letter, as the original's three have it.
+    const auto pointer = [](const Session& session) {  // the title's pieces shown, where on the screen
+        const World& world = session.world();
+        const Entity& title = *world.at(0);
+        std::vector<std::array<int, 2>> at;
+        for (int i = title.sprite.first; i < title.sprite.first + title.sprite.count; ++i) {
+            if (const Piece& piece = world.pieces.at(static_cast<std::size_t>(i)); piece.in_use && !piece.hidden) {
+                at.push_back({piece.x - world.players[0].camera.x, piece.y - world.players[0].camera.y});
+            }
+        }
+        return at;
+    };
+    const auto letters = [&press](Session& session) {  // the password's screen: the picture round its letters
+        press(session, key::kEnter);
+        std::vector<Screen> shown;
+        for (int step = 0; step < 4; ++step) {
+            shown = session.step(0);
+        }
+        const Screen& screen = shown.back();
+        return std::vector<std::uint8_t>(screen.pixels.begin() + (136 * kScreenWidth),
+                                         screen.pixels.begin() + (160 * kScreenWidth));
+    };
     auto back = at_menu(Rules::kRemaster);
     press(*back, key::kDown);
-    press(*back, key::kEnter);
-    for (int step = 0; step < 4; ++step) {
-        back->step(0);
-    }
+    const auto at_password = pointer(*back);
+    auto original = at_menu(Rules::kVanilla);
+    press(*original, key::kDown);
+    CHECK(letters(*back) == letters(*original));
     back->key_pressed(input::kTypedEscape);
     for (int step = 0; step < 8; ++step) {
         back->step(0);
     }
+    CHECK(pointer(*back) == at_password);
     press(*back, key::kDown);
     back->step(key::kEnter);
     CHECK(back->world().title.page == World::Title::kHostGame);

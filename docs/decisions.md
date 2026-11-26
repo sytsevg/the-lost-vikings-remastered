@@ -457,8 +457,10 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   from the title's own menu only (the user: the game's main menu, not the Escape menu in a level, so going online
   is easier; the command line's ways dropped, 2026-11-26): under Remaster rules offline it has HOST GAME, JOIN GAME
   and OPTIONS (the menu's first page without GIVE UP LEVEL and QUIT GAME: the user, 2026-11-26) between PASSWORD
-  and QUIT TO DOS (its six choices from row 11, just under the logo, the text layer ending at row 21; a page over
-  the title covers all of them, `menu_picture`; the pointer's choices further on
+  and QUIT TO DOS (its six choices from row 10: the title, and the camera on it, start `kTitleLower` 8 pixels
+  further down offline, its logo as much higher, so the pointer is whole on the last, the text layer ending at row
+  21, the user's choice; a page over the title covers all of them, `menu_picture`; back from the password the
+  pointer is put on PASSWORD first, `Title::back_to_menu`; the pointer's choices further on
   placed from as many rows further down, `Title::animate_moved`, the camera not following). Each opens its page of
   the Remaster menu over the title: a name, a port and a level's password; a name and the host's IP:PORT; typed
   into, kept in the profile (`settings.txt`). Either leads into the **lobby** (the user), over the title: who is
