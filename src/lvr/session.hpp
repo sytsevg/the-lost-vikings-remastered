@@ -268,6 +268,9 @@ class Session {
     std::optional<assets::SnesRom> snes_;  // the user's SNES image, for the backdrops (Remaster rules)
     SharedGraphics shared_;
     Play play_;
+    // The quicksave (Remaster rules). (Beside the play, both laid out every 16 bytes: elsewhere what comes before it
+    // would leave room unused.)
+    std::optional<Play::Snapshot> quick_;
     Draw draw_ = draw;
     PiecePainter painter_;
     std::vector<PiecePicture> pictures_;
@@ -339,7 +342,6 @@ class Session {
     std::deque<Kept> rewind_;  // the last steps of the level, the oldest first: no more than can be gone back over
     int rewind_left_ = kRewindSteps;
     std::uint32_t rewind_scene_ = 0;  // the scene (Play::scenes_started) those are of
-    std::optional<Play::Snapshot> quick_;
     bool rewind_held_ = false;
     bool rewinding_ = false;    // the last step went back
     bool rewind_over_ = false;  // held, but there was nothing left to go back to: not again until it is let go

@@ -881,7 +881,8 @@ TEST_CASE("real data: Remaster rules' effects: a Viking electrocuted or burning 
     }
     // The showcase's deaths: the same play twice, the Viking put there in the one. While he dies there is a light
     // at him that the other play doesn't have (where the lights are doesn't hang on their flicker): blue for
-    // electricity, orange for fire. When he is dead it is gone.
+    // electricity, orange for fire. When he is dead it is gone. Electrocuted, a great deal of sparks fly off him
+    // (the user, 2026-11-26): many more particles than the other play has at once.
     int deaths = 0;
     for (const Scenario& scenario : kScenarios) {
         if (!scenario.death) {
@@ -911,6 +912,7 @@ TEST_CASE("real data: Remaster rules' effects: a Viking electrocuted or burning 
         };
         std::optional<Light> seen;
         bool gone = false;
+        std::size_t most_more = 0;  // particles
         for (int step = 0; step < 90; ++step) {
             const auto keys = static_cast<std::uint16_t>(step < 6 && step % 2 != 0 ? key::kF : 0);
             if (step == 8) {
@@ -926,6 +928,9 @@ TEST_CASE("real data: Remaster rules' effects: a Viking electrocuted or burning 
             REQUIRE(shown.size() == other.size());
             const Screen::Viking& viking = shown.back().vikings.at(static_cast<std::size_t>(death.viking));
             const auto light = his_light(shown.back(), other.back(), viking);
+            const std::size_t particles = shown.back().motion.sprites.size();
+            const std::size_t others = other.back().motion.sprites.size();
+            most_more = std::max(most_more, particles > others ? particles - others : 0);
             if (step < 10) {
                 CHECK_FALSE(light);
             } else if (!seen) {
@@ -938,6 +943,9 @@ TEST_CASE("real data: Remaster rules' effects: a Viking electrocuted or burning 
         const bool fire = scenario.name.find("burning") != std::string_view::npos;
         CHECK((fire ? seen->colour[0] > seen->colour[2] : seen->colour[2] > seen->colour[0]));
         CHECK(gone);
+        if (!fire) {
+            CHECK(most_more > 40);
+        }
     }
     CHECK(deaths == 5);
 }

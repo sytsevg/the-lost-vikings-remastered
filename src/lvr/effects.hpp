@@ -16,6 +16,7 @@
 
 namespace lvr {
 
+class Entity;
 class World;
 
 class Effects {
@@ -47,6 +48,10 @@ class Effects {
     std::vector<Particle> particles_;
     // A few sparks flying out from (x, y) in the level.
     void spark(float x, float y);
+    static std::array<float, 2> fuse_of(const Entity& bomb);
+    // A blast going off at (x, y), `size` across: embers flying out all round, smoke, sparks.
+    void blast(float x, float y, float size);
+    std::vector<const Entity*> blasting_;  // what was a blast in the last picture (one new to it goes off)
     // What stops light, and the map's tile types it was made from (made anew when they change).
     std::shared_ptr<const Ground> ground_;
     std::vector<std::uint8_t> ground_of_;

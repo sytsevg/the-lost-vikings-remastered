@@ -29,9 +29,10 @@ constexpr bool holds_in(unsigned worlds, int database) noexcept {
 
 // What an animation gives off while an entity plays it (from its start until another is started). What is there to
 // be seen (traps, fire and shots on their way, a Viking electrocuted or burning up); not a blow or a hit landing
-// (the user, 2026-11-25).
-enum class Glow : std::uint8_t { kNone, kFire, kElectric, kBarrier, kShot, kShotBurst, kShocked };
-enum class Emits : std::uint8_t { kNothing, kEmbers, kSparks, kEmbersAndSmoke };
+// (the user, 2026-11-25). A bomb's fuse and a blast, though (the user, 2026-11-26).
+enum class Glow : std::uint8_t { kNone, kFire, kElectric, kBarrier, kShot, kShotBurst, kShocked, kFuse, kBlast };
+// (kShower: a great deal of sparks, all over him; kBlast: as it goes off, a burst, then embers now and then.)
+enum class Emits : std::uint8_t { kNothing, kEmbers, kSparks, kEmbersAndSmoke, kShower, kFuse, kBlast };
 struct Rule {
     Animation animation;
     Glow glow = Glow::kNone;
@@ -65,6 +66,12 @@ constexpr std::array kRules{
     Rule{.animation = anim::kTomatorShotFlies, .glow = Glow::kShot, .emits = Emits::kNothing},
     Rule{.animation = anim::kTomatorShotBursts, .glow = Glow::kShotBurst, .emits = Emits::kNothing},
     Rule{.animation = anim::kTomatorShotFizzles, .glow = Glow::kShotBurst, .emits = Emits::kNothing},
+    // Bombs: a Viking's, its fuse burning, then going off; a bomber's bursting; the factory's blasts.
+    Rule{.animation = anim::kPlacedBombTicks, .glow = Glow::kFuse, .emits = Emits::kFuse},
+    Rule{.animation = anim::kPlacedBombBlowsUp, .glow = Glow::kBlast, .emits = Emits::kBlast},
+    Rule{.animation = anim::kBombBursts, .glow = Glow::kBlast, .emits = Emits::kBlast},
+    Rule{.animation = anim::kBlastLarge, .glow = Glow::kBlast, .emits = Emits::kBlast},
+    Rule{.animation = anim::kBlastSmall, .glow = Glow::kBlast, .emits = Emits::kBlast},
 };
 
 // The Vikings' deaths by electricity and by fire (the user, 2026-11-25), each Viking's own; the other deaths give
@@ -84,11 +91,11 @@ constexpr auto kVikingDeaths = [] {
         const auto add = [&rules, &at](Animation animation, Glow glow, Emits emits, unsigned worlds) {
             rules.at(at++) = Rule{.animation = animation, .glow = glow, .emits = emits, .worlds = worlds};
         };
-        add(looks.electrocuted, Glow::kShocked, Emits::kSparks, kBarriers);
-        add(looks.electrocuted_from_below, Glow::kShocked, Emits::kSparks, kSpaceship);
-        add(looks.electrocuted_from_above, Glow::kShocked, Emits::kSparks, kSpaceship);
-        add(anim::kVikingShockedFromBelow.at(who), Glow::kShocked, Emits::kSparks, kFactories);
-        add(anim::kVikingShockedFromAbove.at(who), Glow::kShocked, Emits::kSparks, kFactories);
+        add(looks.electrocuted, Glow::kShocked, Emits::kShower, kBarriers);
+        add(looks.electrocuted_from_below, Glow::kShocked, Emits::kShower, kSpaceship);
+        add(looks.electrocuted_from_above, Glow::kShocked, Emits::kShower, kSpaceship);
+        add(anim::kVikingShockedFromBelow.at(who), Glow::kShocked, Emits::kShower, kFactories);
+        add(anim::kVikingShockedFromAbove.at(who), Glow::kShocked, Emits::kShower, kFactories);
         add(anim::kVikingBurnsUp.at(who), Glow::kFire, Emits::kEmbersAndSmoke, kFires);
     }
     return rules;
@@ -200,6 +207,46 @@ void Effects::spark(float x, float y) {
     }
 }
 
+// Where a bomb's fuse burns, in the level: the tip of the fuse at its top right (the user, 2026-11-26: there, not
+// above its middle), on the other side for one put down facing left (its picture is turned round).
+std::array<float, 2> Effects::fuse_of(const Entity& bomb) {
+    constexpr int kRight = 5;  // of its position (the bomb's pixels: level 1, put down from the item)
+    constexpr int kUp = 9;
+    return {static_cast<float>(bomb.facing_left() ? bomb.x - kRight : bomb.x + kRight),
+            static_cast<float>(bomb.y - kUp)};
+}
+
+void Effects::blast(float x, float y, float size) {
+    const auto chance = [this] { return std::uniform_real_distribution<float>{0.0F, 1.0F}(random_); };
+    const float scale = std::clamp(size / 32, 0.6F, 2.0F);
+    const int embers = static_cast<int>((18 + (chance() * 10)) * scale);
+    for (int one = 0; one < embers; ++one) {
+        const float angle = chance() * 6.2832F;
+        const float speed = (0.6F + (chance() * 1.8F)) * scale;
+        particles_.push_back({.x = x,
+                              .y = y,
+                              .speed_x = std::cos(angle) * speed,
+                              .speed_y = (std::sin(angle) * speed) - 0.8F,
+                              .fall = 0.05F,
+                              .age = 0,
+                              .life = 14 + static_cast<int>(chance() * 26),
+                              .look = Particle::Look::kEmber});
+    }
+    const int puffs = static_cast<int>((5 + (chance() * 4)) * scale);
+    for (int one = 0; one < puffs; ++one) {
+        particles_.push_back({.x = x + ((chance() - 0.5F) * size * 0.6F),
+                              .y = y + ((chance() - 0.5F) * size * 0.4F),
+                              .speed_x = (chance() - 0.5F) * 0.6F,
+                              .speed_y = -0.2F - (chance() * 0.35F),
+                              .fall = 0.002F,
+                              .age = 0,
+                              .life = 40 + static_cast<int>(chance() * 35),
+                              .look = Particle::Look::kSmoke});
+    }
+    spark(x, y);
+    spark(x, y);
+}
+
 Effects::Effects() {
     for (std::size_t colour = 0; colour < dots_.size(); ++colour) {
         dots_.at(colour) = assets::make_image(1, 1);
@@ -291,6 +338,7 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
             }
         }
     }
+    std::vector<const Entity*> now_blasting;
     for (const auto& owned : world.entities) {
         const Entity* entity = owned.get();
         if (entity == nullptr || entity->sprite.started == kNoAnimation) {
@@ -359,10 +407,33 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
                     light.colour = {0.55F * flicker, 0.7F * flicker, 1.0F * flicker};
                     break;
                 }
+                case Glow::kFuse: {  // a small flickering light at the fuse
+                    const float flicker = flickering(0.5F, 0.2F, 0.25F);
+                    const auto [fuse_x, fuse_y] = fuse_of(*entity);
+                    light.x = fuse_x - static_cast<float>(view.camera_x);
+                    light.y = fuse_y - static_cast<float>(view.camera_y);
+                    light.half_width = light.half_height = 1;
+                    light.reach = 10;
+                    light.colour = {1.0F * flicker, 0.6F * flicker, 0.2F * flicker};
+                    break;
+                }
+                case Glow::kBlast: {  // a great warm flash, flickering as the fire does
+                    const float flicker = flickering(0.75F, 0.1F, 0.5F);
+                    light.half_width = light.half_height = size / 10;  // (round: from a small box in its middle)
+                    light.reach = 36 + (size / 2);
+                    light.colour = {1.0F * flicker, 0.68F * flicker, 0.32F * flicker};
+                    break;
+                }
                 case Glow::kNone:
                     break;
             }
             add_light(light);
+        }
+        if (rule.emits == Emits::kBlast) {
+            now_blasting.push_back(entity);
+            if (moving && !std::ranges::contains(blasting_, entity)) {  // (it goes off: once)
+                blast(middle_x, middle_y, size);
+            }
         }
         if (!moving || particles_.size() >= kMostParticles) {
             continue;
@@ -385,6 +456,33 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
         } else if (rule.emits == Emits::kSparks && chance() < 0.16F) {
             const auto [x, y] = somewhere(chance(), chance());
             spark(x, y);
+        } else if (rule.emits == Emits::kShower) {  // (one or two showers every picture, anywhere on him)
+            for (int shower = chance() < 0.5F ? 2 : 1; shower > 0; --shower) {
+                const auto [x, y] = somewhere(chance(), chance());
+                spark(x, y);
+            }
+        } else if (rule.emits == Emits::kFuse) {  // sparks off the fuse, up and out: two or three a picture
+            const auto [fuse_x, fuse_y] = fuse_of(*entity);
+            for (int one = chance() < 0.5F ? 3 : 2; one > 0; --one) {
+                particles_.push_back({.x = fuse_x + ((chance() - 0.5F) * 2),
+                                      .y = fuse_y + ((chance() - 0.5F) * 2),
+                                      .speed_x = (chance() - 0.5F) * 1.4F,
+                                      .speed_y = -0.6F - (chance() * 0.9F),
+                                      .fall = 0.09F,
+                                      .age = 0,
+                                      .life = 4 + static_cast<int>(chance() * 7),
+                                      .look = chance() < 0.6F ? Particle::Look::kSpark : Particle::Look::kEmber});
+            }
+        } else if (rule.emits == Emits::kBlast && chance() < 0.3F) {  // (after it went off: embers now and then)
+            const auto [x, y] = somewhere(chance(), chance());
+            particles_.push_back({.x = x,
+                                  .y = y,
+                                  .speed_x = (chance() - 0.5F) * 0.8F,
+                                  .speed_y = -0.4F - (chance() * 0.6F),
+                                  .fall = 0.01F,
+                                  .age = 0,
+                                  .life = 15 + static_cast<int>(chance() * 20),
+                                  .look = Particle::Look::kEmber});
         }
         // Smoke: now and then a wisp from his upper half, rising slower than the embers and drifting, for longer.
         if (rule.emits == Emits::kEmbersAndSmoke && chance() < 0.15F) {
@@ -399,6 +497,7 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
                                   .look = Particle::Look::kSmoke});
         }
     }
+    blasting_ = std::move(now_blasting);
     // The particles: drawn where they are, and on.
     for (const Particle& particle : particles_) {
         const float aged = static_cast<float>(particle.age) / static_cast<float>(std::max(particle.life, 1));

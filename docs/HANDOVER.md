@@ -228,13 +228,19 @@ pixel and in steps of brightness), subtle.
 - **The Vikings' deaths** (the user, 2026-11-25: electrocution and burning up only; `kVikingDeaths`, each Viking's
   own). Electrocuted (by a barrier or a bar: `electrocuted`; by the map's electricity: `electrocuted_from_below`
   and `_from_above` in the spaceship, `kVikingShockedFromBelow` and `FromAbove` in the factory and the wacky
-  world): a white-blue light on him that flashes, and sparks. Burning up (`kVikingBurnsUp`, every world but the
+  world): a white-blue light on him that flashes, and a great deal of sparks, one or two showers every picture (the
+  user, 2026-11-26: `Emits::kShower`). Burning up (`kVikingBurnsUp`, every world but the
   spaceship, which has no such death): the fire's orange light, embers, and grey smoke rising slower. While he
   dies only: when he is dead his pieces are hidden, and with them the light. Each death's rule names the worlds it
   happens in, because an animation is found in another world by the pairing of the programs, and a world without
   that death can have another animation in its place (Egypt's dissolving is where the spaceship's electrocution
   is), or none (the place is then taken as it is). The animation that was called `burns` is the death from a long
   fall (`dies_from_a_fall`; its sound, called `kBurnt`, is a ledge's or a ball's landing too: `kHeavyLanding`).
+- **Bombs** (the user, 2026-11-26): a Viking's bomb put down (`kPlacedBombTicks`): a small flickering light at the tip of its
+  fuse (its top right: `Effects::fuse_of`), and two or three sparks a picture off it; going off (`kPlacedBombBlowsUp`), and so a bomber's bomb bursting
+  (`kBombBursts`) and the factory's blasts (`kBlastLarge`, `kBlastSmall`): a great warm light while it lasts, and
+  as it goes off once (`Effects::blasting_`: what was a blast in the picture before) embers flying out all round,
+  smoke and sparks (`Effects::blast`), then embers now and then.
 - **How light is drawn** (`gpu_show.frag`): a light (`Screen::lights`, a box and a reach) casts: it brightens what
   it falls on, stopped by the ground (`Screen::ground`: the map's ground, walls and slopes pixel by pixel, made
   by `Effects` when the map changes), with a whiter highlight where it meets it; and its glow is laid over that,
