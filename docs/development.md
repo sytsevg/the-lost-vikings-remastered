@@ -68,9 +68,9 @@ The game reads your own copy of the original files from `gamedata/original/` (or
 | `asan-ubsan` | **Default for development.** Debug + AddressSanitizer + UndefinedBehaviorSanitizer |
 | `tsan` | Debug + ThreadSanitizer (once there are threads) |
 | `release` | Optimised, libc++ hardening `fast`, C++ runtime linked statically (one self-contained executable, ADR-0013) |
-| `coverage` | Debug + clang source-based coverage of our own targets; used by `scripts/coverage.sh` |
+| `coverage` | Optimised (`-O2 -g`) + clang source-based coverage of our own targets (it counts by the source, optimised or not); used by `scripts/coverage.sh` |
 | `fuzz` | libFuzzer targets in `src/assets/fuzz/` (ASan + UBSan, no game, no tests) |
-| `ci` | `asan-ubsan` + clang-tidy + `-Werror` |
+| `ci` | `asan-ubsan` + clang-tidy + `-Werror`, optimised (`-O2 -g`; the user, 2026-11-26: the real-data tests took far too long unoptimised) |
 
 Fuzzing:
 ```sh

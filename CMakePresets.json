@@ -47,9 +47,10 @@
         },
         {
             "name": "coverage",
-            "displayName": "Debug + clang source-based coverage of our own targets (scripts/coverage.sh)",
+            "displayName": "Optimised (-O2 -g) + clang source-based coverage of our own targets (scripts/coverage.sh)",
             "inherits": "debug",
             "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
                 "LVR_COVERAGE": "ON"
             }
         },
@@ -68,9 +69,10 @@
         },
         {
             "name": "ci",
-            "displayName": "CI: asan-ubsan + clang-tidy + -Werror",
+            "displayName": "CI: asan-ubsan + clang-tidy + -Werror, optimised (-O2 -g: the real-data tests take long unoptimised)",
             "inherits": "asan-ubsan",
             "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
                 "LVR_WARNINGS_AS_ERRORS": "ON",
                 "LVR_CLANG_TIDY": "ON"
             }
