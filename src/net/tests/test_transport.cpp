@@ -37,8 +37,8 @@ struct Pair {
         client = std::move(*joined);
     }
     // Polls both until `done` says so, at most two seconds.
-    bool until(const std::function<bool()>& done) {
-        const auto end = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+    bool until(const std::function<bool()>& done, std::chrono::seconds within = std::chrono::seconds{2}) {
+        const auto end = std::chrono::steady_clock::now() + within;
         while (std::chrono::steady_clock::now() < end) {
             for (Event& event : host->poll()) {
                 at_host.push_back(std::move(event));
@@ -131,7 +131,11 @@ TEST_CASE("transport: a client that falls silent, its connection not closed, is 
     REQUIRE(pair.until([&] { return !pair.at_host.empty(); }));
     pair.host->set_patience(1000);
     pair.client->simulate_cut();  // (a cable pulled: nothing it sends gets through, TCP included)
-    REQUIRE(pair.until([&] {
-        return std::ranges::any_of(pair.at_host, [](const Event& event) { return event.kind == Event::Kind::kLeft; });
-    }));
+    // (Its second of patience, with room to spare: under the check's tests run side by side 2 s fell short once.)
+    REQUIRE(pair.until(
+        [&] {
+            return std::ranges::any_of(pair.at_host,
+                                       [](const Event& event) { return event.kind == Event::Kind::kLeft; });
+        },
+        std::chrono::seconds{5}));
 }
