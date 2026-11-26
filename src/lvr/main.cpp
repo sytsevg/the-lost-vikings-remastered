@@ -67,6 +67,7 @@
 #include "lvr/build_id.hpp"
 #include "lvr/front.hpp"
 #include "lvr/gpu.hpp"
+#include "lvr/handler.hpp"
 #include "lvr/menu.hpp"
 #include "lvr/profile.hpp"
 #include "lvr/render.hpp"
@@ -162,14 +163,14 @@ bool save_shown(GpuRenderer& gpu, const Screen& screen, const Minimap* minimap, 
 // Without a window: `steps` steps with no key held, the last picture written as a PNG, the sound as a WAV. With
 // `gpu` (Remaster rules) the picture is the one it shows, and `zoom` steps out are asked for before step `zoom_at`.
 struct DumpOptions {
-    int zoom = 0;     // this many steps of zoom out ...
-    int zoom_at = 0;  // ... asked for before this step
-    std::uint16_t held = 0;
-    std::vector<std::pair<int, std::uint16_t>> taps;  // keys pressed once (--tap, as often as given): at which step
-    int rewind_from = -1;                             // the rewind held from this step ...
-    int rewind_until = -1;                            // ... until this one
-    int whole_at = -1;                                // the view the whole level from this step on
-    Showcase* showcase = nullptr;                     // its place, written as --whole writes the whole level
+    int zoom = 0;                                   // this many steps of zoom out ...
+    int zoom_at = 0;                                // ... asked for before this step
+    std::string held;                               // a key held throughout (--hold), by its name
+    std::vector<std::pair<int, std::string>> taps;  // keys pressed once (--tap, as often as given): at which step
+    int rewind_from = -1;                           // the rewind held from this step ...
+    int rewind_until = -1;                          // ... until this one
+    int whole_at = -1;                              // the view the whole level from this step on
+    Showcase* showcase = nullptr;                   // its place, written as --whole writes the whole level
     int moments = 0;
     // The menu over the last picture (Remaster rules), with these of its keys pressed: u, d, l, r (up, down, left,
     // right), c (choose), b (back), x (clear); + and * open HOST GAME and JOIN GAME (as the title does), % the host's
@@ -181,6 +182,8 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
          GpuRenderer* gpu, const DumpOptions& options) {
     OfflinePlace offline{session, options.showcase, false};  // (stepped as the window steps it)
     HeadlessUi ui{offline};
+    // (The original's keys, under either rules: what --hold and --tap name.)
+    InputHandler hands{input::original_controls(), session.rules() == Rules::kRemaster};
     Screen last = session.start_frames.empty() ? Screen{} : session.start_frames.back();
     std::vector<std::int16_t> sound = std::move(session.samples);
     session.samples.clear();
@@ -190,17 +193,29 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
         if (step == options.zoom_at && options.zoom != 0 && !session.zoom(options.zoom)) {
             std::println(stderr, "--zoom: step {} is not in a level being played (Remaster rules): no zoom", step);
         }
-        session.rewind(step >= options.rewind_from && step < options.rewind_until);
         if (step == options.whole_at && !session.view_whole_level()) {
             std::println(stderr, "--whole: step {} is not in a level being played (Remaster rules)", step);
         }
-        std::uint16_t keys = options.held;
+        // The keys as a keyboard gives them: the held one pressed and then repeating, a tapped one pressed before
+        // its step and let go after it.
+        if (!options.held.empty()) {
+            (void)hands.pressed(options.held, step > 0, false, session);
+        }
         for (const auto& [at, tapped] : options.taps) {
             if (at == step) {
-                keys = static_cast<std::uint16_t>(unsigned{keys} | unsigned{tapped});
+                (void)hands.pressed(tapped, false, false, session);
             }
         }
-        frames = offline.step(Tick{.keys = keys, .menu_keys = {}, .pace = {}, .escaped = false}, ui).frames;
+        const Tick tick = hands.tick([](std::string_view) { return false; }, session);
+        session.rewind(step >= options.rewind_from && step < options.rewind_until);
+        const Stepped stepped = offline.step(tick, ui);
+        hands.stepped(stepped.took_input, session);
+        frames = stepped.frames;
+        for (const auto& [at, tapped] : options.taps) {
+            if (at == step && tapped != options.held) {
+                hands.released(tapped);
+            }
+        }
         refreshes += frames.size();
         if (!frames.empty()) {
             last = frames.back();
@@ -322,19 +337,6 @@ input::PadReading pads_reading(const std::vector<SDL_Gamepad*>& pads) {
     return reading;
 }
 
-// Whether any key `controls` has for `action` is held.
-bool keys_held(const input::Controls& controls, input::Action action) {
-    const bool* held = SDL_GetKeyboardState(nullptr);
-    for (const std::string& name : controls.keys.at(static_cast<std::size_t>(action))) {
-        const SDL_Scancode key = SDL_GetScancodeFromName(name.c_str());
-        if (key != SDL_SCANCODE_UNKNOWN && held[key]) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// The sound card wants more sound: `additional` bytes of it, made now.
 void sound_wanted(void* userdata, SDL_AudioStream* stream, int additional, int /*total*/) {
     if (additional <= 0) {
         return;
@@ -417,57 +419,17 @@ Go run(Window& in, Place& place) {
     const std::uint64_t frequency = SDL_GetPerformanceFrequency();
     const std::uint64_t start = SDL_GetPerformanceCounter();
     std::uint64_t refreshes = 0;
-    std::uint16_t keyboard = 0;  // the keyboard word, as the original's handler keeps it
     bool running = true;
-    Go go;                 // where to go from here
-    bool escaped = false;  // Escape pressed since the last step
+    Go go;  // where to go from here
     std::vector<SDL_Gamepad*> pads;
-    input::PadReading pads_before{};  // as the last pass of the loop read them
-    input::PadReading quiet{};        // held as the menu closed: not the game's until let go
-    bool hush = false;                // the menu was closed: what the gamepads hold now is quiet
-    Play::MenuKeys sound_keys;        // Alt+S and Alt+M, until a tick acts on them
     const bool remaster = remastered != nullptr;
+    InputHandler hands{controls, remaster};  // what the player presses and holds between steps
     // The menu (Remaster rules), while it is open; the game holds meanwhile (Session::held). A note in it flashes.
     std::optional<Menu> menu;
     bool flash_shown = true;
-    bool give_up = false;         // the menu asked for the original's pause box (where the level is given up) ...
-    bool quit_box = false;        // ... or its quit box: with the next step
     CoopOverlay coop_shown;       // what the place lays over the screen while the menu isn't
     std::uint64_t repeat_at = 0;  // a gamepad's direction held in the menu: when it counts again
-    const auto alt_held = [] {
-        const bool* held = SDL_GetKeyboardState(nullptr);
-        return held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT];
-    };
     const auto key_name = [](SDL_Scancode key) { return std::string_view{SDL_GetScancodeName(key)}; };
-    // Any key ends a demo (the original); under Remaster rules a scene that plays by itself (the intro and the night
-    // after it, the title's demos, the ending) only an action key, Enter or Escape (the user: not a key pressed by
-    // the way).
-    const auto skips_demo = [&](std::uint16_t keys) {
-        constexpr auto kSkips = static_cast<std::uint16_t>(key::kAction | key::kEnter);
-        return !remaster || (unsigned{keys} & unsigned{kSkips}) != 0;
-    };
-    // The keys of a key pressed or let go: under Remaster rules Escape opens the menu in a level being played, and is
-    // the original's pause key elsewhere, as it was.
-    const auto key_actions = [&](SDL_Scancode key) {
-        input::Actions actions = input::key_actions(controls, key_name(key));
-        if (remaster && key == SDL_SCANCODE_ESCAPE) {
-            actions |= bit(Action::kPause);
-        }
-        return actions;
-    };
-    // Remaster rules' own actions of a key or button pressed, taken where they act (Session::takes_play_keys): the
-    // zoom, the minimap, the quicksave. Elsewhere a key is the
-    // game's like any other: nothing pressed in a scene or a menu is kept for later. True if one took it.
-    const auto act = [&](input::Actions actions) {
-        bool taken = false;
-        const auto has = [actions](Action action) { return (actions & bit(action)) != 0; };
-        taken = (has(Action::kZoomOut) && session.zoom(1)) || taken;
-        taken = (has(Action::kZoomIn) && session.zoom(-1)) || taken;
-        taken = (has(Action::kMinimap) && session.toggle_minimap()) || taken;
-        taken = (has(Action::kQuicksave) && session.quicksave()) || taken;
-        taken = (has(Action::kQuickload) && session.quickload()) || taken;
-        return taken;
-    };
     // What the menu changed is used at once, and its picture drawn again; while a line of it is typed into the
     // window gives the characters typed (SDL's text input).
     bool typing = false;
@@ -483,13 +445,13 @@ Go run(Window& in, Place& place) {
     };
     const auto menu_changed = [&] {
         use_settings(session, gpu, menu->settings());
-        controls = menu->settings().controls;
+        hands.set_controls(menu->settings().controls);
         draw_menu();
     };
     const auto open_menu = [&]() -> Menu& {
         Menu& opened = menu.emplace(settings_now(session, gpu, remastered->settings), place.choices());
         opened.set_has_pad(!pads.empty());
-        keyboard = 0;  // what is held now is let go in the menu
+        hands.menu_opened();  // what is held now is let go in the menu
         session.rewind(false);
         menu_changed();
         return opened;
@@ -504,7 +466,7 @@ Go run(Window& in, Place& place) {
         menu.reset();
         type_into(false);
         gpu->set_overlay({});
-        hush = true;
+        hands.menu_closed();
     };
     const auto menu_press = [&](Menu::Key key) {
         const Menu::Asked asked = menu->press(key);
@@ -518,8 +480,12 @@ Go run(Window& in, Place& place) {
             return;
         }
         if (asked != Menu::Asked::kNothing) {
-            give_up = asked == Menu::Asked::kGiveUp;
-            quit_box = asked == Menu::Asked::kQuit;
+            if (asked == Menu::Asked::kGiveUp) {
+                hands.give_up();
+            }
+            if (asked == Menu::Asked::kQuit) {
+                hands.quit_box();
+            }
             close_menu();
         }
     };
@@ -584,7 +550,9 @@ Go run(Window& in, Place& place) {
     const auto menu_pads = [&](const input::PadReading& reading) {
         const auto index = [](std::string_view input) { return input::pad_input_index(input).value_or(0); };
         const auto held = [&](std::string_view input) { return reading.at(index(input)) > 0.5F; };
-        const auto pushed = [&](std::string_view input) { return held(input) && pads_before.at(index(input)) <= 0.5F; };
+        const auto pushed = [&](std::string_view input) {
+            return held(input) && hands.pads_before().at(index(input)) <= 0.5F;
+        };
         if (pushed("start")) {
             if (menu->waiting() != Menu::Waiting::kNothing) {
                 menu->stop_waiting();
@@ -696,48 +664,23 @@ Go run(Window& in, Place& place) {
                     event.key.scancode == SDL_SCANCODE_PAGEDOWN || event.key.scancode == SDL_SCANCODE_RIGHTBRACKET;
                 showcase->next(on ? 1 : -1);
                 SDL_SetWindowTitle(window, showcase->title().c_str());
-            } else if (event.type == SDL_EVENT_KEY_DOWN && alt_held() &&
-                       (event.key.scancode == SDL_SCANCODE_S || event.key.scancode == SDL_SCANCODE_M)) {
-                // Alt+S, Alt+M: the sound switches, acted on after the next tick (a repeat counts again). As
-                // the original's handler, S with Alt held isn't a typed character.
-                (event.key.scancode == SDL_SCANCODE_S ? sound_keys.effects : sound_keys.music) = true;
-                if (event.key.scancode == SDL_SCANCODE_M) {
-                    session.key_pressed(input::typed_character(key_name(event.key.scancode)));
-                }
-            } else if (remaster && event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-                       event.key.scancode == SDL_SCANCODE_ESCAPE && session.takes_play_keys()) {
-                (void)open_menu();
             } else if (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y != 0) {
                 (void)session.zoom(event.wheel.y < 0 ? 1 : -1);
             } else if (event.type == SDL_EVENT_KEY_DOWN) {
-                escaped = escaped || (event.key.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat);
-                // A press, or the keyboard's own repeat of a held key, which reaches the original's handler as
-                // a press too: it types the character again, and sets the key's bit again if a scene's load
-                // cleared it. Remaster's own (not repeated) go first; one they take isn't the game's.
-                const input::Actions actions = key_actions(event.key.scancode);
-                session.key_pressed(input::typed_character(key_name(event.key.scancode)));
-                if (!(remaster && !event.key.repeat && act(actions))) {
-                    keyboard |= input::game_bits(actions);
-                }
-                if (session.demo() && skips_demo(input::game_bits(actions))) {  // the keyboard handler: a key during a
-                    keyboard = 0xFFFF;                                          // demo
+                const bool* held = SDL_GetKeyboardState(nullptr);
+                if (hands.pressed(key_name(event.key.scancode), event.key.repeat,
+                                  held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT],
+                                  session) == InputHandler::Asks::kMenu) {
+                    (void)open_menu();
                 }
             } else if (event.type == SDL_EVENT_KEY_UP) {
-                // As the original's handler: a release clears the bit even if another key with it is held.
-                keyboard &= ~unsigned{input::game_bits(key_actions(event.key.scancode))};
+                hands.released(key_name(event.key.scancode));
             }
         }
         // The gamepads, once a pass: what is held as the menu closes isn't the game's until it is let go.
-        input::PadReading reading = pads_reading(pads);
-        if (std::exchange(hush, false)) {
-            quiet = reading;
-        }
-        for (std::size_t i = 0; i < reading.size(); ++i) {
-            quiet.at(i) = reading.at(i) > 0.5F ? quiet.at(i) : 0;
-            reading.at(i) = quiet.at(i) > 0.5F ? 0 : reading.at(i);
-        }
+        hands.read_pads(pads_reading(pads));
         if (menu) {
-            menu_pads(reading);
+            menu_pads(hands.pads());
         }
         if (menu) {
             constexpr std::uint64_t kFlashMilliseconds = 400;
@@ -745,19 +688,10 @@ Go run(Window& in, Place& place) {
                 flash_shown = flash;
                 draw_menu();
             }
-        } else if (remaster) {
-            // Start opens the menu in a level being played (elsewhere it is the original's pause, below); Remaster's
-            // own actions act as their buttons are pushed.
-            const std::size_t start_button = input::pad_input_index("start").value_or(0);
-            if (reading.at(start_button) > 0.5F && pads_before.at(start_button) <= 0.5F && session.takes_play_keys()) {
-                (void)open_menu();
-            } else {
-                const input::Actions pushed =
-                    input::read_pad(controls, reading, true).held & ~input::read_pad(controls, pads_before, true).held;
-                (void)act(pushed & ~input::kGameActions);
-            }
+        } else if (hands.act_on_pads(session) == InputHandler::Asks::kMenu) {
+            (void)open_menu();  // Start in a level being played (elsewhere it is the original's pause)
         }
-        pads_before = reading;
+        hands.pads_read();
         if (const Go next = place.refresh(ui); next.to != Go::To::kStay && running) {  // what came, the page now
             go = next;
             running = false;
@@ -779,53 +713,14 @@ Go run(Window& in, Place& place) {
                     next_frame = 0;
                     continue;
                 }
-                const bool* held = SDL_GetKeyboardState(nullptr);
-                const input::PadActions from_pads = input::read_pad(controls, reading, remaster);
-                std::uint16_t pad = input::game_bits(from_pads.held);
-                const std::size_t start_button = input::pad_input_index("start").value_or(0);
-                if (remaster && reading.at(start_button) > 0.5F && !session.takes_play_keys()) {
-                    pad |= input::game_bits(bit(Action::kPause));  // Start: the original's pause, as it was
-                }
-                if (pad != 0 && session.demo() && skips_demo(pad)) {  // joystick input during a demo
-                    pad = 0xFFFF;
-                }
-                const bool alt = held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT];
-                // Remaster rules: back in time while it is held; walking and climbing as fast as a stick is pushed
-                // (a key: all the way).
-                session.rewind(remaster &&
-                               (keys_held(controls, Action::kRewind) || (from_pads.held & bit(Action::kRewind)) != 0));
-                const auto part = [&](Action one, Action other, float stick) {  // a key: all of it
-                    return static_cast<std::uint8_t>(
-                        (keyboard & input::game_bits(bit(one) | bit(other))) != 0
-                            ? kFullPace
-                            : std::clamp(static_cast<int>(std::ceil(stick * kFullPace)), 1, int{kFullPace}));
-                };
-                const Pace pace{.across = part(Action::kLeft, Action::kRight, from_pads.walk),
-                                .up_down = part(Action::kUp, Action::kDown, from_pads.climb)};
-                std::uint16_t given = keyboard | pad;
-                // The menu's GIVE UP LEVEL and QUIT GAME: kept until a step takes this machine's input (online it
-                // can't be given while the game waits for the others' or lets them catch up).
-                if (give_up) {
-                    given |= input::game_bits(bit(Action::kPause));  // the original's pause box
-                }
                 const std::uint64_t step_began = SDL_GetPerformanceCounter();
                 const std::size_t pages_before = gpu != nullptr ? gpu->pages_set_up() : 0;
-                const Play::MenuKeys menu_keys{.yes = held[SDL_SCANCODE_Y],
-                                               .no = held[SDL_SCANCODE_N],
-                                               .quit = held[SDL_SCANCODE_F10] ||
-                                                       (alt && (held[SDL_SCANCODE_X] || held[SDL_SCANCODE_Q])) ||
-                                                       quit_box,
-                                               .effects = sound_keys.effects,
-                                               .music = sound_keys.music,
-                                               .previous_level = held[SDL_SCANCODE_F5],
-                                               .next_level = held[SDL_SCANCODE_F6]};
-                Stepped stepped = place.step(
-                    Tick{.keys = given, .menu_keys = menu_keys, .pace = pace, .escaped = std::exchange(escaped, false)},
-                    ui);
-                if (stepped
-                        .took_input) {  // (online it can't be given while the game waits, or lets the others catch up)
-                    give_up = quit_box = false;
-                }
+                const auto held = [](std::string_view name) {
+                    const SDL_Scancode key = SDL_GetScancodeFromName(std::string{name}.c_str());
+                    return key != SDL_SCANCODE_UNKNOWN && SDL_GetKeyboardState(nullptr)[key];
+                };
+                Stepped stepped = place.step(hands.tick(held, session), ui);
+                hands.stepped(stepped.took_input, session);
                 frames = std::move(stepped.frames);
                 cues = std::move(stepped.cues);
                 next_frame = 0;
@@ -838,11 +733,6 @@ Go run(Window& in, Place& place) {
                             session.scene_loaded() ? ", a scene loaded" : "",
                             gpu != nullptr && gpu->pages_set_up() != pages_before ? ", an atlas page set up" : "");
                     }
-                }
-                sound_keys.effects = session.menu_keys().effects;
-                sound_keys.music = session.menu_keys().music;
-                if (session.scene_loaded()) {
-                    keyboard = 0;  // as the original's level start: nothing is held until it is pressed again
                 }
                 if (stepped.go.to != Go::To::kStay) {
                     go = stepped.go;
@@ -1143,10 +1033,9 @@ int main(int argc, char* argv[]) try {
         use_settings(**session, gpu.get(), remastered->settings);
     }
     if (!dump_to.empty()) {
-        const input::Controls original = input::original_controls();
-        dumping.held = input::game_bits(input::key_actions(original, held));
+        dumping.held = held;
         for (const auto& [at, key] : tapped) {
-            dumping.taps.emplace_back(at, input::game_bits(input::key_actions(original, key)));
+            dumping.taps.emplace_back(at, key);
         }
         dumping.showcase = showcase ? &*showcase : nullptr;
         return dump(**session, steps, dump_to, wav, gpu.get(), dumping);

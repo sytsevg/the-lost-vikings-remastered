@@ -2,7 +2,10 @@
 // network, each played a refresh at a time as the window's loop plays its place, its menu without a window. A walk
 // through every move: hosting and joining into the lobby, a game, back to the lobby, leaving it and joining again,
 // another game, one joining it under way, and the host gone.
+#include <SDL3/SDL.h>
+
 #include <algorithm>
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <expected>
@@ -32,6 +35,8 @@ struct Machine {
     std::unique_ptr<HeadlessUi> ui;
     Place* shown = nullptr;  // the place the menu is for
     int due = 0;             // refreshes until its next step
+    Screen last;             // the last picture it showed
+    bool paused = false;     // it has no turns (its machine stopped)
 
     Place& place() { return places->current(); }
     template <typename P>
@@ -55,6 +60,9 @@ struct Machine {
             const Stepped stepped = place().step(Tick{}, shown_menu);
             due = stepped.frames.size() > 1 ? 2 : 0;
             go = stepped.go;
+            if (!stepped.frames.empty()) {
+                last = stepped.frames.back();
+            }
         }
         places->go(go);
     }
@@ -67,6 +75,23 @@ struct Machine {
             shown_menu.close();
         }
         places->go(answer.go);
+    }
+    // A key in its menu, as the window's loop gives it: the menu's answer, the place's to it.
+    void press(Menu::Key key) {
+        HeadlessUi& shown_menu = menu();
+        Menu& open = shown_menu.menu() != nullptr ? *shown_menu.menu() : shown_menu.open_menu();
+        const Menu::Asked asked = open.press(key);
+        const Place::Answer answer = place().asked(asked, open);
+        if (!answer.handled && asked != Menu::Asked::kNothing) {
+            shown_menu.close();
+        }
+        places->go(answer.go);
+    }
+    // Typed into the line its menu waits on.
+    void type(std::string_view text) {
+        Menu& open = *menu().menu();
+        open.take_text(text);
+        open.stop_waiting();
     }
     // Its hashes of the game online's state, by step (what the machines compare).
     std::map<std::uint32_t, std::string> hashes() {
@@ -123,7 +148,7 @@ struct Room {
         constexpr int kMost = 3600;
         for (int refresh = 0; refresh < kMost && !done(); ++refresh) {
             for (auto& one : machines) {
-                if (one != nullptr) {
+                if (one != nullptr && !one->paused) {
                     one->turn();
                 }
             }
@@ -157,7 +182,61 @@ struct Room {
     }
 };
 
+// A machine's picture as its window shows it at the original's size, with `over` (red, green, blue, alpha) laid
+// over it, as a PNG in gamedata/previews/online/.
+void save_still(const Machine& machine, const std::vector<std::uint8_t>& over, const std::string& name) {
+    std::vector<std::uint8_t> rgba(std::size_t{kScreenWidth} * kScreenHeight * 4);
+    for (std::size_t i = 0; i < machine.last.pixels.size(); ++i) {
+        const assets::Rgb c = machine.last.palette.at(machine.last.pixels[i]);
+        const std::array<std::uint8_t, 3> under{c.r, c.g, c.b};
+        const unsigned alpha = over.empty() ? 0U : over.at((i * 4) + 3);
+        for (std::size_t part = 0; part < 3; ++part) {
+            const unsigned top = over.empty() ? 0U : over.at((i * 4) + part);
+            rgba.at((i * 4) + part) =
+                static_cast<std::uint8_t>(((top * alpha) + (under.at(part) * (255 - alpha))) / 255);
+        }
+        rgba.at((i * 4) + 3) = 255;
+    }
+    const std::filesystem::path folder = std::filesystem::path{LVR_ORIGINAL_DIR}.parent_path() / "previews" / "online";
+    std::filesystem::create_directories(folder);
+    SDL_Surface* surface =
+        SDL_CreateSurfaceFrom(kScreenWidth, kScreenHeight, SDL_PIXELFORMAT_RGBA32, rgba.data(), kScreenWidth * 4);
+    REQUIRE(surface != nullptr);
+    CHECK(SDL_SavePNG(surface, (folder / name).string().c_str()));
+    SDL_DestroySurface(surface);
+}
+
 }  // namespace
+
+// Run by hand when the online parts' look changes (lvr_tests "[scratch]"): stills of the lobby's page, the names under
+// the Vikings' portraits, and the box saying whom the game waits for.
+TEST_CASE("online stills: the lobby, the names under the portraits, the waiting box", "[.scratch]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    Room room;
+    Machine& host = room.machine("host");
+    Machine& guest = room.machine("guest");
+    REQUIRE(room.until([&] { return host.title->world().scene == scene::kTitle; }));
+    host.ask(Menu::Asked::kHost);
+    guest.ask(Menu::Asked::kJoin);
+    REQUIRE(room.until([&] { return guest.at<LobbyPlace>() != nullptr && !guest.last.pixels.empty(); }));
+    // The host types level 1's password (as the game's files have it) and starts it.
+    const auto& password = host.title->world().passwords.at(0);
+    host.press(Menu::Key::kChoose);
+    host.type(std::string(password.begin(), password.end()));
+    REQUIRE(room.until([&] { return host.menu().menu()->start().starts_with("LEVEL 1"); }));
+    save_still(host, menu_picture(*host.menu().menu(), host.place().session().font()), "lobby-host.png");
+    save_still(guest, menu_picture(*guest.menu().menu(), guest.place().session().font()), "lobby-guest.png");
+    host.press(Menu::Key::kDown);
+    host.press(Menu::Key::kChoose);  // START GAME
+    REQUIRE(room.online_to(60));
+    save_still(guest, {}, "names.png");
+    // The host's machine stops: the guest waits for him, and says so.
+    host.paused = true;
+    REQUIRE(room.until([&] { return !guest.place().overlay().waiting.empty(); }));
+    save_still(guest, coop_picture(guest.place().overlay(), guest.place().session().font()), "waiting.png");
+}
 
 TEST_CASE(
     "real data: the places, every move: host and join, a game, back to the lobby, leave and join again, "

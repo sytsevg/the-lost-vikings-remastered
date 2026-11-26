@@ -205,10 +205,11 @@ if(LVR_BUILD_APPS)
     # --- front: the game's places (GLOSSARY.md): offline, connecting, the lobby, a game online (ADR-0012) ---
     add_library(lvr_front STATIC
         lvr/front.cpp
+        lvr/handler.cpp
         lvr/showcase.cpp)
     add_library(lvr::front ALIAS lvr_front)
     target_include_directories(lvr_front PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-    target_link_libraries(lvr_front PUBLIC lvr::session lvr::net lvr::transport)
+    target_link_libraries(lvr_front PUBLIC lvr::session lvr::input lvr::net lvr::transport)
     lvr_target_defaults(lvr_front)
 
     # --- vikings-remaster: the game on the engine ---
@@ -290,8 +291,8 @@ if(LVR_BUILD_TESTS)
     # SDL3-backed code is only built with LVR_BUILD_APPS.
     if(LVR_BUILD_APPS)
         target_sources(lvr_tests PRIVATE image/tests/test_png.cpp lvr/tests/test_gpu.cpp net/tests/test_transport.cpp
-                                       lvr/tests/test_front.cpp)
-        target_link_libraries(lvr_tests PRIVATE lvr::image lvr::gpu lvr::transport lvr::front)
+                                       lvr/tests/test_front.cpp lvr/tests/test_handler.cpp)
+        target_link_libraries(lvr_tests PRIVATE lvr::image lvr::gpu lvr::transport lvr::front SDL3::SDL3)
     endif()
     include(Catch)
     # Catch2's tags become CTest labels.
