@@ -210,10 +210,10 @@ class Title : public Entity {
     // and OPTIONS between PASSWORD and QUIT TO DOS.
     static constexpr int kRowsApart = 2;
     static constexpr int kRemasterLast = 5;
-    // A choice's row: the original's from 14 on; with six, from 10, under the logo raised a row for them
-    // (kTitleLower; the text layer ends at row 21, the pointer reaching a little below its row).
+    // A choice's row: the original's from 14 on; with six, from 11, just under the logo, the last on the text layer's
+    // last row (the pointer beside it reaching under the playfield: View::drawn_below).
     static int row_of(const World& world, int choice) {
-        return (choices(world) == kRemasterLast + 1 ? 10 : 14) + (choice * kRowsApart);
+        return (choices(world) == kRemasterLast + 1 ? 11 : 14) + (choice * kRowsApart);
     }
     static int choices(const World& world) {
         return world.rules == Rules::kRemaster && !world.online ? kRemasterLast + 1 : 3;

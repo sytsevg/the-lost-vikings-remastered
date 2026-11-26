@@ -82,7 +82,7 @@ void draw_sprite(Screen& screen, const View& view, const DrawnSprite& sprite) {
             const std::size_t sy = sprite.flipped ? image.height - 1 - py : py;
             if (const std::uint8_t colour = image.at(sx, sy); colour != 0) {
                 put(screen, sprite.x - view.camera_x + static_cast<int>(px),
-                    sprite.y - view.camera_y + static_cast<int>(py), colour, kPlayfieldHeight);
+                    sprite.y - view.camera_y + static_cast<int>(py), colour, kPlayfieldHeight + view.drawn_below);
             }
         }
     }
@@ -101,7 +101,8 @@ void draw_text(Screen& screen, const View& view, const SharedGraphics& shared) {
                 for (std::size_t gx = 0; gx < glyph.width; ++gx) {
                     if (const std::uint8_t colour = glyph.at(gx, gy); colour != 0) {
                         put(screen, view.text_x + (column * kTileSize) + static_cast<int>(gx),
-                            view.text_y + (row * kTileSize) + static_cast<int>(gy), colour, kPlayfieldHeight);
+                            view.text_y + (row * kTileSize) + static_cast<int>(gy), colour,
+                            kPlayfieldHeight + view.drawn_below);
                     }
                 }
             }

@@ -247,6 +247,10 @@ struct View {
     // How much of the level the playfield shows. Only the GPU renderer draws another size than the original's.
     int width = kScreenWidth;
     int height = kPlayfieldHeight;
+    // Rows under the playfield its sprites and text are drawn on too, where the HUD's place has nothing: Remaster
+    // rules' title menu, its pointer on the last of six choices reaching under the text layer's last row (the user,
+    // 2026-11-26). Elsewhere they end at the playfield's bottom.
+    int drawn_below = 0;
     int text_x = 0;  // where the text layer's first cell is on screen (it moves with the camera's last 3 bits)
     int text_y = 0;
     const Map* map = nullptr;          // none: a scene that is one picture

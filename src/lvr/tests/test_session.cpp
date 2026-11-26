@@ -1126,6 +1126,48 @@ TEST_CASE(
     CHECK(vanilla->quit());
 }
 
+TEST_CASE(
+    "real data: Remaster rules' title is where the original's is; the pointer on the last of its six choices is drawn "
+    "whole, under the playfield",
+    "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    const auto at_title = [](Rules rules) {
+        auto opened = Session::open(LVR_ORIGINAL_DIR, scene::kTitle, {}, rules);
+        REQUIRE(opened);
+        return std::move(*opened);
+    };
+    const auto shown_after = [](Session& session, int steps, std::uint16_t keys_at_20) {
+        Screen last;
+        for (int step = 0; step < steps; ++step) {
+            if (const std::vector<Screen> shown = session.step(step == 20 ? keys_at_20 : 0); !shown.empty()) {
+                last = shown.back();
+            }
+        }
+        return last;
+    };
+    // Something drawn under the playfield, in the HUD's place (empty on the title's menu).
+    const auto under = [](const Screen& screen) {
+        return std::any_of(screen.pixels.begin() + (std::ptrdiff_t{kPlayfieldHeight} * kScreenWidth),
+                           screen.pixels.end(), [](std::uint8_t pixel) { return pixel != 0; });
+    };
+    // The title coming, before its menu: the same picture under either rules (nothing of it moved up).
+    auto remaster = at_title(Rules::kRemaster);
+    auto vanilla = at_title(Rules::kVanilla);
+    CHECK(shown_after(*remaster, 10, 0).pixels == shown_after(*vanilla, 10, 0).pixels);
+    // Its menu (Enter): on the first of six choices nothing is under the playfield; on the last, the pointer's
+    // bottom (its row the text layer's last).
+    auto menu = at_title(Rules::kRemaster);
+    CHECK_FALSE(under(shown_after(*menu, 50, key::kEnter)));
+    Screen last;
+    for (int down = 0; down < 5; ++down) {
+        menu->step(key::kDown);
+        last = shown_after(*menu, 6, 0);
+    }
+    CHECK(under(last));
+}
+
 TEST_CASE("real data: Remaster rules: the menu's QUIT GAME isn't held up by a text waiting for its key",
           "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {

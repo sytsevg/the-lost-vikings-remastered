@@ -287,6 +287,7 @@ struct GpuRenderer::State {
         std::vector<Quad> quads;
         std::vector<std::int32_t> moves_with;  // a quad's: kWithCamera, kStays, or the view's sprite it is
         std::size_t in_playfield = 0;          // the first quads: those cut at the HUD
+        int drawn_below = 0;                   // the rows under the playfield they are drawn on too (View's)
         // The place in the order (Quad::order) of the map's last quad behind the sprites, and of each of the view's
         // sprites (0: none drawn): a light's (Light::from).
         std::uint16_t map_order = 0;
@@ -900,6 +901,7 @@ bool GpuRenderer::State::list(Page& on, const View& view, const SceneGraphics& g
     picture.moves_with.clear();
     picture.width = view.width;
     picture.height = view.height;
+    picture.drawn_below = view.drawn_below;
     if (!place_pieces(on, view)) {
         return false;
     }
@@ -1160,7 +1162,8 @@ std::expected<void, std::string> GpuRenderer::State::render(SDL_GPUCommandBuffer
         SDL_BindGPUVertexBuffers(pass, 0, &buffer, 1);
         const SDL_GPUTextureSamplerBinding from_atlas{.texture = pages[picture.page]->texture, .sampler = sampler};
         SDL_BindGPUFragmentSamplers(pass, 0, &from_atlas, 1);
-        const SDL_Rect playfield{.x = 0, .y = 0, .w = picture.width * scale, .h = picture.height * scale};
+        const SDL_Rect playfield{
+            .x = 0, .y = 0, .w = picture.width * scale, .h = (picture.height + picture.drawn_below) * scale};
         const SDL_Rect whole{.x = 0, .y = 0, .w = wide * scale, .h = high * scale};
         if (picture.in_playfield != 0) {
             SDL_SetGPUScissor(pass, &playfield);
@@ -1876,7 +1879,8 @@ std::expected<void, std::string> GpuRenderer::keep(Screen& screen, const View& v
     std::shared_ptr<const State::Picture> keeping;
     if (last != nullptr && last->page == picture->page && last->quads.size() == picture->quads.size() &&
         last->moves_with == picture->moves_with && last->width == picture->width && last->height == picture->height &&
-        last->in_playfield == picture->in_playfield && last->backdrop == picture->backdrop &&
+        last->in_playfield == picture->in_playfield && last->drawn_below == picture->drawn_below &&
+        last->backdrop == picture->backdrop &&
         std::memcmp(last->quads.data(), picture->quads.data(), picture->quads.size() * sizeof(Quad)) == 0) {
         keeping = before.picture;
     } else {
