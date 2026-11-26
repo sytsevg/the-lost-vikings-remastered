@@ -43,12 +43,20 @@ class Effects {
         float fall = 0;  // what is added to speed_y a picture
         int age = 0;     // pictures
         int life = 0;
-        enum class Look : std::uint8_t { kSpark, kEmber, kSmoke } look = Look::kSpark;
+        enum class Look : std::uint8_t { kSpark, kEmber, kSmoke, kTwirl } look = Look::kSpark;
+        // Twirling (a teleport's): round orbit_x at `radius`, `angle` on by `turn` a picture, the radius by `widen`
+        // (none: it flies as its speed says).
+        float orbit_x = 0;
+        float radius = 0;
+        float angle = 0;
+        float turn = 0;
+        float widen = 0;
     };
     std::vector<Particle> particles_;
     // A few sparks flying out from (x, y) in the level.
     void spark(float x, float y);
     static std::array<float, 2> fuse_of(const Entity& bomb);
+    void twirl(float x, float top, float bottom, bool in);
     // A blast going off at (x, y), `size` across: embers flying out all round, smoke, sparks.
     void blast(float x, float y, float size);
     std::vector<const Entity*> blasting_;  // what was a blast in the last picture (one new to it goes off)

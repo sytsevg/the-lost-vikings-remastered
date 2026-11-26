@@ -1246,3 +1246,40 @@ TEST_CASE("real data: Remaster rules' title demos play as their recordings, zoom
     CHECK(demos == 7);  // (the six, and the first again)
     CHECK(differing == 0);
 }
+
+TEST_CASE("real data: Remaster rules' effects: a Viking teleporting gives off a twirl, going and coming",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    // Level 3: a Viking put in the teleporter at (688, 144), which leads to (656, 402). While he fades away and while
+    // he comes in, many more particles than the same play without the effects (the twirl, its trails).
+    auto with = Session::open(LVR_ORIGINAL_DIR, 2, {}, Rules::kRemaster);
+    auto without = Session::open(LVR_ORIGINAL_DIR, 2, {}, Rules::kRemaster);
+    REQUIRE(with);
+    REQUIRE(without);
+    (*with)->set_effects(true);
+    std::size_t going = 0;
+    std::size_t coming = 0;
+    for (int step = 0; step < 80; ++step) {
+        std::uint16_t keys = step < 6 && step % 2 != 0 ? key::kF : 0;
+        keys = step == 18 || step == 19 ? key::kS : keys;
+        for (auto* session : {&*with, &*without}) {
+            if (step == 8) {
+                REQUIRE((*session)->hold_view(560, 40, 320, 176));
+            }
+            if (step == 10) {
+                REQUIRE((*session)->put_viking(0, 688, 128, 3));
+            }
+        }
+        const std::size_t shown = (*with)->step(keys).back().motion.sprites.size();
+        const std::size_t more = shown - (*without)->step(keys).back().motion.sprites.size();
+        if (step > 22) {  // (the twirl under way)
+            std::size_t& most = (*with)->world().at(0)->x == 688 ? going : coming;
+            most = std::max(most, more);
+        }
+    }
+    CHECK((*with)->world().at(0)->x == 656);  // (gone through)
+    CHECK(going > 150);                       // (about 300 with it, 33 without: the level's own sparks)
+    CHECK(coming > 150);
+}

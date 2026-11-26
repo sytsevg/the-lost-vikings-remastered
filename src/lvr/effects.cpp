@@ -30,9 +30,21 @@ constexpr bool holds_in(unsigned worlds, int database) noexcept {
 // What an animation gives off while an entity plays it (from its start until another is started). What is there to
 // be seen (traps, fire and shots on their way, a Viking electrocuted or burning up); not a blow or a hit landing
 // (the user, 2026-11-25). A bomb's fuse and a blast, though (the user, 2026-11-26).
-enum class Glow : std::uint8_t { kNone, kFire, kElectric, kBarrier, kShot, kShotBurst, kShocked, kFuse, kBlast };
-// (kShower: a great deal of sparks, all over him; kBlast: as it goes off, a burst, then embers now and then.)
-enum class Emits : std::uint8_t { kNothing, kEmbers, kSparks, kEmbersAndSmoke, kShower, kFuse, kBlast };
+enum class Glow : std::uint8_t { kNone, kFire, kElectric, kBarrier, kShot, kShotBurst, kShocked, kFuse, kBlast, kBeam };
+// (kShower: a great deal of sparks, all over him; kBlast: as it goes off, a burst, then embers now and then;
+// kTwirlAway, kTwirlIn: a teleport's, a twirl of sparks round him rising and widening as he goes, closing in on him as
+// he comes.)
+enum class Emits : std::uint8_t {
+    kNothing,
+    kEmbers,
+    kSparks,
+    kEmbersAndSmoke,
+    kShower,
+    kFuse,
+    kBlast,
+    kTwirlAway,
+    kTwirlIn
+};
 struct Rule {
     Animation animation;
     Glow glow = Glow::kNone;
@@ -75,16 +87,17 @@ constexpr std::array kRules{
 };
 
 // The Vikings' deaths by electricity and by fire (the user, 2026-11-25), each Viking's own; the other deaths give
-// off nothing. Each where it happens: a barrier's (or a bar's) everywhere but the prehistoric world and Egypt,
-// whose Vikings are taken away instead; the map's electricity's, named apart for the spaceship and for the factory
-// and the wacky world; burning up, everywhere but the spaceship.
+// off nothing. And teleporting (the user, 2026-11-26), where there are teleporters: the spaceship's levels. Each where
+// it happens: a barrier's (or a bar's) everywhere but the prehistoric world and Egypt, whose Vikings are taken away
+// instead; the map's electricity's, named apart for the spaceship and for the factory and the wacky world; burning up,
+// everywhere but the spaceship.
 constexpr auto kVikingDeaths = [] {
     constexpr std::array<const VikingLooks*, 3> kLooks{&kErikLooks, &kBaleogLooks, &kOlafLooks};
     constexpr unsigned kBarriers = in(database::kSpaceship) | in(database::kFactory) | in(database::kWacky);
     constexpr unsigned kSpaceship = in(database::kSpaceship);
     constexpr unsigned kFactories = in(database::kFactory) | in(database::kWacky);
     constexpr unsigned kFires = in(database::kPrehistoric) | in(database::kEgypt) | kFactories;
-    std::array<Rule, 6 * kLooks.size()> rules{};
+    std::array<Rule, 8 * kLooks.size()> rules{};
     std::size_t at = 0;
     for (std::size_t who = 0; who < kLooks.size(); ++who) {
         const VikingLooks& looks = *kLooks.at(who);
@@ -97,6 +110,8 @@ constexpr auto kVikingDeaths = [] {
         add(anim::kVikingShockedFromBelow.at(who), Glow::kShocked, Emits::kShower, kFactories);
         add(anim::kVikingShockedFromAbove.at(who), Glow::kShocked, Emits::kShower, kFactories);
         add(anim::kVikingBurnsUp.at(who), Glow::kFire, Emits::kEmbersAndSmoke, kFires);
+        add(anim::kVikingBeamedAway.at(who), Glow::kBeam, Emits::kTwirlAway, kSpaceship);
+        add(anim::kVikingBeamedIn.at(who), Glow::kBeam, Emits::kTwirlIn, kSpaceship);
     }
     return rules;
 }();
@@ -214,6 +229,33 @@ std::array<float, 2> Effects::fuse_of(const Entity& bomb) {
     constexpr int kUp = 9;
     return {static_cast<float>(bomb.facing_left() ? bomb.x - kRight : bomb.x + kRight),
             static_cast<float>(bomb.y - kUp)};
+}
+
+// Four sparks a picture on a twirl round (x, from top to bottom in the level), a funnel wider higher up: going, from
+// anywhere on him, rising and widening; coming, from wide around him, closing in. They turn the same way round, a
+// turn in about 11 pictures (the user, 2026-11-26: narrower, and swirling more).
+void Effects::twirl(float x, float top, float bottom, bool in) {
+    const auto chance = [this] { return std::uniform_real_distribution<float>{0.0F, 1.0F}(random_); };
+    constexpr float kTurn = 0.55F;  // radians a picture
+    for (int one = 0; one < 4; ++one) {
+        const float up = chance();  // how far up him, 0 his feet
+        const int life = 16 + static_cast<int>(chance() * 12);
+        const float wide = 5 + (up * 11);
+        const float radius = in ? wide + 9 : wide;
+        particles_.push_back({.x = x,
+                              .y = bottom - (up * (bottom - top)),
+                              .speed_x = 0,
+                              .speed_y = in ? 0.25F : -0.7F,
+                              .fall = 0,
+                              .age = 0,
+                              .life = life,
+                              .look = Particle::Look::kTwirl,
+                              .orbit_x = x,
+                              .radius = radius,
+                              .angle = chance() * 6.2832F,
+                              .turn = kTurn,
+                              .widen = in ? -(radius - 2) / static_cast<float>(life) : 0.4F});
+    }
 }
 
 void Effects::blast(float x, float y, float size) {
@@ -407,6 +449,12 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
                     light.colour = {0.55F * flicker, 0.7F * flicker, 1.0F * flicker};
                     break;
                 }
+                case Glow::kBeam: {  // teleported: a cool light that shimmers
+                    const float flicker = flickering(0.7F, 0.1F, 0.45F);
+                    light.reach = 20;
+                    light.colour = {0.5F * flicker, 0.8F * flicker, 1.0F * flicker};
+                    break;
+                }
                 case Glow::kFuse: {  // a small flickering light at the fuse
                     const float flicker = flickering(0.5F, 0.2F, 0.25F);
                     const auto [fuse_x, fuse_y] = fuse_of(*entity);
@@ -473,6 +521,8 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
                                       .life = 4 + static_cast<int>(chance() * 7),
                                       .look = chance() < 0.6F ? Particle::Look::kSpark : Particle::Look::kEmber});
             }
+        } else if (rule.emits == Emits::kTwirlAway || rule.emits == Emits::kTwirlIn) {
+            twirl(middle_x, static_cast<float>(top), static_cast<float>(bottom), rule.emits == Emits::kTwirlIn);
         } else if (rule.emits == Emits::kBlast && chance() < 0.3F) {  // (after it went off: embers now and then)
             const auto [x, y] = somewhere(chance(), chance());
             particles_.push_back({.x = x,
@@ -512,6 +562,9 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
             case Particle::Look::kSmoke:
                 colour = aged < 0.3F ? kLightGrey : (aged < 0.7F ? kGrey : kDarkGrey);
                 break;
+            case Particle::Look::kTwirl:  // the near side of the twirl white, the far side blue
+                colour = std::sin(particle.angle) > 0 ? kWhite : kBlue;
+                break;
         }
         view.sprites.push_back(DrawnSprite{.image = &dots_.at(colour),
                                            .x = static_cast<int>(std::lround(particle.x)),
@@ -519,10 +572,30 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
                                            .mirrored = false,
                                            .flipped = false,
                                            .moves = {}});
+        if (particle.look == Particle::Look::kTwirl) {  // a trail along its way round: it draws an arc of the spiral
+            constexpr int kTrail = 3;
+            for (int back = 1; back <= kTrail; ++back) {
+                const float angle = particle.angle - (particle.turn * static_cast<float>(back));
+                const float radius = std::max(particle.radius - (particle.widen * static_cast<float>(back)), 0.5F);
+                view.sprites.push_back(DrawnSprite{
+                    .image = &dots_.at(kBlue),
+                    .x = static_cast<int>(std::lround(particle.orbit_x + (radius * std::cos(angle)))),
+                    .y = static_cast<int>(std::lround(particle.y - (particle.speed_y * static_cast<float>(back)))),
+                    .mirrored = false,
+                    .flipped = false,
+                    .moves = {}});
+            }
+        }
     }
     if (moving) {
         for (Particle& particle : particles_) {
-            particle.x += particle.speed_x;
+            if (particle.radius > 0) {  // twirling: round its point, the circle seen from the side
+                particle.angle += particle.turn;
+                particle.radius = std::max(particle.radius + particle.widen, 0.5F);
+                particle.x = particle.orbit_x + (particle.radius * std::cos(particle.angle));
+            } else {
+                particle.x += particle.speed_x;
+            }
             particle.y += particle.speed_y;
             particle.speed_y += particle.fall;
             ++particle.age;

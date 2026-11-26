@@ -236,6 +236,11 @@ pixel and in steps of brightness), subtle.
   that death can have another animation in its place (Egypt's dissolving is where the spaceship's electrocution
   is), or none (the place is then taken as it is). The animation that was called `burns` is the death from a long
   fall (`dies_from_a_fall`; its sound, called `kBurnt`, is a ledge's or a ball's landing too: `kHeavyLanding`).
+- **Teleporting** (the user, 2026-11-26: a twirl with particles; `kVikingBeamedAway`, `kVikingBeamedIn`, the
+  spaceship's): a cool light that shimmers, and four sparks a picture on a twirl round him, a funnel wider higher up
+  (`Effects::twirl`; particles that orbit, `Particle::radius`, `angle`, `turn`, `widen`), the near side white, the
+  far side blue, each with a trail of three along its way so it draws an arc (a turn in about 11 pictures): going, rising and widening; coming,
+  closing in on him.
 - **Bombs** (the user, 2026-11-26): a Viking's bomb put down (`kPlacedBombTicks`): a small flickering light at the tip of its
   fuse (its top right: `Effects::fuse_of`), and two or three sparks a picture off it; going off (`kPlacedBombBlowsUp`), and so a bomber's bomb bursting
   (`kBombBursts`) and the factory's blasts (`kBlastLarge`, `kBlastSmall`): a great warm light while it lasts, and
