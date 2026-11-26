@@ -54,14 +54,14 @@ the code is put together, start with [`docs/architecture.md`](docs/architecture.
 
 ## What's next
 
-By default it plays the game as it was. Started with `--rules remaster` it plays by its own rules on top, drawn
-on the graphics card: so far that is zooming out (`-` and `=`, or the mouse wheel), a minimap of what you have
-seen of the level (M), ten seconds of rewind (hold Backspace), no limit on how many creatures a level can
-have going at once, a menu (Escape, or Start on a gamepad) for the sound, its volumes and the keys and buttons,
-walking as slowly as a gamepad's stick is pushed, and, with your own copy of the SNES version beside the game's files, its backdrops behind the
-levels, scrolling slower than them, light and sparks from fire and electricity, and a CRT look for the screen. What
-comes next is optional too: co-op online for up to three players, one Viking each. The plan is in
-[`docs/ROADMAP.md`](docs/ROADMAP.md).
+Started, it asks which rules: Vanilla plays the game as it was, and Remaster (or `--rules remaster`, which skips the
+question) plays by its own rules on top, drawn on the graphics card: so far that is zooming out (`-` and `=`, or the
+mouse wheel), a minimap of what you have seen of the level (M), ten seconds of rewind (hold Backspace), no limit on
+how many creatures a level can have going at once, a menu (Escape, or Start on a gamepad) for the sound, its volumes
+and the keys and buttons, walking as slowly as a gamepad's stick is pushed, and, with your own copy of the SNES
+version beside the game's files, its backdrops behind the levels, scrolling slower than them, light and sparks from
+fire and electricity, and a CRT look for the screen. What comes next is optional too: co-op online for up to three
+players, one Viking each. The plan is in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Building it
 
@@ -89,7 +89,7 @@ cmake --build --preset release
 Then run it on your own desktop, since the container has no screen or sound:
 
 ```sh
-./build/release/bin/vikings-remaster                  # from the first logo
+./build/release/bin/vikings-remaster                  # from the first logo; a box asks which rules
 ./build/release/bin/vikings-remaster --slot 0         # straight into level 1
 ./build/release/bin/vikings-remaster --rules remaster # the Remaster rules: General MIDI and the rest in the
                                                       # menu (Escape in a level)

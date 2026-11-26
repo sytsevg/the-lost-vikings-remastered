@@ -44,7 +44,9 @@ The decisions are in [`decisions.md`](decisions.md) (ADR-0005, ADR-0006, ADR-001
 only under Remaster rules; Vanilla rules must stay exactly what they are, and the replays are what proves that.
 
 - **The Rules switch:** `--rules vanilla|remaster`, for the whole run (`World::rules`, set as a world is made). It
-  is never changed while playing.
+  is never changed while playing. Without it a game in a window asks in a box (`ask_rules` in `main.cpp`, the user,
+  2026-11-26: Vanilla, Remaster or Quit; Vanilla rules if the box can't be shown, which on Wayland needs zenity
+  or kdialog); a dump plays Vanilla rules.
 - **The GPU renderer** (`src/lvr/gpu.*`, SDL_GPU on Vulkan, shaders `gpu_*.vert` and `gpu_*.frag` compiled by
   `glslc` into the build): what a Remaster window shows. Vanilla rules and every check use the Classic renderer
   (`render.*`), which stays. How the GPU one works is under "M8".

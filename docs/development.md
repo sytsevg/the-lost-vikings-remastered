@@ -60,8 +60,9 @@ golden run as Windows programs under Wine (`cmake/wine.sh`). Not part of `check.
 
 What comes out is one file, `build/windows/bin/vikings-remaster.exe`, for Windows 10 and later. On the Windows
 PC it goes in a folder with a `gamedata/` beside it (`gamedata/original/`, and the SoundFont for the Modern
-sound), which the game finds wherever it is started from. Remaster rules need Vulkan, which a graphics card's own
-driver has. It opens no console: an error that stops the game is shown in a box.
+sound), which the game finds wherever it is started from. Started without `--rules`, it asks which rules in a
+box. Remaster rules need Vulkan, which a graphics card's own driver has. It opens no console: an error that
+stops the game is shown in a box.
 
 ## Playing
 The game reads your own copy of the original files from `gamedata/original/` (or `--data DIR`), and the
@@ -71,7 +72,7 @@ started in (the repository's, for a build in `build/<preset>/bin/`). What it wri
 made when it is first written to.
 
 ```sh
-./build/release/bin/vikings-remaster    # --data DIR for the game's files elsewhere
+./build/release/bin/vikings-remaster    # a box asks which rules; --data DIR for the game's files elsewhere
 ./build/release/bin/vikings-remaster --rules remaster    # Remaster rules: - and = (or the wheel) zoom out and in,
                                                          # M puts the minimap away, Backspace rewinds,
                                                          # Escape (or a pad's Start) opens the menu

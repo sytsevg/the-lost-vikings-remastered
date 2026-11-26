@@ -5,10 +5,11 @@
 // (docs/original/input.md).
 //
 //   vikings-remaster [--rules vanilla|remaster] [--data DIR] [--profile DIR] [--soundfont FILE]
-//       plays the game from its start, under Vanilla rules (the original's, the default) or Remaster rules, with the
-//       original's files from DIR. --profile: where Remaster rules keep the player's profile (what the minimap has
-//       seen, the settings and controls, settings.txt); by default the folder `profiles` beside this program (a second
-//       window on one machine wants its own). --soundfont: the Modern sound's SoundFont. Vanilla rules play the
+//       plays the game from its start, under Vanilla rules (the original's) or Remaster rules, with the original's
+//       files from DIR; without --rules a box asks which (Vanilla rules if it can't be shown, and for a dump).
+//       --profile: where Remaster rules keep the player's profile (what the minimap has seen, the settings and
+//       controls, settings.txt); by default the folder `profiles` beside this program (a second window on one machine
+//       wants its own). --soundfont: the Modern sound's SoundFont. Vanilla rules play the
 //       Classic sound, the original's, only (the user). Under Remaster rules the sound, the screen's look, the visual
 //       effects and the controls are the menu's (Escape in a level), and going online the title's (HOST GAME, JOIN
 //       GAME), all kept in the profile, not start-up options.
@@ -115,6 +116,42 @@ void quiet_without_console() noexcept {
         }
     }
 #endif
+}
+
+// The rules to play under, asked in a box when no --rules says: none if the player quits there; Vanilla rules, the
+// default, if the box can't be shown (SDL shows one on Wayland with zenity or kdialog).
+std::optional<Rules> ask_rules() {
+    constexpr int kVanillaButton = 0;
+    constexpr int kRemasterButton = 1;
+    constexpr int kQuitButton = 2;
+    const std::array<SDL_MessageBoxButtonData, 3> buttons{{
+        {.flags = SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, .buttonID = kVanillaButton, .text = "Vanilla"},
+        {.flags = 0, .buttonID = kRemasterButton, .text = "Remaster"},
+        {.flags = SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, .buttonID = kQuitButton, .text = "Quit"},
+    }};
+    const SDL_MessageBoxData box{
+        .flags = SDL_MESSAGEBOX_INFORMATION | SDL_MESSAGEBOX_BUTTONS_LEFT_TO_RIGHT,
+        .window = nullptr,
+        .title = kWindowTitle,
+        .message =
+            "Which rules?\n\n"
+            "Vanilla: the original's, as it played.\n"
+            "Remaster: zoom, a minimap, rewind, co-op online, and the Modern visuals and sound.\n\n"
+            "(--rules vanilla or --rules remaster chooses at the start.)",
+        .numbuttons = static_cast<int>(buttons.size()),
+        .buttons = buttons.data(),
+        .colorScheme = nullptr};
+    int pressed = kQuitButton;
+    if (!SDL_ShowMessageBox(&box, &pressed)) {
+        return Rules::kVanilla;
+    }
+    if (pressed == kVanillaButton) {
+        return Rules::kVanilla;
+    }
+    if (pressed == kRemasterButton) {
+        return Rules::kRemaster;
+    }
+    return std::nullopt;  // Quit, or the box closed
 }
 
 // Why the game stops: on stderr, and on Windows in a box too.
@@ -943,6 +980,7 @@ int main(int argc, char* argv[]) try {
     std::optional<Showcase> showcase;  // --showcase
     int steps = 0;
     Rules rules = Rules::kVanilla;
+    bool rules_given = false;  // --rules; without it, a game in a window asks (ask_rules)
     bool cheat = false;
     bool report_slow = false;               // --slow-frames
     bool effects = true;                    // --no-effects: false
@@ -961,6 +999,7 @@ int main(int argc, char* argv[]) try {
             ++i;
         } else if (args[i] == "--rules" && (value(1) == "vanilla" || value(1) == "remaster")) {
             rules = value(1) == "remaster" ? Rules::kRemaster : Rules::kVanilla;
+            rules_given = true;
             ++i;
         } else if (args[i] == "--cheat") {
             cheat = true;
@@ -1026,6 +1065,13 @@ int main(int argc, char* argv[]) try {
                 "[--whole AT_STEP] [--moments N] [--menu KEYS]]");
             return EXIT_FAILURE;
         }
+    }
+    if (!rules_given && dump_to.empty()) {  // a game in a window: the player chooses the rules (a dump plays Vanilla)
+        const std::optional<Rules> chosen = ask_rules();
+        if (!chosen) {
+            return EXIT_SUCCESS;
+        }
+        rules = *chosen;
     }
     if (rules == Rules::kRemaster && dump_to.empty() && (sound_asked || look || !effects)) {
         // (The user, 2026-11-25: what the menu sets and the profile keeps isn't a start-up option as well.)
