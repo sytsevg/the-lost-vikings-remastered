@@ -15,6 +15,8 @@ namespace {
 constexpr std::size_t kTyped = 12;  // where the host's own bytes are
 constexpr std::size_t kMenu = 14;
 static_assert(net::kGoneByte == 15);  // the last: whether he is gone (net::gone_input)
+constexpr double kStepsApart = net::kStepMs - (1000.0 * 3.0 / kDisplayHz);
+static_assert(kStepsApart < 1e-9 && kStepsApart > -1e-9);  // (the step the match times by is the game's)
 
 void put16(net::Input& input, std::size_t at, std::uint16_t value) {
     input.bytes.at(at) = static_cast<std::uint8_t>(value & 0xffU);

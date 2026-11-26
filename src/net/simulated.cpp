@@ -90,13 +90,14 @@ struct SimulatedNetwork::State {
                       .to = to,
                       .event = std::move(event),
                       .number = std::nullopt};
+        if (std::cmp_less(random() % 100, conditions.loss_percent)) {
+            flight.at += static_cast<std::uint32_t>(conditions.late_ms);  // lost on the way: sent again
+        }
         if (fast) {
             flight.number = ++link.fast_sent;
-            if (std::cmp_less(random() % 100, conditions.loss_percent)) {
-                flight.at += static_cast<std::uint32_t>(conditions.late_ms);
-            }
         } else {
-            flight.at = std::max(flight.at, link.reliable_at);  // (in order)
+            flight.at += static_cast<std::uint32_t>(conditions.behind_ms);
+            flight.at = std::max(flight.at, link.reliable_at);  // (in order: what comes after a lost one waits)
             link.reliable_at = flight.at;
         }
         flights.push_back(std::move(flight));

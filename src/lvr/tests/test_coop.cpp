@@ -1,17 +1,17 @@
-// Tests for src/lvr/coop.* (co-op online, ADR-0012): the game itself under rollback. Two machines play level 1 over a
-// network that delays and loses what is sent; they must come to the very state of a third that had every input
-// from the start.
+// Tests for src/lvr/coop.* (co-op online, ADR-0012): the game itself under rollback, a step's input as bytes, and a
+// game online on the real game: a host and a guest play level 1 over a network that delays and loses what is sent,
+// and one who joins under way comes to the same game.
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
-#include <random>
 #include <vector>
 
 #include "lvr/coop.hpp"
 #include "lvr/names.hpp"
 #include "lvr/session.hpp"
 #include "net/rollback.hpp"
+#include "net/tests/table.hpp"
 
 using namespace lvr;
 
@@ -50,110 +50,63 @@ std::uint16_t held(int player, std::uint32_t step) {
     return step == 150 ? kNext : 0;
 }
 
-std::unique_ptr<Session> machine(int player) {
-    auto opened =
-        Session::open(LVR_ORIGINAL_DIR, 0, {}, Rules::kRemaster, draw, Online{.on = true, .players = 2}, player);
-    REQUIRE(opened);
-    return std::move(*opened);
-}
+// The real game at a game online's table (net/tests/table.hpp): a session opened as the game starts (under way: at
+// the state given), with rollback's view of it; each step's input what `held` says for its player.
+struct Opened {
+    std::unique_ptr<Session> session;
+};
+struct RealGame : Opened, CoopGame {
+    explicit RealGame(std::unique_ptr<Session> opened) : Opened{std::move(opened)}, CoopGame{*session} {}
+
+    static std::unique_ptr<RealGame> made(const net::Started& started) {
+        const int slot = started.state.empty() ? started.slot : Session::scene_of(started.state).value_or(-1);
+        auto opened = Session::open(LVR_ORIGINAL_DIR, slot, {}, Rules::kRemaster, draw,
+                                    Online{.on = true, .players = started.players}, started.player);
+        REQUIRE(opened);
+        if (!started.state.empty()) {
+            REQUIRE((*opened)->take_state(started.state));
+        }
+        return std::make_unique<RealGame>(std::move(*opened));
+    }
+    static net::Input input(RealGame& game, int player, std::uint32_t given) {
+        return pack(game.session->take_input(held(player, given), {}, {}), player);
+    }
+};
 
 }  // namespace
 
-TEST_CASE("real data: two machines online come to the state of one that had every input", "[real-data]") {
+TEST_CASE("real data: one who joins level 1 under way comes to the very game the host and the guest play",
+          "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
-    constexpr std::uint32_t kSteps = 180;
-    constexpr int kLatency = 2;  // steps on the way, and up to two more
-    struct Machine {
-        std::unique_ptr<Session> session;
-        std::unique_ptr<CoopGame> game;
-        std::unique_ptr<net::Rollback> rollback;
-        std::uint32_t acked = 0;  // how far the other has acknowledged this one's inputs
-    };
-    std::vector<Machine> machines;
-    for (int player = 0; player < 2; ++player) {
-        Machine one;
-        one.session = machine(player);
-        const net::Settings settings{.players = 2, .local = player, .delay = 1};
-        one.game = std::make_unique<CoopGame>(*one.session, static_cast<std::size_t>(settings.window) + 2);
-        one.rollback = std::make_unique<net::Rollback>(*one.game, settings);
-        machines.push_back(std::move(one));
-    }
-    REQUIRE(machines[0].session->online());
-    struct Packet {
-        std::uint32_t at;
-        int to;
-        int from;
-        std::vector<std::pair<std::uint32_t, net::Input>> inputs;
-        std::uint32_t knows;
-    };
-    std::vector<Packet> in_flight;
-    std::minstd_rand random{7};                     // NOLINT(bugprone-random-generator-seed): the same run every time
-    std::vector<std::vector<net::Input>> given(2);  // by player, by step: what each machine's player gave
-    for (std::uint32_t now = 0; now < kSteps + 40; ++now) {
-        std::vector<Packet> later;
-        for (Packet& packet : in_flight) {
-            if (packet.at > now) {
-                later.push_back(std::move(packet));
-                continue;
-            }
-            Machine& to = machines.at(static_cast<std::size_t>(packet.to));
-            for (const auto& [step, input] : packet.inputs) {
-                to.rollback->add_remote(packet.from, step, input);
-            }
-            to.acked = std::max(to.acked, packet.knows);
-        }
-        in_flight = std::move(later);
-        for (int me = 0; me < 2; ++me) {
-            Machine& mine = machines.at(static_cast<std::size_t>(me));
-            net::Rollback& rollback = *mine.rollback;
-            const std::uint32_t next = rollback.local_known();
-            if (next < kSteps + 1) {
-                const StepInput local = mine.session->take_input(held(me, next), {}, {});
-                const net::Input packed = pack(local, me);
-                if (rollback.add_local(packed)) {
-                    given.at(static_cast<std::size_t>(me)).resize(next + 1);
-                    given.at(static_cast<std::size_t>(me)).at(next) = packed;
-                }
-            }
-            if (rollback.step() < kSteps) {
-                (void)rollback.advance();
-            }
-            const int other = 1 - me;
-            if (random() % 10 != 0) {  // one in ten lost
-                in_flight.push_back({.at = now + kLatency + static_cast<std::uint32_t>(random() % 3),
-                                     .to = other,
-                                     .from = me,
-                                     .inputs = rollback.local_from(mine.acked),
-                                     .knows = rollback.known(other)});
-            }
-        }
-    }
-    for (Machine& one : machines) {
-        one.rollback->catch_up();
-        REQUIRE(one.rollback->step() == kSteps);
-        REQUIRE(one.rollback->confirmed() >= kSteps);
-        CHECK_FALSE(one.game->take_pictures().empty());
-    }
-    // The straight run: every input known at every step.
-    auto truth = machine(0);
-    const int erik_from = truth->world().at(0)->x;
-    const int baleog_from = truth->world().at(1)->x;
-    for (std::uint32_t step = 0; step < kSteps; ++step) {
-        const std::vector<net::Input> both{given[0].at(step), given[1].at(step)};
-        (void)truth->run(unpack(both), step);
-    }
-    const std::uint64_t expected = truth->state_hash();
-    CHECK(machines[0].session->state_hash() == expected);
-    CHECK(machines[1].session->state_hash() == expected);
-    CHECK(machines[0].rollback->steps_run_again() + machines[1].rollback->steps_run_again() > 0);
-    CHECK(truth->world().player_count == kMostPlayers);  // a place for each player there can be ...
-    CHECK_FALSE(truth->world().players[2].here);         // ... the third nobody's
-    // What they did happened: past the opening's boxes the host's Erik walked, and the second player's Baleog.
-    CHECK(truth->world().at(0)->x != erik_from);
-    CHECK(truth->world().at(1)->x != baleog_from);
-    CHECK(truth->world().lines.empty());
+    net::test::Table<RealGame> table{
+        {.delay_ms = 20, .jitter_ms = 10, .loss_percent = 10, .late_ms = 100, .behind_ms = 0}};
+    auto& host = table.host();
+    auto& guest = table.join("guest");
+    REQUIRE(table.until([&] { return guest.lobby->welcomed(); }));
+    host.lobby->start();
+    REQUIRE(table.until([&] { return host.match != nullptr && guest.match != nullptr; }));
+    REQUIRE(table.run_to(100));
+
+    // A third comes into the free place: Olaf, whom nobody played.
+    auto& late = table.join("late");
+    REQUIRE(table.until([&] { return late.match != nullptr; }));
+    CHECK(late.player() == 2);
+    REQUIRE(table.run_to(200));
+    table.wait(60);
+    CHECK(table.same_game());
+    const World& world = late.game->session->world();
+    CHECK(world.players[2].here);
+    CHECK(world.players[2].viking == 2);
+    CHECK(host.game->session->world().players[2].here);
+    // What they did happened: the host's Erik walked from where level 1 puts him, and the guest's Baleog.
+    auto fresh = Session::open(LVR_ORIGINAL_DIR, 0, {}, Rules::kRemaster);
+    REQUIRE(fresh);
+    CHECK(host.game->session->world().at(0)->x != (*fresh)->world().at(0)->x);
+    CHECK(host.game->session->world().at(1)->x != (*fresh)->world().at(1)->x);
+    CHECK(host.connection->names().at(2) == "LATE");
+    CHECK(guest.connection->names().at(2) == "LATE");
 }
 
 TEST_CASE("coop: a step's input as bytes and back; what is pressed once isn't predicted again") {

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "lvr/session.hpp"
+#include "net/match.hpp"
 #include "net/rollback.hpp"
 
 namespace lvr {
@@ -29,7 +30,7 @@ std::expected<std::optional<std::uint32_t>, std::string> replay_log(const std::f
 
 class CoopGame : public net::Game {
   public:
-    explicit CoopGame(Session& session, std::size_t slots) : session_{&session}, saved_(slots) {}
+    explicit CoopGame(Session& session, std::size_t slots = net::Match::kSlots) : session_{&session}, saved_(slots) {}
 
     void save(std::size_t slot) override { saved_.at(slot) = session_->snapshot(); }
     void load(std::size_t slot) override { session_->restore(saved_.at(slot)); }
@@ -38,12 +39,10 @@ class CoopGame : public net::Game {
     // What isn't held but pressed once is taken to be pressed no more: the character typed, the menu keys.
     net::Input predict(const net::Input& last) override;
     bool waits_for_inputs() override { return session_->changing_scene(); }
+    std::vector<std::uint8_t> state_bytes(std::size_t slot) override { return Session::state_bytes(saved_.at(slot)); }
+    std::vector<std::uint8_t> state_bytes_now() override { return Session::state_bytes(session_->snapshot()); }
+    bool here(int player) override { return session_->world().players.at(static_cast<std::size_t>(player)).here; }
 
-    // The play as it was before `step` (one of the window's: a snapshot kept), or as it is if that is the step to run
-    // next (`now`): what one joining under way is given.
-    Play::Snapshot snapshot_before(std::uint32_t step, std::uint32_t now) const {
-        return step == now ? session_->snapshot() : saved_.at(step % saved_.size());
-    }
     // The pictures of the steps shown since this was last asked, a refresh each.
     std::vector<Screen> take_pictures() { return std::exchange(pictures_, {}); }
 

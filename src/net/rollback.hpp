@@ -64,6 +64,11 @@ class Game {
     // Whether the next step may only run on every player's input, never on a prediction (it changes the scene:
     // what is never to be run again).
     virtual bool waits_for_inputs() { return false; }
+    // For one joining a game under way: the state kept in `slot`, and the state as it is now, written out (what his
+    // machine takes before it starts); and whether a player is in the game as it is now.
+    virtual std::vector<std::uint8_t> state_bytes(std::size_t slot) = 0;
+    virtual std::vector<std::uint8_t> state_bytes_now() = 0;
+    virtual bool here(int player) = 0;
 };
 
 struct Settings {
@@ -140,6 +145,9 @@ class Rollback {
     std::vector<std::pair<std::uint32_t, Input>> known_from(int player, std::uint32_t from) const;
     // How many steps were run again, all told.
     std::uint32_t steps_run_again() const noexcept { return run_again_; }
+    // The game's state before `step` (the next to run, or one of the window's before it), written out: what one
+    // joining under way is given. Corrections still to run are run first.
+    std::vector<std::uint8_t> state_before(std::uint32_t step);
 
     // Time sync. The step a remote player is at now (the front end works it out from what he reports and the
     // round trip), and the frame advantage he reports for himself (how far he is ahead of this machine).

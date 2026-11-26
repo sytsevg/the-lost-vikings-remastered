@@ -234,30 +234,6 @@ std::vector<Menu::PlayerLine> player_lines(const Session& session, const NetGame
     return lines;
 }
 
-// The lobby, before the game: in the terminal for now (hosting and joining from the menu come later). Who is
-// there as they join; the game starts for all once the host has everyone.
-std::expected<NetGame::Joined, std::string> wait_in_lobby(NetGame& net) {
-    std::size_t shown = 0;
-    while (true) {
-        auto lobby = net.lobby();
-        if (!lobby) {
-            return std::unexpected{lobby.error()};
-        }
-        if (net.names().size() != shown) {
-            shown = net.names().size();
-            std::string names;
-            for (const std::string& name : net.names()) {
-                names += (names.empty() ? "" : ", ") + name;
-            }
-            std::println("vikings-remaster: in the game: {}", names);
-        }
-        if (*lobby) {
-            return **lobby;
-        }
-        SDL_Delay(5);
-    }
-}
-
 struct DumpOptions {
     int zoom = 0;     // this many steps of zoom out ...
     int zoom_at = 0;  // ... asked for before this step
@@ -275,7 +251,7 @@ struct DumpOptions {
 };
 
 int dump(Session& session, int steps, const std::filesystem::path& out, const std::filesystem::path& wav,
-         GpuRenderer* gpu, const DumpOptions& options, NetGame* net) {
+         GpuRenderer* gpu, const DumpOptions& options) {
     Screen last = session.start_frames.empty() ? Screen{} : session.start_frames.back();
     std::vector<std::int16_t> sound = std::move(session.samples);
     session.samples.clear();
@@ -295,26 +271,7 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
                 keys = static_cast<std::uint16_t>(unsigned{keys} | unsigned{tapped});
             }
         }
-        if (net != nullptr) {  // online: the step once every input allows it, what comes taken meanwhile
-            std::optional<std::vector<Screen>> pictures;
-            while (!pictures) {
-                if (const auto polled = net->poll(); !polled) {
-                    std::println(stderr, "vikings-remaster: {}", polled.error());
-                    return EXIT_FAILURE;
-                }
-                if (net->wants_input()) {
-                    net->give(session.take_input(keys, {}, {}));
-                }
-                pictures = net->step();
-                (void)net->flush();
-                if (!pictures) {
-                    SDL_Delay(1);
-                }
-            }
-            frames = std::move(*pictures);
-        } else {
-            frames = session.step(options.showcase != nullptr ? options.showcase->before_step(session, keys) : keys);
-        }
+        frames = session.step(options.showcase != nullptr ? options.showcase->before_step(session, keys) : keys);
         refreshes += frames.size();
         if (!frames.empty()) {
             last = frames.back();
@@ -325,15 +282,6 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
     if (!session.error().empty()) {
         std::println(stderr, "vikings-remaster: {}", session.error());
         return EXIT_FAILURE;
-    }
-    if (net != nullptr) {  // a second for the others to finish theirs, before this machine is gone
-        const std::uint64_t until = SDL_GetTicks() + 1000;
-        while (SDL_GetTicks() < until && net->poll()) {
-            SDL_Delay(2);
-        }
-        if (gpu != nullptr) {
-            gpu->set_overlay(coop_picture(coop_overlay(*net), session.font()));
-        }
     }
     std::println("scene {} after {} refreshes", session.scene(), refreshes);
     if (gpu != nullptr && (options.whole_at >= 0 || options.showcase != nullptr)) {
@@ -352,9 +300,6 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
     } else if (gpu != nullptr) {
         if (options.menu) {
             Menu menu{settings_now(session, gpu, Settings{}), menu_choices(session)};
-            if (net != nullptr) {
-                menu.set_players(player_lines(session, *net));
-            }
             for (const char key : *options.menu) {
                 constexpr std::string_view kKeys = "udlrcbx";
                 if (const auto at = kKeys.find(key); at != std::string_view::npos) {
@@ -1245,10 +1190,10 @@ std::expected<Connected, std::string> connect_online(const OnlineWish& wish, con
             return std::unexpected{std::format("CAN'T HOST ON PORT {}", settings.host_port)};
         }
         std::println("vikings-remaster: hosting on port {}", settings.host_port);
-        return Connected{.net = NetGame::host(std::move(*hosted), 0, wish.level < 0 ? scene::kIntro : wish.level, false,
-                                              std::nullopt, *identity),
-                         .joined = std::nullopt,
-                         .closed = false};
+        return Connected{
+            .net = NetGame::host(std::move(*hosted), wish.level < 0 ? scene::kIntro : wish.level, *identity),
+            .joined = std::nullopt,
+            .closed = false};
     }
     const auto [address, port] = split_address(settings.join_address);
     const std::string where = std::format("{}:{}", address, port);
@@ -1348,13 +1293,6 @@ int main(int argc, char* argv[]) try {
     std::string held;                                 // a dump: the key held
     std::vector<std::pair<int, std::string>> tapped;  // and the ones pressed once, at their steps
     bool sound_asked = false;                         // --sound (a dump under Remaster rules: in a window the menu's)
-    // Co-op online (ADR-0012): hosting on a port, or joining a host; how many play, this one's name, the delay.
-    std::optional<std::uint16_t> host_port;
-    std::string join_address;
-    std::uint16_t join_port = kDefaultPort;
-    int players = 2;
-    std::string name;
-    std::optional<int> delay;
     const std::vector<std::string_view> args(argv + 1, argv + argc);
     for (std::size_t i = 0; i < args.size(); ++i) {
         const auto value = [&](std::size_t ahead) { return i + ahead < args.size() ? args[i + ahead] : ""; };
@@ -1415,21 +1353,6 @@ int main(int argc, char* argv[]) try {
         } else if (args[i] == "--menu" && i + 1 < args.size()) {
             dumping.menu = std::string{args[i + 1]};
             ++i;
-        } else if (number && args[i] == "--host" && *number > 0 && *number < 65536) {
-            host_port = static_cast<std::uint16_t>(*number);
-            ++i;
-        } else if (args[i] == "--join" && i + 1 < args.size()) {
-            std::tie(join_address, join_port) = split_address(args[i + 1]);
-            ++i;
-        } else if (number && args[i] == "--players" && *number >= 1 && *number <= kMostPlayers) {
-            players = *number;
-            ++i;
-        } else if (args[i] == "--name" && i + 1 < args.size()) {
-            name = args[i + 1];
-            ++i;
-        } else if (number && args[i] == "--delay" && *number >= 0 && *number <= 4) {
-            delay = *number;
-            ++i;
         } else if (args[i] == "--hold" && i + 1 < args.size()) {
             held = args[i + 1];
             ++i;
@@ -1442,53 +1365,11 @@ int main(int argc, char* argv[]) try {
                 stderr,
                 "usage: vikings-remaster [--data DIR] [--slot N] [--keys FILE] [--soundfont FILE] "
                 "[--rules vanilla|remaster] [--cheat] [--slow-frames] [--profile DIR] [--showcase N] "
-                "[--host PORT [--players N] [--delay N] | --join ADDRESS[:PORT]] [--name NAME] "
                 "[--dump STEPS FILE.png [--wav FILE.wav] [--sound classic|modern] [--no-effects] "
                 "[--shader none|crt|xbr] [--zoom BY AT_STEP] [--hold KEY] [--tap KEY AT_STEP] [--rewind FROM UNTIL] "
                 "[--whole AT_STEP] [--moments N] [--menu KEYS]]");
             return EXIT_FAILURE;
         }
-    }
-    // Co-op online (ADR-0012), under Remaster rules: in the lobby before anything else, until everyone is there; the
-    // host's scene and cheat are the game's.
-    std::unique_ptr<NetGame> net;
-    NetGame::Joined joined;
-    if (host_port || !join_address.empty()) {
-        if (host_port && !join_address.empty()) {
-            std::println(stderr, "vikings-remaster: --host or --join, not both");
-            return EXIT_FAILURE;
-        }
-        rules = Rules::kRemaster;
-        auto files = assets::GameFiles::open(dir);
-        if (!files) {
-            std::println(stderr, "vikings-remaster: {}", files.error());
-            return EXIT_FAILURE;
-        }
-        const NetGame::Identity identity{.build = std::string{kBuild},
-                                         .game = files->release().exe_hash ^ files->release().data_content_hash,
-                                         .name = name};
-        auto opened =
-            host_port ? net::SdlTransport::host(*host_port) : net::SdlTransport::join(join_address, join_port);
-        if (!opened) {
-            std::println(stderr, "vikings-remaster: {}", opened.error());
-            return EXIT_FAILURE;
-        }
-        net = host_port ? NetGame::host(std::move(*opened), players, slot, cheat, delay, identity)
-                        : NetGame::join(std::move(*opened), identity);
-        std::println("vikings-remaster: {}",
-                     host_port ? std::format("hosting on port {}, for {} players", *host_port, players)
-                               : std::format("joined {} port {}", join_address, join_port));
-        auto started = wait_in_lobby(*net);
-        if (!started) {
-            std::println(stderr, "vikings-remaster: {}", started.error());
-            return EXIT_FAILURE;
-        }
-        joined = *started;
-        slot = joined.slot;
-        cheat = joined.cheat;
-        std::println("vikings-remaster: {}: player {}, {} step(s) of input delay",
-                     joined.state.empty() ? "the game starts" : "into the game under way", joined.player + 1,
-                     joined.delay);
     }
     if (rules == Rules::kRemaster && dump_to.empty() && (sound_asked || look || !effects)) {
         // (The user, 2026-11-25: what the menu sets and the profile keeps isn't a start-up option as well.)
@@ -1555,24 +1436,10 @@ int main(int argc, char* argv[]) try {
             return EXIT_FAILURE;
         }
     }
-    auto session =
-        Session::open(dir, slot, sound, rules, draw_with,
-                      Online{.on = net != nullptr, .players = net != nullptr ? joined.players : 1}, joined.player);
+    auto session = Session::open(dir, slot, sound, rules, draw_with);
     if (!session) {
         std::println(stderr, "vikings-remaster: {}", session.error());
         return EXIT_FAILURE;
-    }
-    if (net != nullptr) {
-        if (!joined.state.empty()) {  // a game under way: its state as the host gave it
-            if (const auto taken = (*session)->take_state(joined.state); !taken) {
-                std::println(stderr, "vikings-remaster: {}", taken.error());
-                return EXIT_FAILURE;
-            }
-        }
-        net->begin(**session);
-        if (const char* beside = SDL_GetBasePath()) {  // (what the game writes is beside it)
-            net->set_log_folder(std::filesystem::path{beside} / "logs");
-        }
     }
     if (cheat) {
         (*session)->cheat();
@@ -1611,7 +1478,7 @@ int main(int argc, char* argv[]) try {
             dumping.taps.emplace_back(at, input::game_bits(input::key_actions(original, key)));
         }
         dumping.showcase = showcase ? &*showcase : nullptr;
-        return dump(**session, steps, dump_to, wav, gpu.get(), dumping, net.get());
+        return dump(**session, steps, dump_to, wav, gpu.get(), dumping);
     }
     // The controls: the original's under Vanilla rules, the player's under Remaster's; a keys file over them.
     input::Controls controls = remastered ? remastered->settings.controls : input::original_controls();
@@ -1634,10 +1501,10 @@ int main(int argc, char* argv[]) try {
     }
     // Under Remaster rules offline, in a window, the title's HOST GAME and JOIN GAME: a game online, and back to the
     // title when it ends (ADR-0012).
-    const bool may_go_online = remastered && net == nullptr && gpu != nullptr && !showcase;
+    const bool may_go_online = remastered && gpu != nullptr && !showcase;
     std::optional<OnlineWish> wish;
     Played played = play(**session, controls, window, gpu.get(), report_slow, showcase ? &*showcase : nullptr,
-                         remastered ? &*remastered : nullptr, net.get(), may_go_online ? &wish : nullptr);
+                         remastered ? &*remastered : nullptr, nullptr, may_go_online ? &wish : nullptr);
     while (may_go_online && !played.done && wish) {
         std::string tell;
         auto connected = connect_online(*wish, remastered->settings, dir, *gpu, played.last, (*session)->font());

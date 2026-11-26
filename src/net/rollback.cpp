@@ -268,6 +268,12 @@ bool Rollback::advance(bool shown) {
     return true;
 }
 
+std::vector<std::uint8_t> Rollback::state_before(std::uint32_t step) {
+    catch_up();  // (a correction still to run: the states kept are right again)
+    // (Before each step it runs, the game is kept in that step's slot: run() saves first.)
+    return step == step_ ? game_->state_bytes_now() : game_->state_bytes(step % slots());
+}
+
 std::vector<std::pair<std::uint32_t, Input>> Rollback::known_from(int player, std::uint32_t from) const {
     std::vector<std::pair<std::uint32_t, Input>> unsent;
     if (player < 0 || player >= settings_.players) {

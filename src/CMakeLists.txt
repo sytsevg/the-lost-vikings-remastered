@@ -32,9 +32,12 @@ add_library(lvr::input ALIAS lvr_input)
 target_include_directories(lvr_input PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 lvr_target_defaults(lvr_input)
 
-# Co-op online (ADR-0012): rollback, the protocol and the simulated network, plain C++ (the sockets are
-# lvr_transport's).
+# Co-op online (ADR-0012): the connection, the lobby, the match, rollback, the protocol and the simulated network,
+# plain C++ (the sockets are lvr_transport's).
 add_library(lvr_net STATIC
+    net/connection.cpp
+    net/lobby.cpp
+    net/match.cpp
     net/protocol.cpp
     net/rollback.cpp
     net/simulated.cpp)
@@ -245,6 +248,8 @@ if(LVR_BUILD_TESTS)
         audio/tests/test_sequencer.cpp
         exporter/tests/test_level_dump.cpp
         input/tests/test_input.cpp
+        net/tests/test_lobby.cpp
+        net/tests/test_match.cpp
         net/tests/test_protocol.cpp
         net/tests/test_rollback.cpp
         net/tests/test_simulated.cpp
@@ -283,8 +288,7 @@ if(LVR_BUILD_TESTS)
     lvr_target_warnings(lvr_tests)
     # SDL3-backed code is only built with LVR_BUILD_APPS.
     if(LVR_BUILD_APPS)
-        target_sources(lvr_tests PRIVATE image/tests/test_png.cpp lvr/tests/test_gpu.cpp net/tests/test_transport.cpp
-                                       lvr/tests/test_online.cpp)
+        target_sources(lvr_tests PRIVATE image/tests/test_png.cpp lvr/tests/test_gpu.cpp net/tests/test_transport.cpp)
         target_link_libraries(lvr_tests PRIVATE lvr::image lvr::gpu lvr::transport lvr::online)
     endif()
     include(Catch)

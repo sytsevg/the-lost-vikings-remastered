@@ -25,7 +25,7 @@ std::vector<std::vector<std::uint8_t>> messages(const std::vector<Event>& events
 TEST_CASE(
     "simulated network: reliable in order after the delay; fast never after a newer one, the newest always; "
     "who goes is seen to, after what he sent") {
-    SimulatedNetwork network{{.delay_ms = 10, .jitter_ms = 8, .loss_percent = 30, .late_ms = 50}};
+    SimulatedNetwork network{{.delay_ms = 10, .jitter_ms = 8, .loss_percent = 30, .late_ms = 50, .behind_ms = 0}};
     auto host = network.host();
     auto guest = network.join();
     REQUIRE(host);

@@ -5,8 +5,8 @@
 // passes on to each client what the other players gave (a star). Pure: no sockets.
 //
 // Joining: Hello (client to host) is answered by Welcome, or Refused with why (another version of the game's state,
-// another build, other game files). Lobby (host to all, now and then) says who is there, their round trips and what
-// the game starts with; Start (host to all) starts the game for everyone at step 0, and Back (host to all) ends it
+// another build, other game files). LobbyStatus (host to all, now and then) says who is there, their round trips and
+// what the game starts with; Start (host to all) starts the game for everyone at step 0, and Back (host to all) ends it
 // for everyone, back in the lobby with the same connections (to start another). Each game has a number, which the
 // messages of a game carry (Inputs, Status, Hash): what is late from the one before is told apart. Then, every refresh:
 // Inputs (each player's not yet acknowledged, one message a player), Status (where the sender is, his frame advantage,
@@ -47,7 +47,7 @@ struct Welcome {
     bool operator==(const Welcome&) const = default;
 };
 inline constexpr std::uint16_t kUnknown = 0xffff;  // a round trip not measured (yet)
-struct Lobby {
+struct LobbyStatus {
     std::vector<std::string> names;  // by player
     // The host's round trips to each, as in Status; and the scene the game starts in (a level, or the intro: a new
     // game), as the host has chosen it so far.
@@ -55,7 +55,7 @@ struct Lobby {
     std::array<std::uint16_t, kMostPlayers> engine{kUnknown, kUnknown, kUnknown};
     std::uint16_t slot = 0;
     std::uint8_t countdown = 0;  // the host has started it: seconds until it starts (0: he hasn't)
-    bool operator==(const Lobby&) const = default;
+    bool operator==(const LobbyStatus&) const = default;
 };
 struct Start {
     std::uint16_t game = 0;  // its number
@@ -156,8 +156,8 @@ struct Bundle {
     bool operator==(const Bundle&) const = default;
 };
 
-using Message = std::variant<Hello, Refused, Welcome, Lobby, Start, Inputs, Status, Hash, Leave, Quit, Echo, Echoed,
-                             Arrive, Joining, Back, Decided, Bundle>;
+using Message = std::variant<Hello, Refused, Welcome, LobbyStatus, Start, Inputs, Status, Hash, Leave, Quit, Echo,
+                             Echoed, Arrive, Joining, Back, Decided, Bundle>;
 
 std::vector<std::uint8_t> encode(const Message& message);
 // A message's messages: a bundle's, decoded (what can't be is left out); else the message itself.

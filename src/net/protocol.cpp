@@ -208,7 +208,7 @@ std::vector<std::uint8_t> encode(const Message& message) {
     std::visit(
         [&out](const auto& one) {
             using M = std::remove_cvref_t<decltype(one)>;
-            if constexpr (std::is_same_v<M, Lobby>) {
+            if constexpr (std::is_same_v<M, LobbyStatus>) {
                 write_names(out, one.names);
                 for (const std::uint16_t network : one.network) {
                     out(network);
@@ -266,7 +266,7 @@ template <std::size_t Index>
 std::optional<Message> read_one(In& in) {
     using M = std::variant_alternative_t<Index, Message>;
     M message;
-    if constexpr (std::is_same_v<M, Lobby>) {
+    if constexpr (std::is_same_v<M, LobbyStatus>) {
         if (!read_names(in, message.names)) {
             return std::nullopt;
         }
