@@ -181,7 +181,10 @@ Go ConnectingPlace::refresh(Ui& ui) {
     constexpr int kSaidFor = 240;       // and what it was beside JOIN for four seconds; then the page as it was
     const std::string where = std::format("{}:{}", address_, port_);
     Menu* menu = ui.menu();
-    ++refreshes_;
+    if (!began_at_) {
+        began_at_ = ui.refreshes();
+    }
+    refreshes_ = static_cast<int>(ui.refreshes() - *began_at_);
     if (failed_) {
         if (!failed_said_at_ && refreshes_ >= kLeastTurning && menu != nullptr) {
             failed_said_at_ = refreshes_;
@@ -193,8 +196,9 @@ Go ConnectingPlace::refresh(Ui& ui) {
             return Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0, .page = true};
         }
     }
-    if (menu != nullptr && !failed_said_at_ && refreshes_ % kTurnEvery == 0) {
-        menu->set_joining(refreshes_ / kTurnEvery % 4);
+    if (const int phase = refreshes_ / kTurnEvery % 4; menu != nullptr && !failed_said_at_ && phase != phase_) {
+        phase_ = phase;
+        menu->set_joining(phase);
         ui.redraw();
     }
     if (failed_) {
@@ -288,7 +292,8 @@ constexpr int kLobbyFade = 30;  // refreshes the lobby takes to go dark as its g
 
 Go LobbyPlace::refresh(Ui& ui) {
     if (started_) {  // going dark, the page with it; then the game (rising from black)
-        if (--fading_ <= 0) {
+        fading_ = kLobbyFade - static_cast<int>(ui.refreshes() - fading_since_);
+        if (fading_ <= 0) {
             return Go{.to = Go::To::kOnline, .why = {}, .failed = false, .host = false, .level = 0, .page = false};
         }
         ui.fade(fading_, kLobbyFade);
@@ -307,6 +312,7 @@ Go LobbyPlace::refresh(Ui& ui) {
     if (*polled) {
         started_ = **polled;
         fading_ = kLobbyFade;
+        fading_since_ = ui.refreshes();
         return {};
     }
     if (Menu* menu = ui.menu(); menu != nullptr && menu->in_lobby()) {
@@ -391,15 +397,17 @@ std::expected<std::unique_ptr<OnlinePlace>, std::string> OnlinePlace::open(std::
         (*opened)->cheat();
     }
     if (started.state.empty()) {  // (from the lobby; one joining under way fades in once he is there)
-        (*opened)->fade_in();
         for (Screen& picture : (*opened)->start_frames) {  // its first pictures dark, the steps' rising from them
             picture.palette.fill({});
         }
     }
     std::println("vikings-remaster: the game starts: player {}, {} step(s) of input delay", started.player + 1,
                  started.delay);
-    return std::unique_ptr<OnlinePlace>{
+    const bool rises = started.state.empty();
+    std::unique_ptr<OnlinePlace> place{
         new OnlinePlace{std::move(connection), std::move(started), std::move(*opened), needs.logs}};
+    place->rise_wanted_ = rises;  // (one joining under way rises once he is there)
+    return place;
 }
 
 OnlinePlace::OnlinePlace(std::unique_ptr<net::Connection> connection, net::Started started,
@@ -450,6 +458,17 @@ std::vector<Menu::PlayerLine> OnlinePlace::player_lines() const {
 }
 
 Go OnlinePlace::refresh(Ui& ui) {
+    if (std::exchange(rise_wanted_, false)) {
+        rise_since_ = ui.refreshes();
+    }
+    if (rise_since_) {  // the pictures made from now on as dark as half a second of refreshes from black has left
+        const int left = kFadeInRefreshes - static_cast<int>(ui.refreshes() - *rise_since_);
+        if (left > 0) {
+            session_->fade_in(left);
+        } else {
+            rise_since_.reset();
+        }
+    }
     if (leaving_) {
         return {};  // (fading out: what comes is the lobby's)
     }
@@ -511,7 +530,8 @@ Stepped OnlinePlace::step(const Tick& tick, Ui& ui) {
         const bool there = match_.run_to_arrival();
         session_->drop_carried_effects();
         if (there) {
-            session_->fade_in();
+            session_->fade_in(kFadeInRefreshes);
+            rise_since_ = ui.refreshes();
         }
         ran = there && match_.step();
     } else {
@@ -713,11 +733,13 @@ void Places::enter(std::unique_ptr<OnlinePlace> place) {
     lobby_.reset();
 }
 
-Ui headless_ui(std::optional<Menu>& menu, Place& place, Settings settings) {
+Ui headless_ui(std::optional<Menu>& menu, Place& place, Settings settings, std::function<std::uint64_t()> clock) {
     return Ui{
         menu,
         [&menu, &place, settings = std::move(settings)]() -> Menu& { return menu.emplace(settings, place.choices()); },
-        {}};
+        {},
+        {},
+        std::move(clock)};
 }
 
 }  // namespace lvr

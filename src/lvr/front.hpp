@@ -68,8 +68,15 @@ struct Stepped {
 class Ui {
   public:
     Ui(std::optional<Menu>& menu, std::function<Menu&()> open, std::function<void()> redraw,
-       std::function<void(int, int)> fade = {})
-        : menu_{&menu}, open_{std::move(open)}, redraw_{std::move(redraw)}, fade_{std::move(fade)} {}
+       std::function<void(int, int)> fade = {}, std::function<std::uint64_t()> clock = {})
+        : menu_{&menu},
+          open_{std::move(open)},
+          redraw_{std::move(redraw)},
+          fade_{std::move(fade)},
+          clock_{std::move(clock)} {}
+    // The screen's refreshes so far (59.7 a second, however often the window shows a picture): what a place times
+    // itself by.
+    std::uint64_t refreshes() const { return clock_ ? clock_() : 0; }
     Menu* menu() { return *menu_ ? &**menu_ : nullptr; }
     Menu& open_menu() { return open_(); }
     void redraw() {
@@ -89,6 +96,7 @@ class Ui {
     std::function<Menu&()> open_;
     std::function<void()> redraw_;
     std::function<void(int, int)> fade_;
+    std::function<std::uint64_t()> clock_;
 };
 
 class Place {
@@ -137,7 +145,8 @@ class Place {
 
 // The menu without a window (a dump, a test): kept in `menu`, opened with the place's choices and the settings
 // given, drawn nowhere.
-Ui headless_ui(std::optional<Menu>& menu, Place& place, Settings settings = {});
+Ui headless_ui(std::optional<Menu>& menu, Place& place, Settings settings = {},
+               std::function<std::uint64_t()> clock = {});
 
 // What the menu has to choose from: the Modern sound if there is one, the screen's looks, the passwords (HOST GAME's
 // level); online, whether this machine hosts a game from the title's lobby (RETURN TO LOBBY).
@@ -222,7 +231,9 @@ class ConnectingPlace final : public Place {
     std::mutex joined_lock_;
     std::optional<std::expected<std::unique_ptr<net::Transport>, std::string>> joined_;
     std::atomic<bool> cancelled_{false};
-    int refreshes_ = 0;  // since it began (the mark beside JOIN turns by them)
+    int refreshes_ = 0;                      // since it began (the mark beside JOIN turns by them)
+    std::optional<std::uint64_t> began_at_;  // the refresh it began at (Ui::refreshes)
+    int phase_ = -1;                         // the mark's, as last drawn
 };
 
 // The lobby, over a still of the title: who is there and their round trips, what the game starts with; the host's
@@ -251,6 +262,7 @@ class LobbyPlace final : public Place {
     std::unique_ptr<net::GuestLobby> guest_;
     std::optional<net::Started> started_;
     int fading_ = 0;  // the game started: the lobby going dark, refreshes left (what comes is the game's meanwhile)
+    std::uint64_t fading_since_ = 0;
 };
 
 // A game online, played: its own session under rollback (net::Match) over the connection. The names under the
@@ -307,6 +319,9 @@ class OnlinePlace final : public Place {
     Screen last_;                           // the last picture: shown again while the game waits
     bool logged_ = false;
     bool leaving_ = false;  // back to the lobby: the game fades out first (its messages left for the lobby)
+    // Rising from black (a game's start, or one joining under way once he is there): since which refresh.
+    bool rise_wanted_ = false;
+    std::optional<std::uint64_t> rise_since_;
     bool faded_ = false;
 };
 

@@ -631,11 +631,16 @@ Go run(Window& in, Place& place) {
         }
     };
     // What the place asks of the menu.
-    Ui ui{menu, open_menu, menu_changed, [&](int left, int of) {
+    Ui ui{menu, open_menu, menu_changed,
+          [&](int left, int of) {
               menu_bright = {left, of};
               if (menu) {
                   draw_menu();
               }
+          },
+          [&] {  // (the screen's refreshes, by the time gone: however often a picture is shown)
+              return static_cast<std::uint64_t>(static_cast<double>(SDL_GetPerformanceCounter() - start) /
+                                                static_cast<double>(frequency) * kDisplayHz);
           }};
     if (remaster && gpu != nullptr && place.own_session()) {
         use_settings(session, gpu, remastered->settings);

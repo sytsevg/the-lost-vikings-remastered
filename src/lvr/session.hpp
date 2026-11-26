@@ -104,7 +104,7 @@ class Session {
     void set_dimmed(bool dimmed) noexcept { dimmed_ = dimmed; }
     // One joining a game under way, caught up: the pictures from now fade in (presentation only); and of the sounds
     // the steps caught up asked for, the music only (not a burst of their effects).
-    void fade_in() noexcept;
+    void fade_in(int left = kFadeInRefreshes) noexcept;  // (this far from all in: of kFadeInRefreshes)
     void drop_carried_effects();
 
     // Live sound. Safe to call from two threads: the front end's (hear_now, set_modern) and the sound card's

@@ -335,8 +335,8 @@ std::expected<void, std::string> Session::write_quicksave() const {
 }
 
 // The quicksave's file: its level is loaded again, a world made for it, and what was written read into that.
-void Session::fade_in() noexcept {
-    fade_in_left_ = static_cast<std::uint8_t>(kFadeInRefreshes);
+void Session::fade_in(int left) noexcept {
+    fade_in_left_ = static_cast<std::uint8_t>(std::clamp(left, 0, kFadeInRefreshes));
 }
 
 void Session::drop_carried_effects() {

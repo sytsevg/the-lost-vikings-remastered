@@ -34,10 +34,11 @@ struct Machine {
     std::unique_ptr<Places> places;
     std::optional<Menu> kept;  // the menu of the place it shows, when open
     std::unique_ptr<Ui> ui;
-    Place* shown = nullptr;  // the place the menu is for
-    int due = 0;             // refreshes until its next step
-    Screen last;             // the last picture it showed
-    bool paused = false;     // it has no turns (its machine stopped)
+    Place* shown = nullptr;   // the place the menu is for
+    int due = 0;              // refreshes until its next step
+    Screen last;              // the last picture it showed
+    std::uint64_t turns = 0;  // its refreshes so far (the places time themselves by them)
+    bool paused = false;      // it has no turns (its machine stopped)
 
     Place& place() { return places->current(); }
     template <typename P>
@@ -49,13 +50,14 @@ struct Machine {
         if (&place() != shown) {
             shown = &place();
             kept.reset();
-            ui = std::make_unique<Ui>(headless_ui(kept, place(), settings));
+            ui = std::make_unique<Ui>(headless_ui(kept, place(), settings, [this] { return turns; }));
             place().begin(*ui);
         }
         return *ui;
     }
     // A refresh: what came, and every third (every one while it waits) the next pictures.
     void turn() {
+        ++turns;
         Ui& shown_menu = menu();
         Go go = place().refresh(shown_menu);
         if (go.to == Go::To::kStay && --due < 0) {
