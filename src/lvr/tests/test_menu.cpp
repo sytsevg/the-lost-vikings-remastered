@@ -97,10 +97,10 @@ TEST_CASE("menu: the options change the settings") {
     (void)menu.press(Key::kChoose);
     CHECK(labels(menu) ==
           std::vector<std::string>{"SOUND", "MUSIC", "SOUND FX", "SCREEN", "ZOOM", "MINIMAP", "VISUAL FX", "BACK"});
-    CHECK(menu.lines().at(0).value == "CLASSIC");
+    CHECK(menu.lines().at(0).value == "MODERN");  // (the default)
     (void)menu.press(Key::kRight);
-    CHECK(menu.settings().modern_sound);
-    CHECK(menu.lines().at(0).value == "MODERN");
+    CHECK_FALSE(menu.settings().modern_sound);
+    CHECK(menu.lines().at(0).value == "CLASSIC");
     go_to(menu, 1);  // the music: from the loudest, down, never past 0
     CHECK(menu.lines().at(1).slider == kLoudest);
     (void)menu.press(Key::kRight);

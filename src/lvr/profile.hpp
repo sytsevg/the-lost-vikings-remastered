@@ -57,7 +57,7 @@ inline constexpr int kLoudest = 10;  // a volume's top: as loud as the game asks
 inline constexpr int kDefaultPort = 47230;
 
 struct Settings {
-    bool modern_sound = false;    // the Modern sound (if there is a SoundFont), or the Classic
+    bool modern_sound = true;     // the Modern sound (if there is a SoundFont; the default, the user), or the Classic
     int music = kLoudest;         // how loud the music is, 0 to kLoudest
     int sound_fx = kLoudest;      // and the sound effects
     std::string screen = "none";  // the screen's look, by its name (GpuRenderer::name_of)

@@ -122,7 +122,7 @@ TEST_CASE("profile: the settings are written as lines and read back the same") {
     Settings settings;
     std::vector<std::string> problems;
     CHECK(parse_settings(format_settings(settings), problems) == settings);
-    settings.modern_sound = true;
+    settings.modern_sound = false;
     settings.music = 3;
     settings.sound_fx = 0;
     settings.screen = "crt";
@@ -142,7 +142,7 @@ TEST_CASE("profile: the settings are written as lines and read back the same") {
     const std::string text = format_settings(settings);
     CHECK(text.ends_with("\nname RED BEARD\nhost-port 1234\nhost-password ABCD\njoin-address 10.0.0.2:4000\n"));
     CHECK(text.starts_with(
-        "lvr-settings 1\nsound modern\nmusic 3\nsound-fx 0\nscreen crt\nzoom 2\nminimap off\nvisual-fx off\n"
+        "lvr-settings 1\nsound classic\nmusic 3\nsound-fx 0\nscreen crt\nzoom 2\nminimap off\nvisual-fx off\n"
         "window 1250x1026\nwindow-maximized on\n"));
     CHECK(format_settings(Settings{}).find("\nwindow ") == std::string::npos);  // (none yet: the default size)
     CHECK(text.find("\nkey zoom-in Keypad -\n") != std::string::npos);
@@ -159,7 +159,7 @@ TEST_CASE("profile: the settings are written as lines and read back the same") {
 TEST_CASE("profile: settings are read leniently, a line at a time") {
     std::vector<std::string> problems;
     // Not a settings file: the defaults, and it is said.
-    CHECK(parse_settings("lvr-minimap 1\nsound modern\n", problems) == Settings{});
+    CHECK(parse_settings("lvr-minimap 1\nsound classic\n", problems) == Settings{});
     CHECK(problems.size() == 1);
     problems.clear();
     // What isn't understood is said and skipped; what isn't named stays as it is by default.
