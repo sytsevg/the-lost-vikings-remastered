@@ -270,4 +270,10 @@ assets::Palette darkened(const assets::Palette& palette, std::array<std::uint8_t
 
 void draw(Screen& screen, const View& view, const SceneGraphics& scene, const SharedGraphics& shared);
 
+// A picture `share` (0 to 1) as bright, and everything that goes dark with it: its colours (unless they were darkened
+// as it was drawn: a scene's fade, the original's levels off them, View::darken), the lights on it, and
+// Screen::bright, which what is laid over it (the minimap) goes by. Every fade goes through here, the scenes' and
+// the places' (the user, 2026-11-26: online the minimap stayed lit on a black screen).
+void darken(Screen& picture, float share, bool colours_drawn_dark = false);
+
 }  // namespace lvr

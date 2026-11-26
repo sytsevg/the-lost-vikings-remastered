@@ -64,7 +64,9 @@ only under Remaster rules; Vanilla rules must stay exactly what they are, and th
   view has shown in its alpha (`Session::seen_`, per level and per pixel of the minimap, kept in the profile).
   The GPU renderer shows a square of it around the view in the bottom left corner (`gpu_over.frag`): it adds what
   the view shows now and the Vikings (`Screen::level_x`, `Screen::vikings`) at every refresh, and moves the HUD
-  right for it.
+  right for it. It goes as dark as the picture by `Screen::bright`; every fade, a scene's and the places' online
+  (the start, the way back to the lobby, the lobby going dark), goes through `darken` (`render.hpp`), which
+  darkens the colours, the lights and `bright` together (the user, 2026-11-26: online it stayed lit on black).
 - **Rewind** (`Session`, Backspace): `World` can be copied (its slots are `OwnedEntity`, whose copy is the
   entity's clone), and `Play::Snapshot` is a world with its level. `Session` keeps one before every step in a
   level being played with the step's keys, and the last 10 seconds of the sound as it was heard, for playing

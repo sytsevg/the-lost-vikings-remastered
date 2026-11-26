@@ -307,3 +307,20 @@ TEST_CASE("real data: the shared pictures", "[real-data]") {
     CHECK(shared->hud_panel.width == 344);  // a Mode X page's width; the screen shows its first 320
     CHECK(shared->hud_panel.height == 64);
 }
+
+TEST_CASE("render: a picture darkened, and all that goes dark with it") {
+    Screen picture;
+    picture.palette[1] = {.r = 200, .g = 100, .b = 50};
+    picture.lights = {Light{.colour = {1, 0.5F, 0.25F}}};
+    Screen half = picture;
+    darken(half, 0.5F);
+    CHECK(half.palette[1] == assets::Rgb{.r = 100, .g = 50, .b = 25});
+    CHECK(half.lights[0].colour == std::array<float, 3>{0.5F, 0.25F, 0.125F});
+    CHECK(half.bright == 0.5F);  // (the minimap goes by it)
+    // A scene's fade has darkened the colours as they were drawn: the rest goes as dark.
+    Screen drawn_dark = picture;
+    darken(drawn_dark, 0.0F, /*colours_drawn_dark=*/true);
+    CHECK(drawn_dark.palette[1] == picture.palette[1]);
+    CHECK(drawn_dark.lights[0].colour == std::array<float, 3>{0, 0, 0});
+    CHECK(drawn_dark.bright == 0);
+}

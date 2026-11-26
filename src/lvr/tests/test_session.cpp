@@ -886,6 +886,13 @@ TEST_CASE("real data: Remaster rules' effects: lights, glowing colours, what sto
     REQUIRE(shown.ground != nullptr);
     CHECK(std::ranges::any_of(shown.ground->solid, [](std::uint8_t solid) { return solid != 0; }));
     CHECK(sparks);
+    // Rising from black (one joining a game online): the lights as dark as the picture, with it (render.hpp darken).
+    (*with)->fade_in(kFadeInRefreshes);
+    const Screen rising = (*with)->step(0).front();
+    CHECK(rising.bright == 0);
+    REQUIRE_FALSE(rising.lights.empty());
+    CHECK(std::ranges::all_of(rising.lights,
+                              [](const Light& light) { return light.colour == std::array<float, 3>{0, 0, 0}; }));
     // Without them: none of it.
     CHECK(plain.back().lights.empty());
     CHECK(std::ranges::none_of(plain.back().glow, [](std::uint8_t glow) { return glow != 0; }));

@@ -266,12 +266,21 @@ TEST_CASE(
     host.press(Menu::Key::kChoose);
     host.type(std::string(password.begin(), password.end()));
     REQUIRE(room.until([&] { return host.menu().menu()->start().starts_with("LEVEL 1"); }));
+    std::vector<Screen> lobby;
+    host.shown_all = &lobby;
     host.press(Menu::Key::kDown);
     host.press(Menu::Key::kChoose);  // START GAME
+    // The lobby goes dark first, all of it (render.hpp darken).
+    REQUIRE(room.until([&] { return host.at<OnlinePlace>() != nullptr; }));
+    host.shown_all = nullptr;
+    REQUIRE_FALSE(lobby.empty());
+    CHECK(lobby.back().bright < 0.1F);
+    CHECK(std::ranges::all_of(lobby.back().palette, [](const assets::Rgb& colour) {
+        return std::max({colour.r, colour.g, colour.b}) <= 26;  // (a tenth of the brightest)
+    }));
     // The level's start, from the lobby gone dark (the user, 2026-11-26): the original's start's tick and fade in, the
     // start's picture rising from black, all of it (the minimap goes by Screen::bright) in step; not two seconds of
     // black with the minimap on it, nor a rise of its own after them.
-    REQUIRE(room.until([&] { return host.at<OnlinePlace>() != nullptr; }));
     const std::vector<Screen>& start = host.place().session().start_frames;
     REQUIRE(start.size() == 75);
     CHECK(start.front().bright == 0);

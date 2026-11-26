@@ -27,10 +27,9 @@ class Effects {
     // colours that give light in `screen`, the particles as sprites after the view's own (drawn over them, under
     // what is in front). With `moving` (a picture of the play going on, not one made again going back, nor one of a
     // scene fading) the particles move on a picture's worth, what gives them off gives off more, and the lights
-    // flicker; else all of it holds still. The lights are `brightness` (0 to 1) as bright as they are: as the
-    // picture is.
-    void add(const World& world, const SceneGraphics& scene, View& view, Screen& screen, bool moving,
-             float brightness = 1);
+    // flicker; else all of it holds still. The lights are as bright as they are (a fade darkens them with the
+    // picture: darken, render.hpp).
+    void add(const World& world, const SceneGraphics& scene, View& view, Screen& screen, bool moving);
     // The particles there are go: the play was brought back, or another scene started.
     void clear() noexcept { particles_.clear(); }
 

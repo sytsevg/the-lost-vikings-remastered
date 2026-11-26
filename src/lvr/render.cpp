@@ -264,6 +264,23 @@ assets::Palette darkened(const assets::Palette& palette, std::array<std::uint8_t
     return shown;
 }
 
+void darken(Screen& picture, float share, bool colours_drawn_dark) {
+    if (!colours_drawn_dark) {
+        const auto part = [share](std::uint8_t level) {
+            return static_cast<std::uint8_t>(static_cast<float>(level) * share);
+        };
+        for (assets::Rgb& colour : picture.palette) {
+            colour = {.r = part(colour.r), .g = part(colour.g), .b = part(colour.b)};
+        }
+    }
+    for (Light& light : picture.lights) {
+        for (float& colour : light.colour) {
+            colour *= share;
+        }
+    }
+    picture.bright *= share;
+}
+
 void draw(Screen& screen, const View& view, const SceneGraphics& scene, const SharedGraphics& shared) {
     screen.palette = darkened(view.palette, view.darken, view.darken_all);
     if (view.colour3) {

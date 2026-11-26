@@ -301,8 +301,7 @@ Effects::Effects() {
     }
 }
 
-void Effects::add(const World& world, const SceneGraphics& scene, View& view, Screen& screen, bool moving,
-                  float brightness) {
+void Effects::add(const World& world, const SceneGraphics& scene, View& view, Screen& screen, bool moving) {
     const auto chance = [this] { return std::uniform_real_distribution<float>{0.0F, 1.0F}(random_); };
     // A light's flicker: between `low` and 1, now and then (`dips` of the time) down to `dip`; still while nothing
     // moves (a scene's fade: what is there holds still as it goes dark or comes in).
@@ -312,13 +311,7 @@ void Effects::add(const World& world, const SceneGraphics& scene, View& view, Sc
         }
         return chance() < dips ? dip : low + ((1 - low) * chance());
     };
-    // A light as bright as the picture is (darker while a scene fades).
-    const auto add_light = [&screen, brightness](Light light) {
-        for (float& part : light.colour) {
-            part *= brightness;
-        }
-        screen.lights.push_back(light);
-    };
+    const auto add_light = [&screen](const Light& light) { screen.lights.push_back(light); };
     find_electric_colours(world, scene);
     // The spaceship's lights and screens: the colours its levels turn (the cycles), where the map has them; not its
     // electricity's, whose light is cast (below).

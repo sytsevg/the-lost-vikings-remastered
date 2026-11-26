@@ -26,23 +26,6 @@ std::optional<int> parse_number(std::string_view text) {
     }
 }
 
-// A picture `share` (0 to 1) as bright: its colours, the lights on it, and what is laid over it (the minimap goes by
-// Screen::bright), as a scene's fade has them.
-void darken(Screen& picture, float share) {
-    const auto part = [share](std::uint8_t level) {
-        return static_cast<std::uint8_t>(static_cast<float>(level) * share);
-    };
-    for (assets::Rgb& colour : picture.palette) {
-        colour = {.r = part(colour.r), .g = part(colour.g), .b = part(colour.b)};
-    }
-    for (Light& light : picture.lights) {
-        for (float& colour : light.colour) {
-            colour *= share;
-        }
-    }
-    picture.bright *= share;
-}
-
 }  // namespace
 
 Menu::Choices menu_choices(const Session& session, bool hosting, bool lobby) {
@@ -365,11 +348,7 @@ Stepped LobbyPlace::step(const Tick& /*tick*/, Ui& ui) {
     stepped.cues = std::move(offline_->cues);
     if (started_) {
         for (Screen& picture : stepped.frames) {
-            for (assets::Rgb& colour : picture.palette) {
-                colour = {.r = static_cast<std::uint8_t>(colour.r * fading_ / kLobbyFade),
-                          .g = static_cast<std::uint8_t>(colour.g * fading_ / kLobbyFade),
-                          .b = static_cast<std::uint8_t>(colour.b * fading_ / kLobbyFade)};
-            }
+            darken(picture, static_cast<float>(fading_) / static_cast<float>(kLobbyFade));
         }
     }
     return stepped;
