@@ -222,6 +222,8 @@ TEST_CASE("online stills: the lobby, the names under the portraits, the waiting 
     REQUIRE(room.until([&] { return host.title->world().scene == scene::kTitle; }));
     host.ask(Menu::Asked::kHost);
     guest.ask(Menu::Asked::kJoin);
+    (void)guest.place().refresh(guest.menu());  // (connecting: JOIN GAME's page, the mark turning beside JOIN)
+    save_still(guest, menu_picture(*guest.menu().menu(), guest.place().session().font()), "joining.png");
     REQUIRE(room.until([&] { return guest.at<LobbyPlace>() != nullptr && !guest.last.pixels.empty(); }));
     // The host types level 1's password (as the game's files have it) and starts it.
     const auto& password = host.title->world().passwords.at(0);
@@ -270,8 +272,8 @@ TEST_CASE(
 
     // RETURN TO LOBBY: everyone there again. The guest leaves it (the title, nothing said), and joins again.
     host.ask(Menu::Asked::kLobby);
-    CHECK(host.at<LobbyPlace>() != nullptr);
-    REQUIRE(room.until([&] { return guest.at<LobbyPlace>() != nullptr; }));
+    CHECK(host.at<OnlinePlace>() != nullptr);  // (the game fades out first)
+    REQUIRE(room.until([&] { return host.at<LobbyPlace>() != nullptr && guest.at<LobbyPlace>() != nullptr; }));
     guest.ask(Menu::Asked::kLeave);
     CHECK(guest.at<OfflinePlace>() != nullptr);
     CHECK(guest.menu().menu() == nullptr);

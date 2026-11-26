@@ -72,6 +72,8 @@ class Menu {
     void erase();
     // What the menu says in its note until the next key (a game online that couldn't be joined, and why).
     void tell(std::string said) { said_ = std::move(said); }
+    // JOIN GAME's JOIN under way (the connection being made): a mark turning beside it, at this phase; none: not.
+    void set_joining(std::optional<int> phase) { joining_ = phase; }
     // Opens on HOST GAME or JOIN GAME (the title's menu asked for it): going back from it closes the menu.
     void open_host();
     void open_join();
@@ -119,11 +121,12 @@ class Menu {
     // What is shown, for menu_picture (and a test): the page's title, its lines, the one chosen, and a note.
     struct Line {
         std::string label;
-        std::string value;          // beside it (a setting's value, an action's keys): none for a choice
-        std::optional<int> slider;  // a volume: shown as a bar of kLoudest
-        bool changes = false;       // left and right change the value
-        bool dim = false;           // nothing can be chosen there
-        bool typing = false;        // being typed into: a block after its value, where the next letter goes
+        std::string value;           // beside it (a setting's value, an action's keys): none for a choice
+        std::optional<int> slider;   // a volume: shown as a bar of kLoudest
+        bool changes = false;        // left and right change the value
+        bool dim = false;            // nothing can be chosen there
+        bool typing = false;         // being typed into: a block after its value, where the next letter goes
+        std::optional<int> turning;  // a mark turning in its value's place (| / - \\ by its phase): it is under way
     };
     std::string_view title() const noexcept;
     std::vector<Line> lines() const;
@@ -158,6 +161,7 @@ class Menu {
     std::string port_;  // HOST GAME's port, as typed (into the settings as a number)
     int level_ = -1;
     bool lobby_host_ = false;
+    std::optional<int> joining_;
     std::string start_;
     int countdown_ = 0;
     std::string title_;  // (a title made of the countdown, for title())

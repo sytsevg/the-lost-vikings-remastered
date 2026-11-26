@@ -1,6 +1,7 @@
 #include "lvr/menu.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <format>
 #include <string>
@@ -276,6 +277,7 @@ std::vector<Menu::Line> Menu::lines() const {
             line("NAME", typed(static_cast<std::size_t>(Join::kName), "PLAYER 2"));
             line("ADDRESS", typed(static_cast<std::size_t>(Join::kAddress)));
             line("JOIN");
+            lines.back().turning = joining_;
             line("BACK");
             break;
         case Page::kOptions: {
@@ -804,6 +806,16 @@ std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<asset
         } else if (!line.value.empty()) {
             canvas.text(value_x, top + 1, line.value, ink, font);
             value_x += static_cast<int>(line.value.size()) * kCharacter;
+        } else if (line.turning) {  // a short line turning about its middle: | / - \ (the font has no \ nor |)
+            constexpr int kHalf = 3;
+            const int middle_x = value_x + kHalf;
+            const int middle_y = top + 1 + kHalf;
+            for (int along = -kHalf; along <= kHalf; ++along) {
+                const std::array<std::pair<int, int>, 4> at{
+                    {{0, along}, {-along, along}, {along, 0}, {along, along}}};  // (| / - \, y downwards)
+                const auto [dx, dy] = at.at(static_cast<std::size_t>(*line.turning % 4));
+                canvas.fill(middle_x + dx, middle_y + dy, 1, 1, ink);
+            }
         }
         if (line.typing && flash_shown) {  // where the next letter goes: a block, coming and going
             canvas.fill(value_x, top + 1, kCharacter - 2, kCharacter - 1, ink);

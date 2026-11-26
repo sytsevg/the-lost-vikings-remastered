@@ -148,17 +148,34 @@ Place::Answer OfflinePlace::asked(Menu::Asked asked, Menu& menu) {
 ConnectingPlace::ConnectingPlace(Session& offline, Join join, net::Identity identity, const std::string& address)
     : offline_{&offline}, join_{std::move(join)}, identity_{std::move(identity)} {
     std::tie(address_, port_) = split_address(address);
-    overlay_.waiting = said(std::format("JOINING {}:{}", address_, port_));
 }
 
-Go ConnectingPlace::refresh(Ui& /*ui*/) {
+void ConnectingPlace::begin(Ui& ui) {
+    ui.open_menu().open_join();
+    ui.redraw();
+}
+
+Place::Answer ConnectingPlace::asked(Menu::Asked asked, Menu& /*menu*/) {
+    if (asked == Menu::Asked::kResume) {  // BACK, or Escape: given up, the title as it was
+        return {.handled = false,
+                .go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0}};
+    }
+    return {.handled = true, .go = {}};  // (JOIN again, or a line typed into: it is under way already)
+}
+
+Go ConnectingPlace::refresh(Ui& ui) {
     const std::string where = std::format("{}:{}", address_, port_);
     const auto back = [](std::string why) {
         return Go{.to = Go::To::kOffline, .why = std::move(why), .failed = false, .host = false, .level = 0};
     };
+    constexpr int kTurnEvery = 6;  // refreshes a phase of the turning mark
+    if (Menu* menu = ui.menu(); menu != nullptr && refreshes_ % kTurnEvery == 0) {
+        menu->set_joining(refreshes_ / kTurnEvery % 4);
+        ui.redraw();
+    }
     if (connection_ == nullptr) {
         if (++refreshes_ < 2) {
-            return {};  // (the box shown first: joining waits for the connection)
+            return {};  // (the page shown first: joining waits for the connection)
         }
         auto joined = join_(address_, port_);
         if (!joined) {
@@ -187,6 +204,7 @@ Go ConnectingPlace::refresh(Ui& /*ui*/) {
     if (connection_->now_ms() - began_ > kPatienceMs) {
         return back(said(std::format("NO ANSWER FROM {}", where)));
     }
+    ++refreshes_;
     return {};
 }
 
@@ -297,6 +315,9 @@ std::expected<std::unique_ptr<OnlinePlace>, std::string> OnlinePlace::open(std::
     if (started.cheat) {
         (*opened)->cheat();
     }
+    if (started.state.empty()) {
+        (*opened)->fade_in();  // (from the lobby; one joining under way fades in once he is there)
+    }
     std::println("vikings-remaster: the game starts: player {}, {} step(s) of input delay", started.player + 1,
                  started.delay);
     return std::unique_ptr<OnlinePlace>{
@@ -351,6 +372,9 @@ std::vector<Menu::PlayerLine> OnlinePlace::player_lines() const {
 }
 
 Go OnlinePlace::refresh(Ui& ui) {
+    if (leaving_) {
+        return {};  // (fading out: what comes is the lobby's)
+    }
     Menu* menu = ui.menu();
     session_->set_dimmed(menu != nullptr);  // (the game goes on under the menu: darkened, as offline)
     auto polled = match_.poll();
@@ -360,8 +384,9 @@ Go OnlinePlace::refresh(Ui& ui) {
         return Go{.to = Go::To::kOffline, .why = said(why), .failed = false, .host = false, .level = 0};
     }
     names_to_session();
-    if (*polled == net::Match::Polled::kBack) {  // the host: back to the lobby
-        return Go{.to = Go::To::kLobby, .why = {}, .failed = false, .host = false, .level = 0};
+    if (*polled == net::Match::Polled::kBack) {  // the host: back to the lobby, once the game has faded out
+        leaving_ = true;
+        return {};
     }
     if (menu != nullptr) {  // its page of the players, as they are now
         if (std::vector<Menu::PlayerLine> lines = player_lines(); lines != menu->players()) {
@@ -374,6 +399,21 @@ Go OnlinePlace::refresh(Ui& ui) {
 
 Stepped OnlinePlace::step(const Tick& tick, Ui& ui) {
     Stepped stepped;
+    if (leaving_) {  // the last picture fading out, half a second; then the lobby
+        constexpr int kFadeOut = 30;
+        stepped.took_input = false;
+        if (std::exchange(faded_, true)) {
+            stepped.go = Go{.to = Go::To::kLobby, .why = {}, .failed = false, .host = false, .level = 0};
+            stepped.frames = {faded(0, kFadeOut)};
+            stepped.cues = {{}};
+            return stepped;
+        }
+        for (int refresh = 1; refresh <= kFadeOut; ++refresh) {
+            stepped.frames.push_back(faded(kFadeOut - refresh, kFadeOut));
+            stepped.cues.emplace_back();
+        }
+        return stepped;
+    }
     const bool in_menu = ui.menu() != nullptr;
     if (!connection_->hosting() && tick.menu_keys.quit) {  // a guest's F10 or Alt+X: he leaves the game
         stepped.go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0};
@@ -437,9 +477,9 @@ Place::Answer OnlinePlace::asked(Menu::Asked asked, Menu& /*menu*/) {
         return {.handled = false,
                 .go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0}};
     }
-    if (asked == Menu::Asked::kLobby && connection_->hosting()) {  // the host: everyone back to the lobby
-        return {.handled = false,
-                .go = Go{.to = Go::To::kLobby, .why = {}, .failed = false, .host = false, .level = 0}};
+    if (asked == Menu::Asked::kLobby && connection_->hosting()) {  // the host: everyone back to the lobby, told now
+        match_.back_to_lobby();
+        leaving_ = true;  // (the game fades out first)
     }
     return {};
 }
@@ -447,6 +487,9 @@ Place::Answer OnlinePlace::asked(Menu::Asked asked, Menu& /*menu*/) {
 CoopOverlay OnlinePlace::overlay() const {
     constexpr int kWaitedRefreshes = 18;  // a third of a second before the box says so
     CoopOverlay overlay;
+    if (leaving_) {
+        return overlay;
+    }
     const std::optional<int> whom = match_.waiting_for();
     if (whom && match_.waited() >= kWaitedRefreshes && std::cmp_less(*whom, connection_->names().size())) {
         overlay.waiting = "WAITING FOR " + connection_->names().at(static_cast<std::size_t>(*whom));
@@ -461,8 +504,17 @@ void OnlinePlace::leave(const Go& go) {
 }
 
 std::unique_ptr<net::Connection> OnlinePlace::take_connection() {
-    match_.back_to_lobby();  // (the host's: everyone told)
     return std::move(connection_);
+}
+
+Screen OnlinePlace::faded(int left, int of) const {
+    Screen picture = last_;
+    for (assets::Rgb& colour : picture.palette) {
+        colour = {.r = static_cast<std::uint8_t>(colour.r * left / of),
+                  .g = static_cast<std::uint8_t>(colour.g * left / of),
+                  .b = static_cast<std::uint8_t>(colour.b * left / of)};
+    }
+    return picture;
 }
 
 // --- The moves ---

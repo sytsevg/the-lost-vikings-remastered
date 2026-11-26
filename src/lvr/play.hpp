@@ -150,6 +150,14 @@ class Play {
                     picture();
                     return refreshes;
                 }
+                // Remaster rules: the quit box opens at once, as the pause box does (the menu's QUIT GAME goes
+                // straight into it, the picture dark throughout); the original opens it after the tick (below).
+                if (world.rules == Rules::kRemaster && menu_keys.quit && world.lines.empty() && !state_.playback &&
+                    !loaded_->level.quits_at_once) {
+                    open_menu(true);
+                    picture();
+                    return refreshes;
+                }
             }
             if (leaving()) {
                 // The scene ends here, in the middle of the tick; the rest of it is the new scene's, without keys.

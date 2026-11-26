@@ -164,8 +164,9 @@ class OfflinePlace final : public Place {
     bool may_go_online_;
 };
 
-// A guest waiting for the host's answer, a box over a still of the title (no sound meanwhile): into the lobby once
-// he has a place, or into the game if it is under way. Escape gives up; ten seconds without an answer, the same.
+// A guest waiting for the host's answer, JOIN GAME's page open over a still of the title with a mark turning beside
+// JOIN (no sound meanwhile): into the lobby once he has a place, or into the game if it is under way. Escape (BACK)
+// gives up; ten seconds without an answer, the same.
 class ConnectingPlace final : public Place {
   public:
     using Join = std::function<std::expected<std::unique_ptr<net::Transport>, std::string>(const std::string& address,
@@ -175,9 +176,10 @@ class ConnectingPlace final : public Place {
     Session& session() override { return *offline_; }
     bool heard() const override { return false; }
     Menu::Choices choices() override { return menu_choices(*offline_); }
+    void begin(Ui& ui) override;
     Go refresh(Ui& ui) override;
     Stepped step(const Tick& tick, Ui& ui) override;
-    CoopOverlay overlay() const override { return overlay_; }
+    Answer asked(Menu::Asked asked, Menu& menu) override;
 
     // For the move on: the connection, the guest's lobby, and the game if it is under way.
     std::unique_ptr<net::Connection> take_connection() { return std::move(connection_); }
@@ -190,12 +192,11 @@ class ConnectingPlace final : public Place {
     net::Identity identity_;
     std::string address_;
     std::uint16_t port_ = 0;
-    CoopOverlay overlay_;
     std::unique_ptr<net::Connection> connection_;
     std::unique_ptr<net::GuestLobby> lobby_;
     std::optional<net::Started> started_;
     std::uint32_t began_ = 0;  // when the connection was made (the connection's clock)
-    int refreshes_ = 0;
+    int refreshes_ = 0;        // since it began (the mark beside JOIN turns by them)
 };
 
 // The lobby, over a still of the title: who is there and their round trips, what the game starts with; the host's
@@ -251,7 +252,7 @@ class OnlinePlace final : public Place {
     CoopOverlay overlay() const override;
     void leave(const Go& go) override;
 
-    // Back to the lobby: the connection (the host's: everyone told), and the scene the game started in.
+    // Back to the lobby (once the game has faded out): the connection, and the scene the game started in.
     std::unique_ptr<net::Connection> take_connection();
     int slot() const noexcept { return started_.slot; }
     // The next step it runs, and the game's log (what lv-replay --coop plays again).
@@ -266,6 +267,8 @@ class OnlinePlace final : public Place {
     void names_to_session();
     // The menu's page of the players: each one there, his round trips to the host.
     std::vector<Menu::PlayerLine> player_lines() const;
+    // The last picture, `left` of `of` as bright.
+    Screen faded(int left, int of) const;
 
     std::unique_ptr<net::Connection> connection_;
     net::Started started_;
@@ -276,6 +279,8 @@ class OnlinePlace final : public Place {
     std::vector<std::string> names_given_;  // the names the session was last given
     Screen last_;                           // the last picture: shown again while the game waits
     bool logged_ = false;
+    bool leaving_ = false;  // back to the lobby: the game fades out first (its messages left for the lobby)
+    bool faded_ = false;
 };
 
 // The places, and each move between them: Offline always there, and one of the others while online.

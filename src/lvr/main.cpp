@@ -364,6 +364,7 @@ struct Window {
     Remastered* remastered = nullptr;
     Showcase* showcase = nullptr;
     bool report_slow = false;
+    Screen last;  // what the GPU renderer showed last: shown again until there is a next (the next place's too)
 };
 
 // The game in a window, a place at a time (front.hpp), until it says where to go. With the GPU renderer the pictures
@@ -416,7 +417,7 @@ Go run(Window& in, Place& place) {
     std::vector<Screen> frames = std::move(session.start_frames);
     std::vector<std::vector<SoundCue>> cues = std::move(session.cues);
     std::size_t next_frame = 0;
-    Screen last_shown;  // what the GPU renderer shows again until there is a next one
+    Screen& last_shown = in.last;  // what the GPU renderer shows again until there is a next one
     const std::uint64_t frequency = SDL_GetPerformanceFrequency();
     const std::uint64_t start = SDL_GetPerformanceCounter();
     std::uint64_t refreshes = 0;
@@ -686,6 +687,9 @@ Go run(Window& in, Place& place) {
         if (const Go next = place.refresh(ui); next.to != Go::To::kStay && running) {  // what came, the page now
             go = next;
             running = false;
+        }
+        if (!running) {
+            break;  // (not one more picture: the next place's are next, its menu over them)
         }
         // Every refresh that is due shows the next picture; a step runs when the last one is used up.
         const double elapsed =
@@ -1067,7 +1071,8 @@ int main(int argc, char* argv[]) try {
                  .gpu = gpu.get(),
                  .remastered = remastered ? &*remastered : nullptr,
                  .showcase = showcase ? &*showcase : nullptr,
-                 .report_slow = report_slow};
+                 .report_slow = report_slow,
+                 .last = {}};
     while (!places.done()) {
         const Go go = run(shown, places.current());
         places.go(go.to == Go::To::kStay
