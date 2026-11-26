@@ -69,7 +69,9 @@ only under Remaster rules; Vanilla rules must stay exactly what they are, and th
   entity's clone), and `Play::Snapshot` is a world with its level. `Session` keeps one before every step in a
   level being played with the step's keys, and the last 10 seconds of the sound as it was heard, for playing
   backwards. Going back undoes two steps a tick and runs each again from its snapshot for the pictures in
-  between (`Session::back_to`). Two triangles flash meanwhile (`gpu_mark.frag`). A level has 199 steps of it
+  between (`Session::back_to`), each with the refresh it was first shown for, so a backdrop that moves by itself
+  (the spaceship's stars) goes back too (`Kept::refresh`; the user, 2026-11-26). Two triangles flash meanwhile
+  (`gpu_mark.frag`). A level has 199 steps of it
   (10 seconds, `Session::kRewindSteps`; the user, 2026-11-25): each step undone uses one, and no more steps are
   kept than are left; a scene's start (`Play::scenes_started`, a level started again too) lets go of what was
   kept and gives all 199 again. Only in a level being played: never back from the game-over scene.

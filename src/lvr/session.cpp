@@ -715,7 +715,9 @@ std::vector<Screen> Session::back_to(const Kept& step) {
 // A step back in time, at twice the speed it went forwards: the last two steps that were kept are undone, and of
 // their six pictures, backwards, every second one is shown: the first of the later step, the second of the
 // earlier one, and the play as it was before that. (With one step left, or a step that was more than a plain
-// tick, the pictures there are.) Each step undone is one less of the level's rewind.
+// tick, the pictures there are.) Each step undone is one less of the level's rewind. Each picture has the refresh it
+// was shown for the first time, and the count of them goes back as far: what moves by itself (a backdrop: the
+// spaceship's stars) goes back with the play (the user, 2026-11-26), and on from there.
 std::vector<Screen> Session::step_back() {
     effects_.clear();
     std::vector<Screen> shown;
@@ -723,24 +725,32 @@ std::vector<Screen> Session::step_back() {
         rewind_.pop_back();
         --rewind_left_;
     };
+    const auto shown_again = [&shown](const Screen& screen, std::uint32_t refresh) {
+        shown.push_back(screen);
+        shown.back().refresh = refresh;
+    };
+    std::uint32_t back = rewind_.back().refresh;
     const std::vector<Screen> later = back_to(rewind_.back());
     if (rewind_.size() >= 2) {
         if (!later.empty()) {
-            shown.push_back(later.at(0));
+            shown_again(later.at(0), back);
         }
         undone();
+        back = rewind_.back().refresh;
         const std::vector<Screen> earlier = back_to(rewind_.back());
         if (!earlier.empty()) {
-            shown.push_back(earlier.at(1));
+            shown_again(earlier.at(1), back + 1);
         }
     } else if (!later.empty()) {
-        shown.push_back(later.at(1));
-        shown.push_back(later.at(0));
+        shown_again(later.at(1), back + 1);
+        shown_again(later.at(0), back);
     }
     undone();
-    const Screen now = picture();
-    shown.resize(2, now);  // (a picture that couldn't be made again: the play as it is now instead)
+    Screen now = picture();
+    now.refresh = back > 0 ? back - 1 : 0;  // (the step before's last picture)
+    shown.resize(2, now);                   // (a picture that couldn't be made again: the play as it is now instead)
     shown.push_back(now);
+    refreshes_ = back;  // (the undone step, when it is played again)
     for (Screen& screen : shown) {
         screen.rewinding = true;
     }
@@ -848,10 +858,11 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys, P
         scrolled_.reset();    // (the pictures going back aren't moved between)
         grows_from_.reset();  // (nor is the view changed: each step is brought back at the zoom's view)
         shrinking_ = false;
-        return numbered(step_back());
+        return step_back();
     }
     if (remaster && level_played() && rewind_left_ > 0) {
-        rewind_.push_back({.before = play_.snapshot(), .keyboard = keyboard, .keys = keys, .pace = pace});
+        rewind_.push_back(
+            {.before = play_.snapshot(), .keyboard = keyboard, .keys = keys, .pace = pace, .refresh = refreshes_});
         if (std::cmp_greater(rewind_.size(), rewind_left_)) {
             rewind_.pop_front();
         }

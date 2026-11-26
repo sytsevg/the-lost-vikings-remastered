@@ -282,19 +282,25 @@ TEST_CASE("real data: Remaster rules' rewind goes back at twice the speed, and t
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
-    // Level 2: its password's box is answered (a key pressed anew), then Erik walks right. Every step's pictures:
+    // Level 2: its password's box is answered (a key pressed anew), then Erik walks right. Every step's pictures,
+    // and the refreshes they are for (what a backdrop that moves by itself goes by: the spaceship's stars):
     using Pictures = std::vector<std::vector<std::uint8_t>>;
+    using Refreshes = std::vector<std::uint32_t>;
     const auto keys_of = [](int step) {
         return static_cast<std::uint16_t>(step < 6 ? (step % 2 != 0 ? key::kF : 0) : key::kRight);
     };
+    std::vector<Refreshes> refreshes;
     const auto play = [&](Session& session, int from, int to, std::vector<Pictures>& steps) {
         for (int step = from; step < to; ++step) {
             Pictures pictures;
+            Refreshes numbers;
             for (const Screen& screen : session.step(keys_of(step))) {
                 pictures.push_back(screen.pixels);
+                numbers.push_back(screen.refresh);
             }
             REQUIRE_FALSE(pictures.empty());
             steps.push_back(std::move(pictures));
+            refreshes.push_back(std::move(numbers));
         }
     };
     auto opened = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
@@ -322,6 +328,10 @@ TEST_CASE("real data: Remaster rules' rewind goes back at twice the speed, and t
         CHECK(shown.at(0).pixels == steps.at(later).at(0));
         CHECK(shown.at(1).pixels == steps.at(later - 1).at(1));
         CHECK(shown.at(2).pixels == steps.at(later - 2).back());
+        // Each for the refresh it was shown for then (the user, 2026-11-26: the stars went on).
+        CHECK(shown.at(0).refresh == refreshes.at(later).at(0));
+        CHECK(shown.at(1).refresh == refreshes.at(later - 1).at(1));
+        CHECK(shown.at(2).refresh == refreshes.at(later - 2).back());
     }
     // Let go, ten steps back: the same keys from there give the same play again.
     session.rewind(false);
@@ -330,6 +340,7 @@ TEST_CASE("real data: Remaster rules' rewind goes back at twice the speed, and t
     CHECK_FALSE(session.rewinding());
     CHECK(again.front() == steps.at(50));
     CHECK(again.back() == steps.at(59));
+    CHECK(refreshes.at(refreshes.size() - 10) == refreshes.at(50));  // (and for the same refreshes)
 
     // Held for longer than there is to go back to: at the oldest step that was kept the rewind is over, and the
     // play goes on, unmarked, until the key is let go and held again.

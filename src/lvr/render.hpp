@@ -157,8 +157,8 @@ struct Screen {
     };
     std::array<Viking, 3> vikings{};
     // Which refresh of the display this picture is shown for, counted from the session's start (a picture shown
-    // again has the refresh it is shown again for): for a backdrop that moves by itself (the spaceship's stars),
-    // which goes on whatever the play does.
+    // again has the refresh it is shown again for), and back with a rewind: for a backdrop that moves by itself (the
+    // spaceship's stars), which goes back with the play (the user, 2026-11-26) and on while it holds.
     std::uint32_t refresh = 0;
     bool rewinding = false;  // the picture is one of time running backwards (Remaster rules): it is marked so
     bool fading = false;     // a scene's going dark or coming in

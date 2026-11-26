@@ -357,6 +357,7 @@ class Session {
         std::uint16_t keyboard = 0;
         Play::MenuKeys keys;
         Pace pace;
+        std::uint32_t refresh = 0;  // the refresh its first picture was for (Screen::refresh)
     };
     // The play back at `step`'s start, and the pictures the step showed, made again; none if it was more than a
     // plain tick.
