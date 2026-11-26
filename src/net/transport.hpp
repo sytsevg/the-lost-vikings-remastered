@@ -17,8 +17,10 @@
 
 namespace lvr::net {
 
-// kReliable: TCP. kFast, the game's own messages: UDP and TCP both, the same bytes, the first to come wins (UDP
-// while it gets through; it may drop, reorder or double them, and TCP is behind it).
+// kReliable: TCP. kFast, the game's own messages: UDP and TCP both, the same bytes, numbered, the first to come wins
+// (UDP while it gets through; it may drop, reorder or double them, and TCP is behind it): a fast message is taken
+// only if it is newer than the last taken from that peer, so never twice, nor after a newer one. Each must hold the
+// newest of what it says (the game's: all it has to say to that peer, once a pass).
 enum class Channel : std::uint8_t { kReliable, kFast };
 
 // What came since the last poll.

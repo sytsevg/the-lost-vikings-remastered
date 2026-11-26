@@ -338,7 +338,9 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   `lvr_transport`, on SDL3_net release-3.2.0 with `cmake/sdl_net.patch` for TCP_NODELAY and TCP_QUICKACK): host
   and join, a TCP connection and UDP to each client (introduced by a token over TCP), reliable and fast messages,
   the fast ones (the game's) by UDP and TCP both, the same bytes, the first to come wins (the user's design;
-  until the review's round they went by TCP only while UDP didn't get through), pings for the round trip, a peer
+  until the review's round they went by TCP only while UDP didn't get through): a pass's to a peer as one
+  (`net::Bundle`, `NetGame::send_outgoing`), numbered, taken only if newer than the last taken from that peer
+  (so never twice, nor stale; the game itself never sees a copy), pings for the round trip, a peer
   silent for 10 s gone (a cable pulled: its socket never closed). Tests over 127.0.0.1
   (`src/net/tests/test_transport.cpp`).
 - **M9's state on 2026-11-25:** all nine parts committed on the branch `m9-coop-online` (the whole of M9 for one

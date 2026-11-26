@@ -67,7 +67,8 @@ struct Pair {
 
 }  // namespace
 
-TEST_CASE("transport: a client joins; messages go both ways, reliably and fast (by UDP and TCP both), and the ping") {
+TEST_CASE(
+    "transport: a client joins; messages go both ways, reliably and fast (by UDP and TCP, taken once), the ping") {
     Pair pair;
     REQUIRE(pair.until([&] { return !pair.at_host.empty(); }));
     CHECK(pair.at_host.front().kind == Event::Kind::kJoined);
@@ -76,12 +77,23 @@ TEST_CASE("transport: a client joins; messages go both ways, reliably and fast (
     pair.client->send(0, std::vector<std::uint8_t>{1, 2, 3}, Channel::kReliable);
     pair.client->send(0, std::vector<std::uint8_t>{4}, Channel::kFast);
     pair.host->send(client, std::vector<std::uint8_t>{9, 9}, Channel::kFast);
-    // (A fast one comes twice, by UDP and by TCP, the same bytes: what takes it takes the first.)
+    // (A fast one goes by UDP and by TCP, the same numbered bytes: the first to come is taken, its copy not.)
     REQUIRE(pair.until(
-        [&] { return pair.messages(pair.at_host).size() == 3 && pair.messages(pair.at_client).size() == 2; }));
+        [&] { return pair.messages(pair.at_host).size() == 2 && pair.messages(pair.at_client).size() == 1; }));
     CHECK(std::ranges::count(pair.messages(pair.at_host), std::vector<std::uint8_t>{1, 2, 3}) == 1);
-    CHECK(std::ranges::count(pair.messages(pair.at_host), std::vector<std::uint8_t>{4}) == 2);
-    CHECK(std::ranges::count(pair.messages(pair.at_client), std::vector<std::uint8_t>{9, 9}) == 2);
+    CHECK(std::ranges::count(pair.messages(pair.at_host), std::vector<std::uint8_t>{4}) == 1);
+    CHECK(pair.messages(pair.at_client).front() == std::vector<std::uint8_t>{9, 9});
+    // Many: each taken once at most, never one after a newer one, and the last always (TCP is behind UDP).
+    for (std::uint8_t i = 0; i < 50; ++i) {
+        pair.host->send(client, std::vector<std::uint8_t>{i}, Channel::kFast);
+    }
+    REQUIRE(pair.until([&] { return pair.messages(pair.at_client).back() == std::vector<std::uint8_t>{49}; }));
+    const auto got = pair.messages(pair.at_client);
+    for (std::size_t i = 2; i < got.size(); ++i) {
+        CHECK(got.at(i).front() > got.at(i - 1).front());
+    }
+    CHECK(pair.until([&] { return false; }) == false);  // (a while longer: nothing more comes)
+    CHECK(pair.messages(pair.at_client).size() == got.size());
     REQUIRE(pair.until([&] { return pair.client->round_trip_ms(0).has_value(); }));
     CHECK(*pair.client->round_trip_ms(0) >= 0);
 }

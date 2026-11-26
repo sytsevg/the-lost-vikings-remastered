@@ -90,18 +90,36 @@ std::expected<std::unique_ptr<NetGame>, std::string> NetGame::join(const std::st
 }
 
 void NetGame::send(int peer, const net::Message& message, net::Channel channel) {
+    if (channel == net::Channel::kFast) {
+        outgoing_[peer].push_back(message);  // (with the rest of the pass's, at its end)
+        return;
+    }
     transport_->send(peer, net::encode(message), channel);
 }
 
+void NetGame::send_outgoing() {
+    for (auto& [peer, messages] : outgoing_) {
+        if (messages.empty()) {
+            continue;
+        }
+        net::Bundle bundle;
+        bundle.parts.reserve(messages.size());
+        for (const net::Message& message : messages) {
+            bundle.parts.push_back(net::encode(message));
+        }
+        transport_->send(peer, net::encode(bundle), net::Channel::kFast);
+        messages.clear();
+    }
+}
+
 void NetGame::broadcast(const net::Message& message, net::Channel channel) {
-    const std::vector<std::uint8_t> bytes = net::encode(message);
     if (!hosting()) {
-        transport_->send(0, bytes, channel);
+        send(0, message, channel);
         return;
     }
     for (std::size_t player = 1; player < peers_.size(); ++player) {
         if (peers_[player] >= 0 && (gone_.empty() || !gone_.at(player))) {
-            transport_->send(peers_[player], bytes, channel);
+            send(peers_[player], message, channel);
         }
     }
 }
@@ -122,6 +140,12 @@ int NetGame::player_of(int peer) const noexcept {
 }
 
 std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby() {
+    auto taken = lobby_pass();
+    send_outgoing();
+    return taken;
+}
+
+std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby_pass() {
     std::vector<net::Event> events = std::exchange(pending_, {});  // (what came with the way back here first)
     for (net::Event& event : transport_->poll()) {
         events.push_back(std::move(event));
@@ -215,21 +239,29 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby_event(
     if (!message) {
         return std::nullopt;
     }
-    if (const auto* echo = std::get_if<net::Echo>(&*message)) {  // the game's round trip, in the lobby too
-        send(event.peer, net::Echoed{.sent = echo->sent}, net::Channel::kFast);
+    for (const net::Message& one : net::unbundled(*message)) {
+        auto taken = lobby_message(event.peer, one);
+        if (!taken || *taken) {
+            return taken;
+        }
+    }
+    return std::nullopt;
+}
+
+std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby_message(int peer, const net::Message& one) {
+    if (const auto* echo = std::get_if<net::Echo>(&one)) {  // the game's round trip, in the lobby too
+        send(peer, net::Echoed{.sent = echo->sent}, net::Channel::kFast);
         return std::nullopt;
     }
     if (hosting()) {
-        if (const auto* echoed = std::get_if<net::Echoed>(&*message)) {
-            if (const int player = player_of(event.peer);
-                player > 0 && echoed->sent != echo_taken_.at(static_cast<std::size_t>(player))) {
-                echo_taken_.at(static_cast<std::size_t>(player)) = echoed->sent;  // (the first of its copies)
+        if (const auto* echoed = std::get_if<net::Echoed>(&one)) {
+            if (const int player = player_of(peer); player > 0) {
                 engine_.at(static_cast<std::size_t>(player)) = static_cast<int>(now_ms() - echoed->sent);
             }
             return std::nullopt;
         }
-        const auto* hello = std::get_if<net::Hello>(&*message);
-        if (hello == nullptr || player_of(event.peer) >= 0) {
+        const auto* hello = std::get_if<net::Hello>(&one);
+        if (hello == nullptr || player_of(peer) >= 0) {
             return std::nullopt;
         }
         std::string refused;
@@ -243,29 +275,29 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby_event(
             refused = "the game is full";
         }
         if (!refused.empty()) {
-            send(event.peer, net::Refused{.why = refused}, net::Channel::kReliable);
-            transport_->drop(event.peer);
+            send(peer, net::Refused{.why = refused}, net::Channel::kReliable);
+            transport_->drop(peer);
             return std::nullopt;
         }
         const auto player = static_cast<std::uint8_t>(names_.size());
-        peers_.push_back(event.peer);
+        peers_.push_back(peer);
         names_.push_back(net::shown_name(hello->name, player));
-        send(event.peer, net::Welcome{.player = player}, net::Channel::kReliable);
+        send(peer, net::Welcome{.player = player}, net::Channel::kReliable);
         send_lobby();
         return std::nullopt;
     }
-    if (const auto* welcome = std::get_if<net::Welcome>(&*message)) {
+    if (const auto* welcome = std::get_if<net::Welcome>(&one)) {
         player_ = welcome->player;
         welcomed_ = true;
-    } else if (const auto* lobby = std::get_if<net::Lobby>(&*message)) {
+    } else if (const auto* lobby = std::get_if<net::Lobby>(&one)) {
         names_ = lobby->names;
         host_network_ = lobby->network;
         host_engine_ = lobby->engine;
         slot_ = lobby->slot;
         countdown_ = lobby->countdown;
-    } else if (const auto* refused = std::get_if<net::Refused>(&*message)) {
+    } else if (const auto* refused = std::get_if<net::Refused>(&one)) {
         return std::unexpected{std::format("refused: {}", refused->why)};
-    } else if (const auto* joining = std::get_if<net::Joining>(&*message)) {  // a game under way
+    } else if (const auto* joining = std::get_if<net::Joining>(&one)) {  // a game under way
         player_ = joining->player;
         names_ = joining->names;
         game_number_ = joining->game;
@@ -280,7 +312,7 @@ std::expected<std::optional<NetGame::Joined>, std::string> NetGame::lobby_event(
                          .arrives = joining->arrives,
                          .presence = joining->presence};
         return joined_;
-    } else if (const auto* start = std::get_if<net::Start>(&*message)) {
+    } else if (const auto* start = std::get_if<net::Start>(&one)) {
         names_ = start->names;
         game_number_ = start->game;
         joined_ = Joined{.player = player_,
@@ -528,13 +560,7 @@ std::expected<void, std::string> NetGame::take(int peer, const net::Message& mes
             }
         }
     } else if (const auto* status = std::get_if<net::Status>(&message)) {
-        // (Its copy the other way, the same bytes, later: not taken again, as if it said where he is now.)
-        const bool again = sender >= 0 && std::cmp_less(sender, last_status_.size()) &&
-                           last_status_.at(static_cast<std::size_t>(sender)) == *status;
-        if (!again && sender >= 0 && std::cmp_less(sender, last_status_.size())) {
-            last_status_.at(static_cast<std::size_t>(sender)) = *status;
-        }
-        if (!again && sender >= 0 && std::cmp_less(sender, acked_.size()) && status->game == game_number_) {
+        if (sender >= 0 && std::cmp_less(sender, acked_.size()) && status->game == game_number_) {
             auto& acked = acked_.at(static_cast<std::size_t>(sender));
             for (std::size_t player = 0; player < acked.size(); ++player) {
                 // (Known for ever: that player away; it says nothing of what he gives once he comes.)
@@ -554,10 +580,7 @@ std::expected<void, std::string> NetGame::take(int peer, const net::Message& mes
     } else if (const auto* echo = std::get_if<net::Echo>(&message)) {
         send(peer, net::Echoed{.sent = echo->sent}, net::Channel::kFast);
     } else if (const auto* echoed = std::get_if<net::Echoed>(&message)) {
-        // (The first of its copies: the later one isn't the round trip.)
-        if (sender >= 0 && std::cmp_less(sender, engine_.size()) &&
-            echoed->sent != echo_taken_.at(static_cast<std::size_t>(sender))) {
-            echo_taken_.at(static_cast<std::size_t>(sender)) = echoed->sent;
+        if (sender >= 0 && std::cmp_less(sender, engine_.size())) {
             engine_.at(static_cast<std::size_t>(sender)) = static_cast<int>(now_ms() - echoed->sent);
         }
     } else if (const auto* decided = std::get_if<net::Decided>(&message)) {
@@ -614,8 +637,10 @@ std::expected<void, std::string> NetGame::poll() {
                 pending_.assign(events.begin() + static_cast<std::ptrdiff_t>(i) + 1, events.end());
                 return {};
             }
-            if (auto taken = take(event.peer, *message); !taken) {
-                return taken;
+            for (const net::Message& one : net::unbundled(*message)) {
+                if (auto taken = take(event.peer, one); !taken) {
+                    return taken;
+                }
             }
         }
     }
@@ -685,6 +710,7 @@ std::expected<void, std::string> NetGame::flush() {
         hashes_.emplace_back(hash_sent_, *hash);
         hash_sent_ += 8;
     }
+    send_outgoing();  // (this pass's, to each peer as one)
     if (const std::optional<std::uint32_t> out = rollback_->out_of_step()) {
         std::string written;
         if (!logged_ && !log_folder_.empty()) {  // what went before, for lv-replay --coop

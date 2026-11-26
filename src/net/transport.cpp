@@ -19,7 +19,7 @@ namespace {
 
 // What a frame carries (its first byte after the length on TCP, after the token over UDP).
 constexpr std::uint8_t kMessage = 0;  // a message sent reliably
-constexpr std::uint8_t kFast = 1;     // a message sent fast (over TCP: the fallback)
+constexpr std::uint8_t kFast = 1;     // a message sent fast: by UDP and TCP both, numbered (only a newer one taken)
 constexpr std::uint8_t kToken = 2;    // host to client, over TCP: the token his UDP introduces itself with
 constexpr std::uint8_t kPing = 3;
 constexpr std::uint8_t kPong = 4;
@@ -80,6 +80,8 @@ struct Transport::Inner {
         std::uint64_t udp_last = 0;    // when UDP from it last came
         std::uint64_t heard_last = 0;  // when anything from it last came, by either way
         std::uint32_t pong_last = 0;   // the ping whose answer was taken last (its other copy isn't)
+        std::uint32_t fast_sent = 0;   // the number of the last fast message sent to it
+        std::uint32_t fast_taken = 0;  // and of the last taken from it: one not newer is a copy, or stale
         std::uint64_t ping_last = 0;
         std::uint64_t hello_last = 0;
         std::optional<int> round_trip;
@@ -181,10 +183,17 @@ struct Transport::Inner {
         peer.heard_last = SDL_GetTicks();
         switch (kind) {
             case kMessage:
-            case kFast:
                 events.push_back({.kind = Event::Kind::kMessage,
                                   .peer = peer.number,
                                   .bytes = std::vector<std::uint8_t>(payload.begin(), payload.end())});
+                return;
+            case kFast:  // (each holds the newest of what it says: one overtaken by a newer one has nothing to add)
+                if (payload.size() >= 4 && get32(payload) > peer.fast_taken) {
+                    peer.fast_taken = get32(payload);
+                    events.push_back({.kind = Event::Kind::kMessage,
+                                      .peer = peer.number,
+                                      .bytes = std::vector<std::uint8_t>(payload.begin() + 4, payload.end())});
+                }
                 return;
             case kToken:
                 if (!hosting) {
@@ -406,7 +415,10 @@ void Transport::send(int peer, std::span<const std::uint8_t> bytes, Channel chan
         if (channel == Channel::kReliable) {
             inner_->write_tcp(*to, kMessage, bytes);
         } else {
-            inner_->write_fast(*to, kFast, bytes);
+            std::vector<std::uint8_t> numbered;  // (the same number on both copies)
+            put32(numbered, ++to->fast_sent);
+            numbered.insert(numbered.end(), bytes.begin(), bytes.end());
+            inner_->write_fast(*to, kFast, numbered);
         }
     }
 }

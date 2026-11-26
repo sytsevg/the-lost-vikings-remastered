@@ -14,6 +14,8 @@ constexpr std::size_t kMostString = 64;  // a build's commit, a name, why one wa
 constexpr std::size_t kMostNames = kMostPlayers;
 constexpr std::size_t kMostState = std::size_t{8} << 20U;  // a game's state for one joining: far less than this
 constexpr std::size_t kMostPresence = 32;  // the changes of who is there a joiner is told of: a few at most
+constexpr std::size_t kMostParts = 64;     // the messages of a bundle: a pass's to one machine
+constexpr std::size_t kMostPart = 4096;    // one of them: an Inputs is the largest
 
 class Out {
   public:
@@ -223,6 +225,11 @@ std::vector<std::uint8_t> encode(const Message& message) {
                 out(one.slot);
                 out(static_cast<std::uint8_t>(one.cheat ? 1 : 0));
                 write_names(out, one.names);
+            } else if constexpr (std::is_same_v<M, Bundle>) {
+                out(static_cast<std::uint8_t>(std::min(one.parts.size(), kMostParts)));
+                for (std::size_t i = 0; i < one.parts.size() && i < kMostParts; ++i) {
+                    out(one.parts[i]);  // (its length, then its bytes)
+                }
             } else if constexpr (std::is_same_v<M, Decided>) {
                 out(one.game);
                 out(one.until);
@@ -293,6 +300,19 @@ std::optional<Message> read_one(In& in) {
         if (!read_presence(in, message.presence)) {
             return std::nullopt;
         }
+    } else if constexpr (std::is_same_v<M, Bundle>) {
+        std::uint8_t count = 0;
+        in(count);
+        if (count > kMostParts) {
+            return std::nullopt;
+        }
+        message.parts.resize(count);
+        for (std::vector<std::uint8_t>& part : message.parts) {
+            in(part);
+            if (!in.ok() || part.size() > kMostPart) {
+                return std::nullopt;
+            }
+        }
     } else if constexpr (std::is_same_v<M, Decided>) {
         in(message.game);
         in(message.until);
@@ -329,6 +349,20 @@ std::optional<Message> read_kind(In& in, std::size_t kind, std::index_sequence<I
 }
 
 }  // namespace
+
+std::vector<Message> unbundled(const Message& message) {
+    const auto* bundle = std::get_if<Bundle>(&message);
+    if (bundle == nullptr) {
+        return {message};
+    }
+    std::vector<Message> messages;
+    for (const std::vector<std::uint8_t>& part : bundle->parts) {
+        if (std::optional<Message> one = decode(part); one && !std::holds_alternative<Bundle>(*one)) {
+            messages.push_back(std::move(*one));
+        }
+    }
+    return messages;
+}
 
 std::optional<Message> decode(std::span<const std::uint8_t> bytes) {
     In in{bytes};

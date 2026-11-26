@@ -410,7 +410,10 @@ Planned with the user on 2026-11-25; built in the parts ROADMAP.md lists for M9.
   messages go by UDP and TCP both, the same bytes, and the first copy to come wins (the user): every Inputs packet
   carries each input the other side hasn't acknowledged, so a dropped, reordered or doubled datagram changes
   nothing, and TCP is there behind it (TCP_NODELAY and, on Linux, TCP_QUICKACK, which SDL3_net is patched to set:
-  it sets neither). What takes them takes a copy twice as once (a round trip the first copy's). A peer silent for
+  it sets neither). What one machine says fast to another in a pass goes as one message (`net::Bundle`), numbered
+  per peer and way, the same number on both copies (the user: a sequence number in the packets); the transport
+  takes one only if it is newer than the last it took from that peer: a copy never, nor an older one overtaken
+  (each holds the newest of what it says: the inputs not yet acknowledged, where the sender is). A peer silent for
   10 s is gone though its socket wasn't closed. The host takes a player's inputs and hashes from his own
   connection only. Who is there when is the host's to decide: the others count a place away only as far as he has
   said it is decided (`net::Decided`, before his own next step, sent both ways with the comings and goings it

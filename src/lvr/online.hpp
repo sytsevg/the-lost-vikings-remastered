@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -129,6 +130,10 @@ class NetGame {
     void send_lobby();
     // The lobby's handling of one event: an error ends it.
     std::expected<std::optional<Joined>, std::string> lobby_event(const net::Event& event);
+    std::expected<std::optional<Joined>, std::string> lobby_message(int peer, const net::Message& message);
+    std::expected<std::optional<Joined>, std::string> lobby_pass();
+    // What this pass says fast to each peer, sent as one (net::Bundle): the transport takes only the newest.
+    void send_outgoing();
 
     // (In the order that leaves no padding: the largest first.)
     std::unique_ptr<net::Transport> transport_;
@@ -144,8 +149,7 @@ class NetGame {
     // The game's round trips: this machine's, by player.
     std::vector<std::optional<int>> engine_;
     std::vector<std::pair<std::uint32_t, std::uint64_t>> hashes_;  // this machine's, as they were sent
-    std::vector<std::optional<net::Status>> last_status_ = std::vector<std::optional<net::Status>>(net::kMostPlayers);
-    std::array<std::uint32_t, net::kMostPlayers> echo_taken_{};  // by player: the echo last taken (not its copy)
+    std::map<int, std::vector<net::Message>> outgoing_;            // by peer: what this pass says to him fast
     std::filesystem::path log_folder_;
     Identity identity_;
     std::optional<Joined> joined_;

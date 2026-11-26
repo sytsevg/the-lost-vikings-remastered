@@ -150,10 +150,18 @@ struct Joining {
     bool operator==(const Joining&) const = default;
 };
 
+// All one machine says fast to another in one pass, as one message (the transport takes only the newest).
+struct Bundle {
+    std::vector<std::vector<std::uint8_t>> parts;  // each message, encoded
+    bool operator==(const Bundle&) const = default;
+};
+
 using Message = std::variant<Hello, Refused, Welcome, Lobby, Start, Inputs, Status, Hash, Leave, Quit, Echo, Echoed,
-                             Arrive, Joining, Back, Decided>;
+                             Arrive, Joining, Back, Decided, Bundle>;
 
 std::vector<std::uint8_t> encode(const Message& message);
+// A message's messages: a bundle's, decoded (what can't be is left out); else the message itself.
+std::vector<Message> unbundled(const Message& message);
 // None if the bytes aren't a whole message, or one this protocol doesn't know.
 std::optional<Message> decode(std::span<const std::uint8_t> bytes);
 

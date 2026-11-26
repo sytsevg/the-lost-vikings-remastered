@@ -50,6 +50,7 @@ TEST_CASE("protocol: every message comes back as it was written") {
                 .state = std::vector<std::uint8_t>(70000, 0xab),
                 .presence = {{.player = 1, .at = 780, .there = true}, {.player = 2, .at = 777, .there = true}}},
         Decided{.game = 7, .until = 4321, .presence = {{.player = 2, .at = 4300, .there = false}}},
+        Bundle{.parts = {encode(Echo{.sent = 1}), encode(Echoed{.sent = 2})}},
     };
     for (const Message& message : all) {
         const std::vector<std::uint8_t> bytes = encode(message);
@@ -78,4 +79,15 @@ TEST_CASE("protocol: a name is shown in capitals, what the font has, at most eig
     CHECK(shown_name("Erik the Swift", 0) == "ERIK THE");
     CHECK(shown_name("", 1) == "PLAYER 2");
     CHECK(shown_name("???", 2) == "PLAYER 3");
+}
+
+TEST_CASE("protocol: a bundle's messages come out as they went in; one that can't be read is left out") {
+    const Bundle bundle{.parts = {encode(Echo{.sent = 5}), {0xff, 0x00}, encode(Quit{})}};
+    const std::optional<Message> back = decode(encode(bundle));
+    REQUIRE(back);
+    const std::vector<Message> messages = unbundled(*back);
+    REQUIRE(messages.size() == 2);
+    CHECK(std::get<Echo>(messages[0]).sent == 5);
+    CHECK(std::holds_alternative<Quit>(messages[1]));
+    CHECK(unbundled(Message{Quit{}}).size() == 1);  // (not a bundle: itself)
 }
