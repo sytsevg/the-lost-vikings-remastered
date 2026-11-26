@@ -61,6 +61,10 @@
 #include <utility>
 #include <vector>
 
+#ifdef SDL_PLATFORM_WINDOWS
+#include <io.h>  // _fileno, _isatty
+#endif
+
 #include "assets/assets.hpp"
 #include "image/png.hpp"
 #include "input/input.hpp"
@@ -88,6 +92,35 @@ constexpr double kSlowShowMilliseconds = 20;
 // The most pictures shown a second where showing doesn't wait for the screen's refresh (GpuRenderer::waits_for_refresh;
 // the user: 120): smooth movement shows each where it is at that moment.
 constexpr std::uint64_t kMostShows = 120;
+
+// On Windows, a box that says why the game stops: a program of Windows' desktop has no console, and one started from
+// Explorer has nowhere else to say it. Elsewhere stderr is enough.
+void show_why(const char* why) noexcept {
+#ifdef SDL_PLATFORM_WINDOWS
+    (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, kWindowTitle, why, nullptr);
+#else
+    (void)why;
+#endif
+}
+
+// On Windows, stdout and stderr that can't be written to go to NUL instead: a program of Windows' desktop has none
+// started from Explorer or by a .bat's `start`, or one of a console that may have gone, and std::print throws when it
+// can't write (the message would stop the game). One sent to a file or a pipe (`> log.txt`, `| more`) is kept.
+void quiet_without_console() noexcept {
+#ifdef SDL_PLATFORM_WINDOWS
+    for (FILE* stream : {stdout, stderr}) {
+        if (const int file = _fileno(stream); file < 0 || _isatty(file) != 0) {
+            (void)std::freopen("NUL", "w", stream);
+        }
+    }
+#endif
+}
+
+// Why the game stops: on stderr, and on Windows in a box too.
+void stop(const std::string& why) {
+    std::println(stderr, "vikings-remaster: {}", why);
+    show_why(why.c_str());
+}
 
 bool write_wav(const std::filesystem::path& path, const std::vector<std::int16_t>& samples, std::uint32_t rate) {
     std::ofstream out(path, std::ios::binary);
@@ -402,7 +435,7 @@ Go run(Window& in, Place& place) {
     const bool report_slow = in.report_slow;
     input::Controls controls = remastered != nullptr ? remastered->settings.controls : input::original_controls();
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
-        std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
+        stop(std::format("SDL_Init failed: {}", SDL_GetError()));
         return failed();
     }
     SDL_Renderer* renderer = nullptr;
@@ -410,7 +443,7 @@ Go run(Window& in, Place& place) {
     if (gpu == nullptr) {
         if (!SDL_CreateWindowAndRenderer(kWindowTitle, kWidth * kInitialScale, kHeight * kInitialScale,
                                          SDL_WINDOW_RESIZABLE, &window, &renderer)) {
-            std::println(stderr, "SDL_CreateWindowAndRenderer failed: {}", SDL_GetError());
+            stop(std::format("SDL_CreateWindowAndRenderer failed: {}", SDL_GetError()));
             SDL_Quit();
             return failed();
         }
@@ -823,7 +856,7 @@ Go run(Window& in, Place& place) {
                 }
             }
             if (!done) {
-                std::println(stderr, "vikings-remaster: {}", done.error());
+                stop(done.error());
                 go = failed();
                 running = false;
             }
@@ -881,6 +914,7 @@ std::optional<int> parse_number(std::string_view text) {
 
 int main(int argc, char* argv[]) try {
     using namespace lvr;
+    quiet_without_console();
     std::filesystem::path dir = "gamedata/original";
     std::filesystem::path dump_to;
     std::filesystem::path wav;
@@ -1003,7 +1037,7 @@ int main(int argc, char* argv[]) try {
         if (!dump_to.empty()) {
             opened = GpuRenderer::open_headless();
         } else if (!SDL_Init(SDL_INIT_VIDEO)) {
-            std::println(stderr, "SDL_Init failed: {}", SDL_GetError());
+            stop(std::format("SDL_Init failed: {}", SDL_GetError()));
             return EXIT_FAILURE;
         } else {
             window =
@@ -1012,14 +1046,14 @@ int main(int argc, char* argv[]) try {
                                        : std::unexpected{std::string{"no window: "} + SDL_GetError()};
         }
         if (!opened) {
-            std::println(stderr, "vikings-remaster: the GPU renderer: {}", opened.error());
+            stop(std::format("the GPU renderer: {}", opened.error()));
             return EXIT_FAILURE;
         }
         gpu = std::move(*opened);
         draw_with = [renderer = gpu.get()](Screen& screen, const View& view, const SceneGraphics& scene,
                                            const SharedGraphics& shared) {
             if (const auto kept = renderer->keep(screen, view, scene, shared); !kept) {
-                std::println(stderr, "vikings-remaster: the GPU renderer: {}", kept.error());
+                stop(std::format("the GPU renderer: {}", kept.error()));
                 std::exit(EXIT_FAILURE);
             }
         };
@@ -1040,7 +1074,7 @@ int main(int argc, char* argv[]) try {
     }
     auto session = Session::open(dir, slot, sound, rules, draw_with);
     if (!session) {
-        std::println(stderr, "vikings-remaster: {}", session.error());
+        stop(session.error());
         return EXIT_FAILURE;
     }
     if (cheat) {
@@ -1113,7 +1147,7 @@ int main(int argc, char* argv[]) try {
     if (may_go_online) {  // who this build and these game files are, for a game online's hello
         auto files = assets::GameFiles::open(dir);
         if (!files) {
-            std::println(stderr, "vikings-remaster: {}", files.error());
+            stop(files.error());
             return EXIT_FAILURE;
         }
         needs.identity = net::Identity{.build = std::string{kBuild},
@@ -1160,8 +1194,10 @@ int main(int argc, char* argv[]) try {
     std::fputs("vikings-remaster: fatal: ", stderr);
     std::fputs(error.what(), stderr);
     std::fputs("\n", stderr);
+    lvr::show_why(error.what());
     return EXIT_FAILURE;
 } catch (...) {
     std::fputs("vikings-remaster: fatal: unhandled exception\n", stderr);
+    lvr::show_why("unhandled exception");
     return EXIT_FAILURE;
 }

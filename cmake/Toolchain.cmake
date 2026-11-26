@@ -13,7 +13,8 @@ if(LVR_SANITIZERS)
 endif()
 
 # Single self-contained executable: libc++, libc++abi and libgcc linked in; only glibc and the
-# libraries SDL dlopen()s at runtime (Wayland, EGL/Vulkan, PipeWire...) stay dynamic.
+# libraries SDL dlopen()s at runtime (Wayland, EGL/Vulkan, PipeWire...) stay dynamic. On Windows (llvm-mingw) the
+# same flags leave only Windows' own DLLs and its C runtime (UCRT).
 if(LVR_STATIC_RUNTIME)
     if(LVR_SANITIZERS)
         message(FATAL_ERROR "LVR_STATIC_RUNTIME cannot be combined with sanitizers")

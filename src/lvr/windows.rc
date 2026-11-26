@@ -1,0 +1,3 @@
+// The resources of the game's program on Windows (src/CMakeLists.txt): its manifest (1: the program's own; 24: a
+// manifest).
+1 24 "windows.manifest"

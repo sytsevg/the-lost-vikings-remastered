@@ -33,6 +33,10 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
   a toy game over a simulated network ("Open", "M9 restructured"). What each part is and where it lives: "Open",
   the M9 entries. Not yet tried by the user: the lobby and the title's pages in two windows, and a game over a real
   network.
+- **A Windows build** (2026-11-26, ADR-0021): cross-built in the container with llvm-mingw, one `.exe` for
+  Windows 10 and later (`scripts/windows.sh`, `docs/development.md`); its unit tests and every replay pass under
+  Wine. Not yet tried on a Windows PC: the GPU window (Vulkan), the gamepad, the sound, and co-op between a Linux
+  and a Windows machine.
 
 ## What the Remaster rules have
 

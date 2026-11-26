@@ -76,6 +76,16 @@
                 "LVR_WARNINGS_AS_ERRORS": "ON",
                 "LVR_CLANG_TIDY": "ON"
             }
+        },
+        {
+            "name": "windows",
+            "displayName": "Release for Windows, cross-built with llvm-mingw; tests under Wine (scripts/windows.sh)",
+            "inherits": "release",
+            "toolchainFile": "${sourceDir}/cmake/windows.cmake",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": null,
+                "CMAKE_CXX_COMPILER": null
+            }
         }
     ],
     "buildPresets": [
@@ -85,7 +95,8 @@
         { "name": "release", "configurePreset": "release" },
         { "name": "coverage", "configurePreset": "coverage" },
         { "name": "fuzz", "configurePreset": "fuzz" },
-        { "name": "ci", "configurePreset": "ci" }
+        { "name": "ci", "configurePreset": "ci" },
+        { "name": "windows", "configurePreset": "windows" }
     ],
     "testPresets": [
         {
@@ -104,6 +115,7 @@
         { "name": "tsan", "inherits": "base", "configurePreset": "tsan" },
         { "name": "release", "inherits": "base", "configurePreset": "release" },
         { "name": "coverage", "inherits": "base", "configurePreset": "coverage" },
-        { "name": "ci", "inherits": "base", "configurePreset": "ci" }
+        { "name": "ci", "inherits": "base", "configurePreset": "ci" },
+        { "name": "windows", "inherits": "base", "configurePreset": "windows" }
     ]
 }

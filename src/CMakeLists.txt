@@ -226,6 +226,10 @@ if(LVR_BUILD_APPS)
     target_include_directories(vikings-remaster PRIVATE ${CMAKE_BINARY_DIR}/generated)
     target_link_libraries(vikings-remaster PRIVATE lvr::session lvr::front lvr::input lvr::image lvr::gpu SDL3::SDL3)
     lvr_target_defaults(vikings-remaster)
+    if(WIN32)  # a program of Windows' desktop (no console window), with its manifest (lvr/windows.manifest)
+        set_target_properties(vikings-remaster PROPERTIES WIN32_EXECUTABLE ON)
+        target_sources(vikings-remaster PRIVATE lvr/windows.rc)
+    endif()
 
 endif()
 

@@ -8,11 +8,19 @@ full licence texts are in each library's source, under `build/<preset>/_deps/` a
 | Library | Used for | Licence | Linked into the game |
 |---|---|---|---|
 | [SDL3](https://github.com/libsdl-org/SDL) (Sam Lantinga and contributors) | window, input, audio device, PNG | zlib | yes |
-| [SDL3_net](https://github.com/libsdl-org/SDL_net) (Sam Lantinga and contributors) | the sockets of co-op online, TCP and UDP; built with a small patch of ours (`cmake/sdl_net.patch`: TCP_NODELAY, TCP_QUICKACK) | zlib | yes |
+| [SDL3_net](https://github.com/libsdl-org/SDL_net) (Sam Lantinga and contributors) | the sockets of co-op online, TCP and UDP; built with a small patch of ours (`cmake/sdl_net.patch`: TCP_NODELAY, TCP_QUICKACK, and two names for mingw-w64) | zlib | yes |
 | [ymfm](https://github.com/aaronsgiles/ymfm) (Aaron Giles) | OPL3 emulation, the Classic sound | BSD 3-Clause | yes |
 | [TinySoundFont](https://github.com/schellingb/TinySoundFont) (Bernhard Schelling; based on SFZero by Steve Folta) | SoundFont synthesizer, the Modern sound | MIT | yes |
 | [glaze](https://github.com/stephenberry/glaze) (Stephen Berry) | JSON, in the `lv-export` development tool | MIT | no |
 | [Catch2](https://github.com/catchorg/Catch2) | the tests | BSL-1.0 | no |
+
+Linked into the Windows build by its toolchain (llvm-mingw, in the dev container; ADR-0021):
+
+- **mingw-w64's runtime** (the mingw-w64 project): the program's start-up code and what joins it to Windows' C
+  runtime. Its own licence, BSD-like; some parts under others. A distributed `.exe` has to carry their notices,
+  which mingw-w64 keeps together in `COPYING.MinGW-w64-runtime/COPYING.MinGW-w64-runtime.txt` in its source.
+  (libc++ and libunwind, from LLVM, are under the Apache License 2.0 with LLVM Exceptions, which asks for no
+  notice with a binary.)
 
 Adapted into this repository (not downloaded):
 

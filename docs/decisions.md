@@ -202,13 +202,33 @@ publishing: its author asks not to link his download files directly.
 - Modern desktops. Linux is Wayland only (SDL3 built without X11).
 - One self-contained executable: SDL3 and every dependency linked statically, the C++ runtime too in release
   builds; on Linux only glibc and what SDL loads at run time stay dynamic.
-- Windows and macOS come later.
+- Windows: ADR-0021. macOS comes later.
 
 ### ADR-0016: A patched DOSBox-X as the reference
 - A DOSBox-X with a small control channel (run, breakpoints, memory, keys, screenshots, OPL capture) that a script
   drives: [`dosbox.md`](dosbox.md). It is GPL, a development tool only: built outside the game's build, never
   linked or shipped.
 - It is what settles a doubt about the original: `tools/lockstep.py` plays the same input to it and to the engine.
+
+### ADR-0021: The Windows build, cross-built with llvm-mingw
+- Windows 10 and later on x86-64, built in the dev container: llvm-mingw, the same LLVM as ADR-0002's with libc++
+  and mingw-w64's headers and libraries (pinned by release and checksum in `dev-env/Dockerfile`), the `windows`
+  preset (`cmake/windows.cmake`) and `scripts/windows.sh`. Not MSVC: one compiler and one standard library for
+  both platforms, and no Windows machine needed to build.
+- One file, as ADR-0013 asks: `vikings-remaster.exe` needs only Windows' own DLLs and its C runtime (UCRT). It is a
+  program of Windows' desktop, without a console: what stops the game is shown in a box as well as on stderr, and
+  stdout and stderr with nowhere to go are sent to NUL (`std::print` throws when it can't write). Its
+  manifest (`src/lvr/windows.manifest`) makes its strings of `char` UTF-8, so paths from SDL and
+  `std::filesystem` are what they are on Linux.
+- Checked under Wine in the container (`cmake/wine.sh`): the unit tests, and every replay against its golden. The
+  game's logic is in whole numbers (floating point only in what is shown, and in a stick's reading before it is a
+  whole pace), so the Windows build plays as the Linux one does, and the same sources give the same build ID: the
+  two play co-op together. What Wine can't show is tried on a Windows PC: the GPU window, the gamepad, the sound,
+  the firewall when hosting, and a program without a console (Wine writes its output somewhere all the same).
+- The GPU renderer's shaders are SPIR-V only, so on Windows SDL_GPU draws with Vulkan, never Direct3D 12. DXIL
+  shaders would add it, if Vulkan turns out to be missing too often.
+- SDL3_net's patch has one more change, for mingw-w64: its `read()` and `write()` for sockets collide with
+  `io.h`'s for files.
 
 ## Ahead
 

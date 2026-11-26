@@ -33,7 +33,8 @@ if(LVR_BUILD_APPS)
     lvr_silence_dependency_warnings(${sdl3_SOURCE_DIR})
 
     # SDL3_net (zlib): the sockets for co-op online (ADR-0012), on the SDL3 above. Patched to set TCP_NODELAY and,
-    # on Linux, TCP_QUICKACK on its stream sockets (it sets neither and gives no access to the socket).
+    # on Linux, TCP_QUICKACK on its stream sockets (it sets neither and gives no access to the socket), and, for
+    # Windows, to rename its read() and write() for sockets, which mingw-w64's io.h has for files.
     set(SDLNET_INSTALL OFF CACHE BOOL "" FORCE)
     set(SDLNET_SAMPLES OFF CACHE BOOL "" FORCE)
     set(BUILD_SHARED_LIBS OFF)  # (its default is shared, on a shared SDL3; this one's is static)
@@ -42,8 +43,8 @@ if(LVR_BUILD_APPS)
         GIT_REPOSITORY https://github.com/libsdl-org/SDL_net.git
         GIT_TAG release-3.2.0
         GIT_SHALLOW TRUE
-        # (applied once: a source that has it already is left as it is)
-        PATCH_COMMAND sh -c "git apply --reverse --check ${sdl_net_patch} 2>/dev/null || git apply ${sdl_net_patch}"
+        # (applied once: a source that has it already is left as it is; one with an earlier version is reset first)
+        PATCH_COMMAND sh -c "git apply --reverse --check ${sdl_net_patch} 2>/dev/null || (git checkout -q -- . && git apply ${sdl_net_patch})"
         SYSTEM EXCLUDE_FROM_ALL)
     FetchContent_MakeAvailable(SDL3_net)
     unset(BUILD_SHARED_LIBS)

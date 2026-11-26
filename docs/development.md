@@ -5,6 +5,7 @@
 - LLVM **23** from apt.llvm.org: clang, clang-tidy, clang-format, clangd, lld, lldb, libc++, sanitizer and libFuzzer runtimes. Change it with the `LLVM_VERSION` build argument.
 - CMake, Ninja, ccache, and SDL3's build dependencies: Wayland (no X11, see ADR-0013), EGL/GLES, ALSA/PulseAudio/PipeWire, udev, D-Bus.
 - For the GPU renderer (ADR-0006): `glslc`, which compiles its shaders when the game is built, and a software Vulkan driver (Mesa's lavapipe) with `vulkan-tools`, so its pictures can be made and compared in the container.
+- For the Windows build (ADR-0021): llvm-mingw in `/opt/llvm-mingw` (the same LLVM, with libc++ and mingw-w64 for Windows; pinned by its release and checksum, `LLVM_MINGW_RELEASE`, `LLVM_MINGW_SHA256`), and Wine, which runs its tests and replays.
 - The `node` base image is just Debian trixie with Node.js added, which Claude Code needs. The project itself doesn't use Node.
 
 On the host:
@@ -51,6 +52,16 @@ one or two are enough for most changes). What it shows when zoomed has no golden
 `vikings-remaster --dump STEPS FILE.png --zoom BY AT_STEP` writes what the window would show, to look at
 (`--rewind FROM UNTIL` holds the rewind over those steps; `--whole AT_STEP` writes the whole level, `--showcase N`
 a spot where the effects are, `--no-effects` leaves them out).
+
+### Windows
+`./scripts/windows.sh` builds the game for Windows (ADR-0021) and checks it: the `windows` preset cross-builds
+with llvm-mingw (`cmake/windows.cmake`) into `build/windows/`, then the unit tests and every replay against its
+golden run as Windows programs under Wine (`cmake/wine.sh`). Not part of `check.sh`.
+
+What comes out is one file, `build/windows/bin/vikings-remaster.exe`, for Windows 10 and later. On the Windows
+PC it goes in a folder with a `gamedata/` beside it, as on Linux (`gamedata/original/`, and the SoundFont for
+the Modern sound). Remaster rules need Vulkan, which a graphics card's own driver has. It opens no console: an
+error that stops the game is shown in a box.
 
 ## Playing
 The game reads your own copy of the original files from `gamedata/original/` (or `--data DIR`):
@@ -107,6 +118,7 @@ and are skipped when the folder is missing.
   - `lvr_target_warnings()` for tests and fuzzers (no clang-tidy: test macros are noisy).
 - Third-party code is silenced: `lvr_silence_dependency_warnings()` compiles every dependency target with `-w`, and `SYSTEM` hides warnings from their headers. Remaining known noise: on a fresh build tree, SDL's Wayland protocol generation prints 4 harmless `validity error: ... attribute frozen` lines (SDL's bundled `wayland.xml` is newer than trixie's `wayland-scanner`).
 - Clang is required; configuring with another compiler fails on purpose.
+- `cmake/windows.cmake`: the toolchain file of the `windows` preset (llvm-mingw); `cmake/wine.sh` runs its programs under Wine, CMake's emulator for the tests. An absolute path is passed to them as `Z:/...`: a program for Windows takes an argument that starts with `/` for an option.
 
 ## Where code goes
 See [ADR-0010](decisions.md) for the full layout (shared `assets`, `audio`, `image`, `input`; the engine in `src/lvr/`; the replay harness in `src/replay/` with its replays and goldens in `replays/`). In short:

@@ -44,6 +44,22 @@ RUN curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor -o /us
 
 ENV CC=clang CXX=clang++ ASAN_SYMBOLIZER_PATH=/usr/local/bin/llvm-symbolizer
 
+# The Windows cross-build: llvm-mingw (the same LLVM, with libc++ and the mingw-w64 headers and libraries for
+# Windows, UCRT), pinned by its release and checksum, in /opt/llvm-mingw. It is not put on PATH: its bin/ has a
+# clang of its own; the toolchain file names its x86_64-w64-mingw32-clang++. Wine runs the Windows build's tests and
+# replays here, without a display (no Mono or Gecko: nothing here needs them).
+ARG LLVM_MINGW_RELEASE=20261117
+ARG LLVM_MINGW_SHA256=e7a15a49a2ea95e9f3d8a9d0cfabe5052a4b10fb4777cc54de5a8c27b64bb701
+RUN apt-get update && apt-get install -y --no-install-recommends xz-utils wine wine64 \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL -o /tmp/llvm-mingw.tar.xz \
+        "https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_RELEASE}/llvm-mingw-${LLVM_MINGW_RELEASE}-ucrt-ubuntu-22.04-x86_64.tar.xz" \
+    && echo "${LLVM_MINGW_SHA256}  /tmp/llvm-mingw.tar.xz" | sha256sum -c - \
+    && mkdir /opt/llvm-mingw \
+    && tar -xJf /tmp/llvm-mingw.tar.xz -C /opt/llvm-mingw --strip-components=1 \
+    && rm /tmp/llvm-mingw.tar.xz
+ENV WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml="
+
 # Keep this the last layer: a new CLAUDE_CODE_VERSION (passed by run-dev-env.sh) invalidates
 # the cache only from here, so everything above is reused.
 ARG CLAUDE_CODE_VERSION=latest

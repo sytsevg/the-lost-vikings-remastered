@@ -1,8 +1,18 @@
 diff --git a/src/SDL_net.c b/src/SDL_net.c
-index a4f90fa..8d11f44 100644
+index a4f90fa..6d4a9b2 100644
 --- a/src/SDL_net.c
 +++ b/src/SDL_net.c
-@@ -171,6 +171,7 @@ static int WindowsPoll(struct pollfd *fds, unsigned int nfds, int timeout)
+@@ -40,6 +40,9 @@
+ typedef SOCKET Socket;
+ typedef int SockLen;
+ typedef SOCKADDR_STORAGE AddressStorage;
++// the-lost-vikings-remastered: mingw-w64 declares read() and write() for files in io.h: these are the sockets' own.
++#define write SocketWrite
++#define read SocketRead
+ 
+ static int write(SOCKET s, const void *buf, size_t count) {
+     return send(s, (const char *)buf, (int) count, 0);
+@@ -171,6 +174,7 @@ static int WindowsPoll(struct pollfd *fds, unsigned int nfds, int timeout)
  #include <sys/socket.h>
  #include <arpa/inet.h>
  #include <netinet/in.h>
@@ -10,7 +20,7 @@ index a4f90fa..8d11f44 100644
  #include <net/if.h>
  #include <netdb.h>
  #include <errno.h>
-@@ -1435,6 +1436,18 @@ struct NET_StreamSocket
+@@ -1435,6 +1439,18 @@ struct NET_StreamSocket
      Uint64 simulated_failure_until;
  };
  
@@ -29,7 +39,7 @@ index a4f90fa..8d11f44 100644
  NET_StreamSocket *NET_CreateClient(NET_Address *addr, Uint16 port, SDL_PropertiesID props)
  {
      if (addr == NULL) {
-@@ -1477,6 +1490,7 @@ NET_StreamSocket *NET_CreateClient(NET_Address *addr, Uint16 port, SDL_Propertie
+@@ -1477,6 +1493,7 @@ NET_StreamSocket *NET_CreateClient(NET_Address *addr, Uint16 port, SDL_Propertie
          SDL_SetError("Failed to make new socket non-blocking");
          return NULL;
      }
@@ -37,7 +47,7 @@ index a4f90fa..8d11f44 100644
  
      const int rc = connect(sock->handle, addrwithport->ai_addr, (SockLen) addrwithport->ai_addrlen);
  
-@@ -1665,6 +1679,7 @@ bool NET_AcceptClient(NET_Server *server, NET_StreamSocket **client_stream)
+@@ -1665,6 +1682,7 @@ bool NET_AcceptClient(NET_Server *server, NET_StreamSocket **client_stream)
              CloseSocketHandle(handle);
              return SDL_SetError("Failed to make incoming socket non-blocking");
          }
@@ -45,7 +55,7 @@ index a4f90fa..8d11f44 100644
  
          char portbuf[16];
          const int gairc = getnameinfo((struct sockaddr *) &from, fromlen, NULL, 0, portbuf, sizeof (portbuf), NI_NUMERICSERV);
-@@ -1883,6 +1898,9 @@ int NET_ReadFromStreamSocket(NET_StreamSocket *sock, void *buf, int buflen)
+@@ -1883,6 +1901,9 @@ int NET_ReadFromStreamSocket(NET_StreamSocket *sock, void *buf, int buflen)
      }
  
      UpdateStreamSocketSimulatedFailure(sock);
