@@ -31,6 +31,7 @@
  *                              E0 before extended keys), as the keyboard would send them
  *    screenshot                capture the next frame drawn as an indexed PNG into the captures folder
  *    opl start / opl stop      raw OPL capture (.dro) into the captures folder; it starts with the first note
+ *    wave start / wave stop    the sound as DOSBox-X mixes it (.wav) into the captures folder, on the emulated clock
  *    quit                      exit DOSBox-X
  *
  *  Numbers are hex without a prefix. Errors reply "err MESSAGE". The breakpoints are checked by the normal core
@@ -61,6 +62,7 @@
 void KEYBOARD_AddBuffer(uint16_t data);
 void CAPTURE_ScreenShotEvent(bool pressed);
 void OPL_SaveRawEvent(bool pressed);
+void CAPTURE_WaveEvent(bool pressed);
 
 bool lvr_control_breaks = false; // read by the core before each instruction: any breakpoint set?
 
@@ -84,6 +86,7 @@ bool skip_armed = false;
 uint64_t frame = 0;          // video frames (vertical retraces) since start-up
 uint64_t frames_left = 0;    // 'run frames N'; 0 = no frame stop
 bool opl_capturing = false;
+bool wave_capturing = false;
 
 std::string upper(std::string text)
 {
@@ -328,9 +331,18 @@ void stop(const std::string& reason, bool at_break)
 				opl_capturing = want;
 			}
 			send_line("ok");
+		} else if (command == "wave" && (arg(1) == "start" || arg(1) == "stop")) {
+			const bool want = arg(1) == "start";
+			if (want != wave_capturing) {
+				CAPTURE_WaveEvent(true);
+				wave_capturing = want;
+			}
+			send_line("ok");
 		} else if (command == "quit") {
 			if (opl_capturing)
 				OPL_SaveRawEvent(true);
+			if (wave_capturing)
+				CAPTURE_WaveEvent(true);
 			send_line("ok");
 			close(client);
 			_exit(0);

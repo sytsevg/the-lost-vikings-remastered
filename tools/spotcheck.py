@@ -11,6 +11,9 @@
   tools/spotcheck.py opl [--slot N] [--frames F] [--out FILE]
                                    driver 460's OPL register writes while slot N plays (default level 1), F frames
                                    from the slot's start, as DOSBox-X's raw OPL capture (.dro), with a summary
+  tools/spotcheck.py wave [--slot N] [--frames F] [--out FILE]
+                                   the same stretch's sound as DOSBox-X mixes it (.wav), its OPL3 the Nuked core,
+                                   to listen to and compare with ours (vikings-remaster --dump STEPS F --wav W)
 
 Each prints what it found. The game is driven as tools/lockstep.py drives it: the keyboard word ds:86DE is written
 at each step (a tick at 0000:001E or a pass of the wait-for-key loop at 0169), with the seed 0.
@@ -406,30 +409,41 @@ def dro_summary(path):
             f"chip {'s' if len(chips) > 1 else ''}{sorted(chips)}, {codes} registers used")
 
 
-def opl(args):
-    run = Run()
+def capture(args, suffix, switch, settings=()):
+    """Slot N's frames (39: from the game's start) with a capture switched on (switch(True), then switch(False) on the
+    same Run's game); the capture's path."""
+    run = Run(settings=settings)
     try:
         if args.slot != 0x27:
             run.to_level1()
             if args.slot != 0:
                 load_slot(run, args.slot)
         run.game.command("break clear")  # run the frames straight through
-        before = set(dosbox.CAPTURES.glob("*.dro"))
-        run.game.opl(True)
+        before = set(dosbox.CAPTURES.glob(f"*.{suffix}"))
+        switch(run.game, True)
         left = args.frames
         while left > 0:  # (in parts: the control link wants a reply within its timeout)
             part = min(left, 600)
             run.game.run(frames=part)
             left -= part
-        run.game.opl(False)
+        switch(run.game, False)
         run.game.run(frames=2)
     finally:
         run.quit()
-    new = sorted(set(dosbox.CAPTURES.glob("*.dro")) - before)
+    new = sorted(set(dosbox.CAPTURES.glob(f"*.{suffix}")) - before)
     if not new:
-        raise SystemExit("no capture written (no note played?)")
-    path = new[-1] if args.out is None else pathlib.Path(new[-1].replace(args.out))
-    print(dro_summary(path))
+        raise SystemExit("no capture written")
+    return new[-1] if args.out is None else pathlib.Path(new[-1].replace(args.out))
+
+
+def opl(args):
+    print(dro_summary(capture(args, "dro", lambda game, on: game.opl(on))))
+
+
+def wave(args):
+    # The Nuked OPL3 core, the most exact DOSBox-X has (its default is a faster one).
+    path = capture(args, "wav", lambda game, on: game.wave(on), settings=("sblaster oplemu=nuked",))
+    print(f"{path}: {path.stat().st_size} bytes")
 
 
 def main():
@@ -438,11 +452,12 @@ def main():
     for name, func in (("timing", timing), ("pause", pause), ("fire-esc", fire_esc), ("flow", flow),
                        ("logo", logo)):
         sub.add_parser(name).set_defaults(func=func)
-    p = sub.add_parser("opl")
-    p.add_argument("--slot", type=int, default=0, help="the slot whose music to capture (39: from the game's start)")
-    p.add_argument("--frames", type=int, default=1800, help="frames to capture (60 a second)")
-    p.add_argument("--out", type=pathlib.Path, help="where to move the .dro (default: build/dosbox/captures/)")
-    p.set_defaults(func=opl)
+    for name, func in (("opl", opl), ("wave", wave)):
+        p = sub.add_parser(name)
+        p.add_argument("--slot", type=int, default=0, help="the slot to capture (39: from the game's start)")
+        p.add_argument("--frames", type=int, default=1800, help="frames to capture (60 a second)")
+        p.add_argument("--out", type=pathlib.Path, help="where to move the capture (default: build/dosbox/captures/)")
+        p.set_defaults(func=func)
     args = parser.parse_args()
     args.func(args)
 

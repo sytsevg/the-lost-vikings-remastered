@@ -223,6 +223,9 @@ class Control:
     def opl(self, on):
         self.command(f"opl {'start' if on else 'stop'}")
 
+    def wave(self, on):
+        self.command(f"wave {'start' if on else 'stop'}")
+
     def quit(self):
         try:
             self.command("quit")

@@ -48,6 +48,7 @@ starts (with `-c "mount ..."`, that is MOUNT) and stops. One command per line, o
 | `key HEX` | raw scan-code bytes into the keyboard controller (set 1: make; make \| 80 = break; `E0` first for extended keys) |
 | `screenshot` | the next frame drawn, as a PNG in `build/dosbox/captures/` (DOSBox-X's own capture: 640 × 480, each pixel doubled) |
 | `opl start` / `opl stop` | DOSBox-X's raw OPL capture (`.dro`) into the same folder; it starts with the first note |
+| `wave start` / `wave stop` | the sound as DOSBox-X mixes it (`.wav`) into the same folder, on the emulated clock (`tools/spotcheck.py wave`) |
 | `quit` | |
 
 While stopped, DOSBox-X emulates nothing (no wall-clock time passes for the game), so a script can take its time
