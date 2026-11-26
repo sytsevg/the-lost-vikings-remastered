@@ -182,6 +182,21 @@ TEST_CASE("real data: Remaster rules' zoom widens the view over a moment and clo
     CHECK(part_after(session, 30) == Screen::Part{.x = 0, .y = 0, .width = 480, .height = 360});
     session.zoom(-5);
     CHECK(part_after(session, 30) == original);
+    // Pressed twice, quickly: the second step follows when the first's change of view has been shown, never a jump
+    // (the user, 2026-11-26): from picture to picture the part shown widens by a little at most, to twice the view.
+    CHECK(session.zoom(1));
+    (void)session.step(0);
+    CHECK(session.zoom(1));
+    float width = original.width;
+    float most = 0;
+    for (int step = 0; step < 30; ++step) {
+        for (const Screen& screen : session.step(0)) {
+            most = std::max(most, std::abs(screen.part.width - width));
+            width = screen.part.width;
+        }
+    }
+    CHECK(most < 20);
+    CHECK(width == 640);
 }
 
 TEST_CASE("real data: held by the menu, the play shows itself a little darker, moves on not at all, and zooms",

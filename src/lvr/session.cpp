@@ -141,8 +141,7 @@ bool Session::zoom(int by) {
     if (!takes_play_keys()) {
         return false;
     }
-    zoom_ = std::clamp(zoom_ + by, 0, static_cast<int>(kZoomViews.size()) - 1);
-    play_.choose_view(player_, kZoomViews[static_cast<std::size_t>(zoom_)]);  // (clamped above)
+    zoom_target_ = std::clamp(zoom_target_ + by, 0, static_cast<int>(kZoomViews.size()) - 1);
     return true;
 }
 
@@ -150,7 +149,7 @@ void Session::set_zoom_level(int level) {
     if (play_.world.rules != Rules::kRemaster) {
         return;
     }
-    zoom_ = std::clamp(level, 0, static_cast<int>(kZoomViews.size()) - 1);
+    zoom_ = zoom_target_ = std::clamp(level, 0, static_cast<int>(kZoomViews.size()) - 1);
     play_.choose_view(player_, kZoomViews[static_cast<std::size_t>(zoom_)]);  // (clamped above)
 }
 
@@ -224,8 +223,15 @@ bool Session::view_whole_level() {
 // menu: nothing steps).
 void Session::change_view(bool at_once) {
     World& world = play_.world;
-    const auto [width, height] = wanted_view();
     const Camera& camera = world.players.at(static_cast<std::size_t>(player_)).camera;
+    // A step towards the zoom asked for, once the last change of view has been shown whole and the world has its view.
+    if (zoom_ != zoom_target_ && !grows_from_ && !shrinking_ && !view_now_) {
+        if (const auto [width, height] = wanted_view(); width == camera.view_width && height == camera.view_height) {
+            zoom_ += zoom_target_ > zoom_ ? 1 : -1;
+            play_.choose_view(player_, kZoomViews.at(static_cast<std::size_t>(zoom_)));
+        }
+    }
+    const auto [width, height] = wanted_view();
     if (width == camera.view_width && height == camera.view_height) {
         shrinking_ = false;
         return;

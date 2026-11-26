@@ -130,11 +130,12 @@ class Session {
     // kept for the next level.
     bool takes_play_keys() const noexcept { return play_.world.rules == Rules::kRemaster && level_played(); }
     // Remaster rules' zoom (ADR-0011): a step out (`by` > 0) or back in, between the original's view and twice
-    // it. The next step's world has the view; the pictures go from the one to the other over a moment.
+    // it. The next step's world has the view; the pictures go from the one to the other over a moment. Asked for
+    // while that is shown, the next step follows when it is done (the user, 2026-11-26: not a jump).
     bool zoom(int by);
-    // The zoom's step (0 the original's view, up to kZoomSteps - 1: twice it), and it set to one from anywhere (the
-    // profile's, at the start): a level played from then on is shown so.
-    int zoom_level() const noexcept { return zoom_; }
+    // The zoom's step asked for (0 the original's view, up to kZoomSteps - 1: twice it), and it set to one from
+    // anywhere (the profile's, at the start): a level played from then on is shown so.
+    int zoom_level() const noexcept { return zoom_target_; }
     void set_zoom_level(int level);
     static constexpr int kZoomSteps = 3;
     // A development tool's (vikings-remaster --dump --whole): the view becomes the whole level at once, with the
@@ -330,7 +331,8 @@ class Session {
     // After a rewind's or a quicksave's snapshot is brought back: the view the zoom has now.
     void zoom_back();
     Screen::Part part_shown(const View& view);
-    int zoom_ = 0;
+    int zoom_ = 0;                 // the zoom's step the view has or is changing to ...
+    int zoom_target_ = 0;          // ... and the one asked for, which it goes to a step at a time (change_view)
     std::uint32_t refreshes_ = 0;  // the refreshes the pictures handed out so far are for (Screen::refresh)
     std::optional<std::array<int, 2>> whole_view_;  // view_whole_level()'s
     std::optional<std::array<int, 2>> view_now_;    // the view change_view gives the next step

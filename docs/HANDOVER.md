@@ -52,7 +52,8 @@ only under Remaster rules; Vanilla rules must stay exactly what they are, and th
   (`render.*`), which stays. How the GPU one works is under "M8".
 - **Zoom-out:** `-` and `=`, or the mouse wheel; the original's view, one and a half times and twice it. The view
   is a value of the camera (`view_width`, `view_height`), and everything that was 320 × 176 reads it. `Session`
-  owns the zoom and its transition; `World::set_view` changes the world's view. A zoomed view is as high as the
+  owns the zoom and its transition (a step asked for while one is shown follows it, `zoom_target_`: the user,
+  2026-11-26, a second press jumped); `World::set_view` changes the world's view. A zoomed view is as high as the
   screen with the HUD over its bottom; the camera goes 64 pixels past the level's bottom so the HUD never hides
   the floor (`Camera::covered`).
 - **The text layer** is as large as the view; a box at a speaker is placed in it as it is, one at a fixed cell in
