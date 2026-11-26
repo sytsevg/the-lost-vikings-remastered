@@ -298,9 +298,13 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   stop at walls only and fly on through a slope's ground; zoomed out that is seen, so they burst there.
 - **The game-over letters drop in front of the Vikings** (Remaster rules): their pieces come from the front
   pool instead of the middle one, where they end up under the Vikings' figures in the original.
-- **A demo whose Vikings are all gone ends** (Remaster rules; the user, 2026-11-26): back to the logos and the
-  title, the next demo the next time, as its recording's end does. The recordings are the original's play; under
-  Remaster rules it can come out otherwise, and the game-over scene followed, "yes" playing the level.
+- **A demo plays at the original's view** (Remaster rules; the user, 2026-11-26: the demos played otherwise): the
+  zoom is the player's in the levels he plays, not the demos' (`World::view_for` in one, `kOriginalViews` as it
+  starts). A larger view takes in more of the level, its entities there at other times, and the recording, the
+  original's play, came out otherwise. `test_session.cpp` plays the title's six demos zoomed out as far as it goes,
+  every entity where Vanilla rules have it at every step. Should one come out otherwise all the same (the
+  Remaster's own rules), a demo whose Vikings are all gone ends: back to the logos and the title, the next demo the
+  next time, as its recording's end does (the game-over scene followed, "yes" playing the level).
 - **Arrows fly in front** (Remaster rules; the user, 2026-11-26): Baleog's arrows, fire arrows too, take their
   pieces from the front pool. The original takes them from the back pool, where what came first is drawn in front:
   an arrow went behind the hint boxes (level 2), the doors and the items. And Enter answers the original's pause box

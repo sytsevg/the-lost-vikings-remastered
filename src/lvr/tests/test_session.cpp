@@ -1203,3 +1203,46 @@ TEST_CASE("real data: Remaster rules: Baleog's arrows are drawn in front of the 
         CHECK((rules == Rules::kRemaster ? *piece < layout.front_end : *piece >= layout.back_begin));
     }
 }
+
+TEST_CASE("real data: Remaster rules' title demos play as their recordings, zoomed out or not: as Vanilla's",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    // The title left alone, from its start through the six demos to the first again: under Remaster rules, zoomed
+    // out as far as it goes, every entity of a demo where Vanilla rules have it at every step (the user, 2026-11-26:
+    // they played otherwise; a larger view takes in more of the level).
+    auto vanilla = Session::open(LVR_ORIGINAL_DIR, scene::kTitle, {}, Rules::kVanilla);
+    auto remaster = Session::open(LVR_ORIGINAL_DIR, scene::kTitle, {}, Rules::kRemaster);
+    REQUIRE(vanilla);
+    REQUIRE(remaster);
+    (*remaster)->set_zoom_level(5);
+    const auto entities = [](const World& world) {
+        std::vector<std::array<int, 4>> all;
+        for (int slot = 0; slot < world.slots(); ++slot) {
+            if (const Entity* entity = world.at(slot)) {
+                all.push_back({slot, entity->kind, entity->x, entity->y});
+            }
+        }
+        return all;
+    };
+    int demos = 0;
+    bool in_demo = false;
+    std::size_t differing = 0;
+    for (int step = 0; step < 8000 && demos < 7; ++step) {
+        (void)(*vanilla)->step(0);
+        (void)(*remaster)->step(0);
+        const World& original = (*vanilla)->world();
+        if (original.attract && !std::exchange(in_demo, true)) {
+            ++demos;
+        }
+        in_demo = original.attract;
+        // (The scenes the same all along; the entities while a demo plays: the title is the Remaster's own, raised.)
+        differing += (*remaster)->world().scene != original.scene ||
+                             (original.attract && entities((*remaster)->world()) != entities(original))
+                         ? 1U
+                         : 0U;
+    }
+    CHECK(demos == 7);  // (the six, and the first again)
+    CHECK(differing == 0);
+}

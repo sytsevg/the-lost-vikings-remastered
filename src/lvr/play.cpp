@@ -667,7 +667,9 @@ int Play::change_scene(const std::function<void()>& picture) {
         return kFadeSteps;
     }
     auto loaded = std::make_unique<LoadedLevel>(std::move(*next));
-    World started = prepare_world(*loaded, &world.map, world.rules, state_.views, world.player_count, world.absent());
+    World started =
+        prepare_world(*loaded, &world.map, world.rules, state_.playback ? kOriginalViews : state_.views,
+                      world.player_count, world.absent());  // (a demo: the original's view, World::view_for)
     started.cues.front().value = leaving_level.music.at_end == 1 ? 1 : 0;  // what plays stops, or the music stays
     // What goes on from scene to scene.
     started.seed = world.seed;
