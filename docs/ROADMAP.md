@@ -74,6 +74,19 @@ rollback. All built (2026-11-26), being tried by the user. In this order, a comm
   worked out as an exercise together when this starts. Files loaded from `gamedata/`, WAV first.
 
 ## Later
+- **Verify the sound further** (the user, 2026-11-26: the music and the effects are the least checked part).
+  Checked so far: the Classic sound's register writes against the original's in DOSBox-X, the logo's tune note for
+  note and ten minutes of the title's demos, music and effects together (`tools/oplcompare.py`,
+  [`original/sound-driver.md`](original/sound-driver.md#checked-in-dosbox)). Still to do:
+  - the **Modern sound's MIDI stream** against the original's driver 463 set up for General MIDI: DOSBox-X's MIDI
+    capture (`CAPTURE_MidiEvent`, a control command for it in `tools/dosbox/control.cpp`), the game's
+    configuration (`DATA.DAT` entry 0) set to the General MIDI driver, and a tap on what our synthesizer is sent;
+    the notes, programs and volumes compared as the Classic sound's are (the SoundFont's sound itself has no
+    reference);
+  - the **sound in play**: a level played with keys (replays), not only the demos, so that more effects and their
+    meeting with the music are covered, every world's tunes too;
+  - the **Remaster's own**: the volumes as gains and the Classic effects' own chip under Remaster rules, against
+    Vanilla's sound at the full volume (the music's notes the same, only louder or quieter).
 - Public distribution; the SoundFont (host our own copy of GeneralUser GS or link the author's site, not his
   download files)
 - Windows and macOS
