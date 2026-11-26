@@ -2,6 +2,7 @@
 
 // The transport for co-op online (ADR-0012): how the machines of a game online reach each other.
 
+#include <atomic>
 #include <cstdint>
 #include <expected>
 #include <memory>
@@ -65,9 +66,12 @@ class SdlTransport final : public Transport {
   public:
     // Hosts a game on `port` (TCP and UDP both), for guests to join.
     static std::expected<std::unique_ptr<SdlTransport>, std::string> host(std::uint16_t port);
-    // Joins the game hosted at `address` (a name or a number), waiting up to `wait_ms` for the connection.
+    // Joins the game hosted at `address` (a name or a number), waiting up to `wait_ms` for the name to be found and
+    // as long for the connection; given up as soon as `cancelled` says so (it is looked at every 50 ms: joining may
+    // run on a thread of its own).
     static std::expected<std::unique_ptr<SdlTransport>, std::string> join(const std::string& address,
-                                                                          std::uint16_t port, int wait_ms = 5000);
+                                                                          std::uint16_t port, int wait_ms = 5000,
+                                                                          const std::atomic<bool>* cancelled = nullptr);
     SdlTransport(const SdlTransport&) = delete;
     SdlTransport& operator=(const SdlTransport&) = delete;
     SdlTransport(SdlTransport&&) = delete;

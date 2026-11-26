@@ -10,13 +10,16 @@
 // next (Go). Places makes each move, in one spot. Nothing here knows windows or devices. (Not lvr/places.*: where a
 // world keeps its animation programs.)
 
+#include <atomic>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "lvr/coop.hpp"
@@ -169,9 +172,15 @@ class OfflinePlace final : public Place {
 // gives up; ten seconds without an answer, the same.
 class ConnectingPlace final : public Place {
   public:
-    using Join = std::function<std::expected<std::unique_ptr<net::Transport>, std::string>(const std::string& address,
-                                                                                           std::uint16_t port)>;
+    // How the connection is made (on a thread of its own: the page goes on meanwhile), given up when `cancelled`.
+    using Join = std::function<std::expected<std::unique_ptr<net::Transport>, std::string>(
+        const std::string& address, std::uint16_t port, const std::atomic<bool>& cancelled)>;
     ConnectingPlace(Session& offline, Join join, net::Identity identity, const std::string& address);
+    ConnectingPlace(const ConnectingPlace&) = delete;
+    ConnectingPlace& operator=(const ConnectingPlace&) = delete;
+    ConnectingPlace(ConnectingPlace&&) = delete;
+    ConnectingPlace& operator=(ConnectingPlace&&) = delete;
+    ~ConnectingPlace() override;
 
     Session& session() override { return *offline_; }
     bool heard() const override { return false; }
@@ -196,7 +205,12 @@ class ConnectingPlace final : public Place {
     std::unique_ptr<net::GuestLobby> lobby_;
     std::optional<net::Started> started_;
     std::uint32_t began_ = 0;  // when the connection was made (the connection's clock)
-    int refreshes_ = 0;        // since it began (the mark beside JOIN turns by them)
+    // The connection being made: its thread, what it came to, and the word to give up.
+    std::thread joining_;
+    std::mutex joined_lock_;
+    std::optional<std::expected<std::unique_ptr<net::Transport>, std::string>> joined_;
+    std::atomic<bool> cancelled_{false};
+    int refreshes_ = 0;  // since it began (the mark beside JOIN turns by them)
 };
 
 // The lobby, over a still of the title: who is there and their round trips, what the game starts with; the host's

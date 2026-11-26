@@ -31,8 +31,8 @@ class SimulatedNetwork {
     std::unique_ptr<Transport> host();
     std::unique_ptr<Transport> join();
     // The clock every transport of this network reads, moved on.
-    void advance(std::uint32_t ms) noexcept;
-    std::uint32_t now() const noexcept;
+    void advance(std::uint32_t ms);
+    std::uint32_t now() const;
 
     struct State;  // (its transports')
 

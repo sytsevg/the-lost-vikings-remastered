@@ -133,8 +133,8 @@ struct Room {
             .host = [this](std::uint16_t) -> std::expected<std::unique_ptr<net::Transport>, std::string> {
                 return network.host();
             },
-            .join = [this](const std::string&,
-                           std::uint16_t) -> std::expected<std::unique_ptr<net::Transport>, std::string> {
+            .join = [this](const std::string&, std::uint16_t,
+                           const std::atomic<bool>&) -> std::expected<std::unique_ptr<net::Transport>, std::string> {
                 auto joined = network.join();
                 if (joined == nullptr) {
                     return std::unexpected{"no host"};

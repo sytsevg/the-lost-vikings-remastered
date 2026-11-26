@@ -1,7 +1,9 @@
 #include "net/simulated.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <utility>
@@ -34,19 +36,26 @@ struct SimulatedNetwork::State {
         bool open = true;
         int peer = 0;              // a guest: the host's number for him (from 1)
         std::vector<Event> local;  // what this machine's next poll has from itself (the host: one he let go)
-        // Its transport closed then (the clock, the messages sent so far), not yet taken into account (settle).
-        std::optional<std::pair<std::uint32_t, std::uint64_t>> closed;
+        // Its transport closed (said by the transport's end, which takes no lock): then, the `order`th sent; the
+        // others told at the network's next turn (settle), as though then.
+        struct Closed {
+            std::atomic<bool> is{false};
+            std::atomic<std::uint32_t> when{0};
+            std::atomic<std::uint64_t> order{0};
+        };
+        std::shared_ptr<Closed> closed = std::make_shared<Closed>();
     };
 
     Conditions conditions;
     std::minstd_rand random;
-    std::uint32_t now = 0;
-    std::uint64_t sent = 0;
+    std::atomic<std::uint32_t> now{0};  // (atomic: a transport's end reads it without the lock)
+    std::atomic<std::uint64_t> sent{0};
     int host = -1;
     int next_peer = 1;
     std::vector<Machine> machines;
     std::map<std::pair<int, int>, Link> links;
     std::vector<Flight> flights;
+    std::mutex lock;  // (its transports may be used on other threads: a guest's made while joining)
 
     State(Conditions with, std::uint32_t seed) : conditions{with}, random{seed} {}
 
@@ -165,11 +174,12 @@ struct SimulatedNetwork::State {
     void settle() {
         for (std::size_t closing = 0; closing < machines.size(); ++closing) {
             Machine& gone = machines[closing];
-            if (!gone.closed || !gone.open) {
+            if (!gone.closed->is.load() || !gone.open) {
                 continue;
             }
             gone.open = false;
-            const auto [when, order] = *gone.closed;
+            const std::uint32_t when = gone.closed->when.load();
+            const std::uint64_t order = gone.closed->order.load();
             const int machine = static_cast<int>(closing);
             for (std::size_t other = 0; other < machines.size(); ++other) {
                 const int one = static_cast<int>(other);
@@ -193,18 +203,25 @@ class Simulated final : public Transport {
     Simulated(std::shared_ptr<SimulatedNetwork::State> state, int machine)
         : state_{std::move(state)},
           machine_{machine},
-          hosting_{state_->machines.at(static_cast<std::size_t>(machine)).hosting} {}
+          hosting_{state_->machines.at(static_cast<std::size_t>(machine)).hosting},
+          closed_{state_->machines.at(static_cast<std::size_t>(machine)).closed} {}  // (made under the lock)
     Simulated(const Simulated&) = delete;
     Simulated& operator=(const Simulated&) = delete;
     Simulated(Simulated&&) = delete;
     Simulated& operator=(Simulated&&) = delete;
     // (Only when: the others are told at the network's next turn, as though then.)
     ~Simulated() override {
-        state_->machines[static_cast<std::size_t>(machine_)].closed = {{state_->now, ++state_->sent}};
+        closed_->when = state_->now.load();
+        closed_->order = ++state_->sent;
+        closed_->is.store(true);
     }
 
-    std::vector<Event> poll() override { return state_->poll(machine_); }
+    std::vector<Event> poll() override {
+        const std::scoped_lock held{state_->lock};
+        return state_->poll(machine_);
+    }
     void send(int peer, std::span<const std::uint8_t> bytes, Channel channel) override {
+        const std::scoped_lock held{state_->lock};
         state_->settle();
         if (const std::optional<int> to = state_->machine_of(machine_, peer)) {
             state_->post(machine_, *to,
@@ -215,6 +232,7 @@ class Simulated final : public Transport {
         }
     }
     void drop(int peer) override {
+        const std::scoped_lock held{state_->lock};
         state_->settle();
         if (const std::optional<int> guest = state_->machine_of(machine_, peer); guest && hosting()) {
             state_->drop(*guest);
@@ -222,20 +240,25 @@ class Simulated final : public Transport {
     }
     void drain(int /*wait_ms*/) override {}  // (what was sent comes all the same)
     std::optional<int> round_trip_ms(int peer) const override {
+        const std::scoped_lock held{state_->lock};
         const std::optional<int> other = state_->machine_of(machine_, peer);
         if (!other || !state_->open(machine_, *other) || !state_->open(*other, machine_) ||
-            state_->machines[static_cast<std::size_t>(*other)].closed) {
+            state_->machines[static_cast<std::size_t>(*other)].closed->is.load()) {
             return std::nullopt;
         }
         return 2 * state_->conditions.delay_ms;
     }
     bool hosting() const noexcept override { return hosting_; }
-    std::uint32_t now_ms() const override { return state_->now; }
+    std::uint32_t now_ms() const override {
+        const std::scoped_lock held{state_->lock};
+        return state_->now;
+    }
 
   private:
     std::shared_ptr<SimulatedNetwork::State> state_;
     int machine_;
     bool hosting_;
+    std::shared_ptr<SimulatedNetwork::State::Machine::Closed> closed_;
 };
 
 }  // namespace
@@ -246,23 +269,29 @@ SimulatedNetwork::SimulatedNetwork(Conditions conditions, std::uint32_t seed)
     : state_{std::make_shared<State>(conditions, seed)} {}
 
 std::unique_ptr<Transport> SimulatedNetwork::host() {
+    const std::scoped_lock held{state_->lock};
     state_->settle();
     if (state_->host >= 0) {
         return nullptr;  // (one a network)
     }
     state_->host = static_cast<int>(state_->machines.size());
-    state_->machines.push_back({.hosting = true, .open = true, .peer = 0, .local = {}, .closed = std::nullopt});
+    state_->machines.push_back(
+        {.hosting = true, .open = true, .peer = 0, .local = {}, .closed = std::make_shared<State::Machine::Closed>()});
     return std::make_unique<Simulated>(state_, state_->host);
 }
 
 std::unique_ptr<Transport> SimulatedNetwork::join() {
+    const std::scoped_lock held{state_->lock};
     state_->settle();
     if (state_->host < 0) {
         return nullptr;
     }
     const int guest = static_cast<int>(state_->machines.size());
-    state_->machines.push_back(
-        {.hosting = false, .open = true, .peer = state_->next_peer++, .local = {}, .closed = std::nullopt});
+    state_->machines.push_back({.hosting = false,
+                                .open = true,
+                                .peer = state_->next_peer++,
+                                .local = {},
+                                .closed = std::make_shared<State::Machine::Closed>()});
     state_->links[{guest, state_->host}] = {};
     state_->links[{state_->host, guest}] = {};
     // (Sent the reliable way: what the guest says after it comes after it.)
@@ -271,11 +300,13 @@ std::unique_ptr<Transport> SimulatedNetwork::join() {
     return std::make_unique<Simulated>(state_, guest);
 }
 
-void SimulatedNetwork::advance(std::uint32_t ms) noexcept {
+void SimulatedNetwork::advance(std::uint32_t ms) {
+    const std::scoped_lock held{state_->lock};
     state_->now += ms;
 }
 
-std::uint32_t SimulatedNetwork::now() const noexcept {
+std::uint32_t SimulatedNetwork::now() const {
+    const std::scoped_lock held{state_->lock};
     return state_->now;
 }
 

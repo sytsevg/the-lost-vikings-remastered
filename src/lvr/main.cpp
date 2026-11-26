@@ -1042,16 +1042,17 @@ int main(int argc, char* argv[]) try {
     // JOIN GAME lead online, and back to the title when the game online ends (ADR-0012).
     const bool may_go_online = remastered && gpu != nullptr && !showcase;
     OfflinePlace offline{**session, showcase ? &*showcase : nullptr, may_go_online};
-    Places::Needs needs{.online = {.dir = dir, .sound = sound, .draw = draw_with, .logs = {}},
-                        .settings = remastered ? &remastered->settings : nullptr,
-                        .identity = {},
-                        .host = [](std::uint16_t port) -> std::expected<std::unique_ptr<net::Transport>, std::string> {
-                            return net::SdlTransport::host(port);
-                        },
-                        .join = [](const std::string& address,
-                                   std::uint16_t port) -> std::expected<std::unique_ptr<net::Transport>, std::string> {
-                            return net::SdlTransport::join(address, port);
-                        }};
+    Places::Needs needs{
+        .online = {.dir = dir, .sound = sound, .draw = draw_with, .logs = {}},
+        .settings = remastered ? &remastered->settings : nullptr,
+        .identity = {},
+        .host = [](std::uint16_t port) -> std::expected<std::unique_ptr<net::Transport>, std::string> {
+            return net::SdlTransport::host(port);
+        },
+        .join = [](const std::string& address, std::uint16_t port,
+                   const std::atomic<bool>& cancelled) -> std::expected<std::unique_ptr<net::Transport>, std::string> {
+            return net::SdlTransport::join(address, port, 5000, &cancelled);
+        }};
     if (const char* beside = SDL_GetBasePath()) {  // (what the game writes is beside it)
         needs.online.logs = std::filesystem::path{beside} / "logs";
     }

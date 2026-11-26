@@ -150,6 +150,13 @@ ConnectingPlace::ConnectingPlace(Session& offline, Join join, net::Identity iden
     std::tie(address_, port_) = split_address(address);
 }
 
+ConnectingPlace::~ConnectingPlace() {
+    cancelled_ = true;  // (given up, or on to the lobby: the thread is done, or ends within its slice)
+    if (joining_.joinable()) {
+        joining_.join();
+    }
+}
+
 void ConnectingPlace::begin(Ui& ui) {
     ui.open_menu().open_join();
     ui.redraw();
@@ -174,15 +181,27 @@ Go ConnectingPlace::refresh(Ui& ui) {
         ui.redraw();
     }
     if (connection_ == nullptr) {
-        if (++refreshes_ < 2) {
-            return {};  // (the page shown first: joining waits for the connection)
+        ++refreshes_;
+        if (!joining_.joinable()) {  // the connection made on a thread of its own: the page goes on meanwhile
+            joining_ = std::thread{[this] {
+                auto joined = join_(address_, port_, cancelled_);
+                const std::scoped_lock held{joined_lock_};
+                joined_ = std::move(joined);
+            }};
         }
-        auto joined = join_(address_, port_);
+        std::optional<std::expected<std::unique_ptr<net::Transport>, std::string>> joined;
+        {
+            const std::scoped_lock held{joined_lock_};
+            joined = std::exchange(joined_, std::nullopt);
+        }
         if (!joined) {
-            std::println(stderr, "vikings-remaster: {}", joined.error());
+            return {};  // (still being made)
+        }
+        if (!*joined) {
+            std::println(stderr, "vikings-remaster: {}", joined->error());
             return back(said(std::format("NO GAME AT {}", where)));
         }
-        connection_ = std::make_unique<net::Connection>(std::move(*joined), identity_);
+        connection_ = std::make_unique<net::Connection>(std::move(**joined), identity_);
         lobby_ = std::make_unique<net::GuestLobby>(*connection_, false);
         began_ = connection_->now_ms();
     }

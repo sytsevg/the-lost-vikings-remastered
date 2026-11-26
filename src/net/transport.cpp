@@ -50,9 +50,12 @@ std::uint32_t get32(std::span<const std::uint8_t> from) {
     return value;
 }
 
-int net_users = 0;  // NET_Init is counted: the transports alive
+// NET_Init is counted: the transports alive (one may be made on a thread of its own, joining).
+std::mutex net_users_lock;
+int net_users = 0;
 
 bool start_net() {
+    const std::scoped_lock held{net_users_lock};
     if (net_users == 0 && !NET_Init()) {
         return false;
     }
@@ -61,9 +64,26 @@ bool start_net() {
 }
 
 void stop_net() {
+    const std::scoped_lock held{net_users_lock};
     if (--net_users == 0) {
         NET_Quit();
     }
+}
+
+// Waits up to `wait_ms` for what `wait` waits on (it waits as long as it is given), a slice at a time, given up as
+// soon as `cancelled` says so: whether it got there.
+template <typename Wait>
+bool waited(int wait_ms, const std::atomic<bool>* cancelled, const Wait& wait) {
+    constexpr int kSlice = 50;  // milliseconds
+    for (int spent = 0; spent < wait_ms; spent += kSlice) {
+        if (cancelled != nullptr && cancelled->load()) {
+            return false;
+        }
+        if (const NET_Status status = wait(kSlice); status != NET_WAITING) {
+            return status == NET_SUCCESS;
+        }
+    }
+    return false;
 }
 
 }  // namespace
@@ -369,14 +389,16 @@ std::expected<std::unique_ptr<SdlTransport>, std::string> SdlTransport::host(std
 }
 
 std::expected<std::unique_ptr<SdlTransport>, std::string> SdlTransport::join(const std::string& address,
-                                                                             std::uint16_t port, int wait_ms) {
+                                                                             std::uint16_t port, int wait_ms,
+                                                                             const std::atomic<bool>* cancelled) {
     if (!start_net()) {
         return std::unexpected{std::string{"the network: "} + SDL_GetError()};
     }
     auto inner = std::make_unique<Inner>();
     inner->port = port;
     NET_Address* host = NET_ResolveHostname(address.c_str());
-    if (host == nullptr || NET_WaitUntilResolved(host, wait_ms) != NET_SUCCESS) {
+    if (host == nullptr ||
+        !waited(wait_ms, cancelled, [host](int slice) { return NET_WaitUntilResolved(host, slice); })) {
         const std::string why = SDL_GetError();
         if (host != nullptr) {
             NET_UnrefAddress(host);
@@ -389,7 +411,8 @@ std::expected<std::unique_ptr<SdlTransport>, std::string> SdlTransport::join(con
     peer.heard_last = SDL_GetTicks();
     peer.udp_address = host;  // (the reference resolving gave)
     peer.udp_port = port;
-    if (peer.stream == nullptr || NET_WaitUntilConnected(peer.stream, wait_ms) != NET_SUCCESS) {
+    if (peer.stream == nullptr ||
+        !waited(wait_ms, cancelled, [&peer](int slice) { return NET_WaitUntilConnected(peer.stream, slice); })) {
         const std::string why = SDL_GetError();
         Inner::close(peer);
         return std::unexpected{std::format("{} port {}: no game there ({})", address, port, why)};
