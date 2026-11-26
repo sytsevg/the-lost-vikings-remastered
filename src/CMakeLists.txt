@@ -202,13 +202,14 @@ if(LVR_BUILD_APPS)
     target_link_libraries(lv-replay PRIVATE lvr::replay lvr::session lvr::image lvr::gpu)
     lvr_target_defaults(lv-replay)
 
-    # --- online: co-op online's front end, rollback over the session through the transport (ADR-0012) ---
-    add_library(lvr_online STATIC
-        lvr/online.cpp)
-    add_library(lvr::online ALIAS lvr_online)
-    target_include_directories(lvr_online PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-    target_link_libraries(lvr_online PUBLIC lvr::session lvr::net lvr::transport)
-    lvr_target_defaults(lvr_online)
+    # --- front: the game's places (GLOSSARY.md): offline, connecting, the lobby, a game online (ADR-0012) ---
+    add_library(lvr_front STATIC
+        lvr/front.cpp
+        lvr/showcase.cpp)
+    add_library(lvr::front ALIAS lvr_front)
+    target_include_directories(lvr_front PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(lvr_front PUBLIC lvr::session lvr::net lvr::transport)
+    lvr_target_defaults(lvr_front)
 
     # --- vikings-remaster: the game on the engine ---
     # The build's ID, a hash of the game's sources worked out at every build: two machines play online only with
@@ -219,10 +220,10 @@ if(LVR_BUILD_APPS)
                 -P ${CMAKE_SOURCE_DIR}/cmake/build_id.cmake
         BYPRODUCTS ${lvr_build_id}
         VERBATIM)
-    add_executable(vikings-remaster lvr/main.cpp lvr/showcase.cpp)
+    add_executable(vikings-remaster lvr/main.cpp)
     add_dependencies(vikings-remaster lvr_build_id)
     target_include_directories(vikings-remaster PRIVATE ${CMAKE_BINARY_DIR}/generated)
-    target_link_libraries(vikings-remaster PRIVATE lvr::session lvr::online lvr::input lvr::image lvr::gpu SDL3::SDL3)
+    target_link_libraries(vikings-remaster PRIVATE lvr::session lvr::front lvr::input lvr::image lvr::gpu SDL3::SDL3)
     lvr_target_defaults(vikings-remaster)
 
 endif()
@@ -288,8 +289,9 @@ if(LVR_BUILD_TESTS)
     lvr_target_warnings(lvr_tests)
     # SDL3-backed code is only built with LVR_BUILD_APPS.
     if(LVR_BUILD_APPS)
-        target_sources(lvr_tests PRIVATE image/tests/test_png.cpp lvr/tests/test_gpu.cpp net/tests/test_transport.cpp)
-        target_link_libraries(lvr_tests PRIVATE lvr::image lvr::gpu lvr::transport lvr::online)
+        target_sources(lvr_tests PRIVATE image/tests/test_png.cpp lvr/tests/test_gpu.cpp net/tests/test_transport.cpp
+                                       lvr/tests/test_front.cpp)
+        target_link_libraries(lvr_tests PRIVATE lvr::image lvr::gpu lvr::transport lvr::front)
     endif()
     include(Catch)
     # Catch2's tags become CTest labels.
