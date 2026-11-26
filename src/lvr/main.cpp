@@ -666,7 +666,8 @@ Go run(Window& in, Place& place) {
                 const bool* held = SDL_GetKeyboardState(nullptr);
                 if (hands.pressed(key_name(event.key.scancode), event.key.repeat,
                                   held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT],
-                                  session) == InputHandler::Asks::kMenu) {
+                                  session) == InputHandler::Asks::kMenu &&
+                    !last_shown.fading) {  // (not while the level fades in or out: the user)
                     (void)open_menu();
                 }
             } else if (event.type == SDL_EVENT_KEY_UP) {
@@ -684,7 +685,7 @@ Go run(Window& in, Place& place) {
                 flash_shown = flash;
                 draw_menu();
             }
-        } else if (hands.act_on_pads(session) == InputHandler::Asks::kMenu) {
+        } else if (hands.act_on_pads(session) == InputHandler::Asks::kMenu && !last_shown.fading) {
             (void)open_menu();  // Start in a level being played (elsewhere it is the original's pause)
         }
         hands.pads_read();
