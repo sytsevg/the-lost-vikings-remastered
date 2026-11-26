@@ -69,6 +69,8 @@ It builds on Linux. You need Podman, or your own Clang 23 with CMake and Ninja.
 
 Put the DOS release's `DATA.DAT` and `VIKINGS.EXE` in `gamedata/original/`. If you want the Modern sound, also
 put the GeneralUser GS SoundFont at `gamedata/GeneralUser-GS.sf2`. Without it it falls back to classic only.
+The game finds `gamedata/` beside its program, or else in the folder it is started in (the repository's, for
+a build), and keeps what it writes beside its program: `profiles/` and `logs/`.
 
 The easy way uses the dev container, which has the whole toolchain in it:
 

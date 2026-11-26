@@ -59,12 +59,16 @@ with llvm-mingw (`cmake/windows.cmake`) into `build/windows/`, then the unit tes
 golden run as Windows programs under Wine (`cmake/wine.sh`). Not part of `check.sh`.
 
 What comes out is one file, `build/windows/bin/vikings-remaster.exe`, for Windows 10 and later. On the Windows
-PC it goes in a folder with a `gamedata/` beside it, as on Linux (`gamedata/original/`, and the SoundFont for
-the Modern sound). Remaster rules need Vulkan, which a graphics card's own driver has. It opens no console: an
-error that stops the game is shown in a box.
+PC it goes in a folder with a `gamedata/` beside it (`gamedata/original/`, and the SoundFont for the Modern
+sound), which the game finds wherever it is started from. Remaster rules need Vulkan, which a graphics card's own
+driver has. It opens no console: an error that stops the game is shown in a box.
 
 ## Playing
-The game reads your own copy of the original files from `gamedata/original/` (or `--data DIR`):
+The game reads your own copy of the original files from `gamedata/original/` (or `--data DIR`), and the
+SoundFont from `gamedata/`: the `gamedata` beside its program if there is one, or else the one in the folder it is
+started in (the repository's, for a build in `build/<preset>/bin/`). What it writes goes beside its program:
+`profiles/` (Remaster rules; `--profile DIR` for another) and `logs/` (a co-op game that went out of step), each
+made when it is first written to.
 
 ```sh
 ./build/release/bin/vikings-remaster    # --data DIR for the game's files elsewhere

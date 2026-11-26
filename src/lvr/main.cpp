@@ -1,5 +1,6 @@
 // vikings-remaster, the game on the engine (ADR-0017): plays The Lost Vikings from the original's files
-// (gamedata/original by default) in the classic look, as the original starts: the logos, the title, and on from there.
+// (by default gamedata/original beside this program, or else in the folder it is started in) in the classic look, as
+// the original starts: the logos, the title, and on from there.
 // A tick every three refreshes of an artificial 59.71 Hz display; the keyboard as the original's handler reads it
 // (docs/original/input.md).
 //
@@ -120,6 +121,23 @@ void quiet_without_console() noexcept {
 void stop(const std::string& why) {
     std::println(stderr, "vikings-remaster: {}", why);
     show_why(why.c_str());
+}
+
+// The folder of the game's own program (empty if SDL can't say): what the game writes goes there, `profiles` and
+// `logs`, and its `gamedata` is looked for there first.
+std::filesystem::path program_folder() {
+    const char* base = SDL_GetBasePath();
+    return base != nullptr ? std::filesystem::path{base} : std::filesystem::path{};
+}
+
+// The `gamedata` folder: beside the game's own program, or else in the folder it was started in (as a build's
+// program in build/<preset>/bin/ is, from the repository).
+std::filesystem::path gamedata_folder(const std::filesystem::path& program) {
+    std::error_code error;
+    if (!program.empty() && std::filesystem::is_directory(program / "gamedata", error)) {
+        return program / "gamedata";
+    }
+    return "gamedata";
 }
 
 bool write_wav(const std::filesystem::path& path, const std::vector<std::int16_t>& samples, std::uint32_t rate) {
@@ -915,10 +933,12 @@ std::optional<int> parse_number(std::string_view text) {
 int main(int argc, char* argv[]) try {
     using namespace lvr;
     quiet_without_console();
-    std::filesystem::path dir = "gamedata/original";
+    const std::filesystem::path program = program_folder();
+    const std::filesystem::path gamedata = gamedata_folder(program);
+    std::filesystem::path dir = gamedata / "original";
     std::filesystem::path dump_to;
     std::filesystem::path wav;
-    SessionSound sound{.modern = false, .soundfont = "gamedata/GeneralUser-GS.sf2"};
+    SessionSound sound{.modern = false, .soundfont = gamedata / "GeneralUser-GS.sf2"};
     int slot = scene::kLogo;
     std::optional<Showcase> showcase;  // --showcase
     int steps = 0;
@@ -1088,10 +1108,8 @@ int main(int argc, char* argv[]) try {
     // own program, where it is found without knowing where to look; and its settings.
     std::optional<Remastered> remastered;
     if (rules == Rules::kRemaster && dump_to.empty()) {
-        if (profile.empty()) {
-            if (const char* beside = SDL_GetBasePath()) {
-                profile = std::filesystem::path{beside} / "profiles";
-            }
+        if (profile.empty() && !program.empty()) {
+            profile = program / "profiles";
         }
         remastered.emplace();
         remastered->profile = profile;
@@ -1141,8 +1159,8 @@ int main(int argc, char* argv[]) try {
                    const std::atomic<bool>& cancelled) -> std::expected<std::unique_ptr<net::Transport>, std::string> {
             return net::SdlTransport::join(address, port, 5000, &cancelled);
         }};
-    if (const char* beside = SDL_GetBasePath()) {  // (what the game writes is beside it)
-        needs.online.logs = std::filesystem::path{beside} / "logs";
+    if (!program.empty()) {  // (what the game writes is beside it)
+        needs.online.logs = program / "logs";
     }
     if (may_go_online) {  // who this build and these game files are, for a game online's hello
         auto files = assets::GameFiles::open(dir);
