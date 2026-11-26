@@ -206,3 +206,11 @@ key-off compared with its channel's registers (frequency, timbre, levels, connec
   a few refreshes earlier or later than in the original: notes in another order, on other OPL channels, a fade a few
   steps further. Nothing a player could tell apart; not a rule of the game.
 - The music's rate: 2 XMIDI ticks per refresh, [`timing.md`](timing.md#checked-in-dosbox).
+- **The title's demos** (2026-11-26, the user: the Classic music seemed to cut notes): from the game's start, ten
+  minutes with no key pressed (the logos, the title, its six demo levels, their tunes and effects together), the
+  original's capture (`tools/spotcheck.py opl --slot 39 --frames 36000`, run in parts for the control link) and
+  Vanilla rules' writes (`lvr_tests "[.opl]"`), paired by `tools/oplcompare.py`: 15,226 of the original's 16,228
+  notes have one of ours of the same pitch starting within 20 ms, and only 99 of them last more than 30 ms longer
+  or shorter. The ones without a partner are in the windows a scene change falls in (the offset moves there,
+  `timing.md`); within a scene every note pairs. The cut notes were the Remaster's volume, then turned down in the
+  driver ([`../decisions.md`](../decisions.md): the volumes are gains on the sound made).

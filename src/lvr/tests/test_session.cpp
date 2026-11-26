@@ -1312,3 +1312,24 @@ TEST_CASE("real data: Remaster rules' volumes are gains on the sound made: the m
     }
     CHECK(unlike == 0);
 }
+
+// Run by hand (lvr_tests "[opl]"): the Classic sound's register writes from the game's start through the title's
+// demos, ten minutes with no key pressed, into build/opl-ours.txt (milliseconds, register, value a line), for
+// tools/oplcompare.py to pair with the original's (tools/spotcheck.py opl --slot 39 --frames 36000).
+TEST_CASE("Vanilla rules' Classic sound through the title's demos, for a comparison with the original's", "[.opl]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    auto opened = Session::open(LVR_ORIGINAL_DIR, scene::kLogo, {}, Rules::kVanilla);
+    REQUIRE(opened);
+    Session& session = **opened;
+    std::ofstream out{"build/opl-ours.txt"};
+    REQUIRE(out);
+    session.tap_classic([&](std::uint16_t reg, std::uint8_t value) {
+        const double ms = static_cast<double>(session.samples.size() / 2) * 1000.0 / Session::sample_rate();
+        out << ms << ' ' << reg << ' ' << int{value} << '\n';
+    });
+    for (int step = 0; step < 12100; ++step) {  // (a little over 36,000 refreshes)
+        (void)session.step(0);
+    }
+}

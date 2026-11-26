@@ -416,7 +416,11 @@ def opl(args):
         run.game.command("break clear")  # run the frames straight through
         before = set(dosbox.CAPTURES.glob("*.dro"))
         run.game.opl(True)
-        run.game.run(frames=args.frames)
+        left = args.frames
+        while left > 0:  # (in parts: the control link wants a reply within its timeout)
+            part = min(left, 600)
+            run.game.run(frames=part)
+            left -= part
         run.game.opl(False)
         run.game.run(frames=2)
     finally:

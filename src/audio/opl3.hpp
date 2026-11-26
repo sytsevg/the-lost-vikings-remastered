@@ -11,6 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
 #include <vector>
@@ -132,6 +133,9 @@ class Opl3 : public OplSink {
     ~Opl3() override;
 
     void write(std::uint16_t reg, std::uint8_t value) override;
+    // Told every register write from here on (none: nobody): to compare them with the original's (a DOSBox-X
+    // capture, docs/original/sound-driver.md).
+    void tap(std::function<void(std::uint16_t, std::uint8_t)> told);
     // Renders `seconds` of sound (with the fraction of a sample carried over) onto `out`, left and right in turn.
     void render(double seconds, std::vector<std::int16_t>& out);
     std::uint32_t sample_rate() const noexcept { return rate_; }

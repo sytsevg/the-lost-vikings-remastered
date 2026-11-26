@@ -584,7 +584,12 @@ void OplSynth::write_channel(std::uint8_t channel, std::uint8_t base, std::uint8
 struct Opl3::Chip {
     ymfm::ymfm_interface interface;
     ymfm::ymf262 chip{interface};
+    std::function<void(std::uint16_t, std::uint8_t)> told;  // (Opl3::tap)
 };
+
+void Opl3::tap(std::function<void(std::uint16_t, std::uint8_t)> told) {
+    chip_->told = std::move(told);
+}
 
 Opl3::Opl3() : chip_{std::make_unique<Chip>()}, rate_{chip_->chip.sample_rate(kClock)} {
     chip_->chip.reset();
@@ -593,6 +598,9 @@ Opl3::Opl3() : chip_{std::make_unique<Chip>()}, rate_{chip_->chip.sample_rate(kC
 Opl3::~Opl3() = default;
 
 void Opl3::write(std::uint16_t reg, std::uint8_t value) {
+    if (chip_->told) {
+        chip_->told(reg, value);
+    }
     if ((reg & 0x100U) != 0) {
         chip_->chip.write_address_hi(static_cast<std::uint8_t>(reg & 0xFFU));
     } else {

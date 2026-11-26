@@ -221,6 +221,9 @@ class Session {
     // kLoudest (as the game asks for them; profile.hpp), in both versions of the sound: a gain on what is made, the
     // players playing at the full volume, as written.
     void set_volume(int music, int effects);
+    // The Classic sound's register writes, as they are made (its music's chip: under Vanilla rules the effects' too),
+    // to compare with the original's (audio::Opl3::tap).
+    void tap_classic(std::function<void(std::uint16_t, std::uint8_t)> told) { chip_.tap(std::move(told)); }
 
     std::vector<Screen> start_frames;   // the start's pictures, shown first
     std::vector<std::int16_t> samples;  // rendered sound not yet played: left, right in turn
