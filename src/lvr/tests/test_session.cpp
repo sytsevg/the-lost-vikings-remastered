@@ -395,7 +395,8 @@ TEST_CASE("real data: Remaster rules' rewind: ten seconds a level, given again w
     CHECK(session.scene() == 0);
     CHECK(session.rewind_left() == Session::kRewindSteps);
     REQUIRE(shown.size() > 145);
-    CHECK_FALSE(shown.at(10).rewind_left);  // nothing over the fades
+    REQUIRE(shown.at(10).rewind_left);  // (over the fades too, with the minimap: as dark as the picture)
+    CHECK(shown.at(10).bright < 1.0F);
     CHECK(bar(shown.back()) == 1);
     CHECK(back_for(1) == 0);
 
@@ -663,13 +664,30 @@ TEST_CASE("real data: Remaster rules' zoom is the player's: a level starts with 
     (void)session.step(0);
     (void)session.step(key::kF);
     (void)session.step(0);
-    // The next level comes in zoomed out, with no minimap over its fades.
+    // The next level comes in zoomed out. The minimap goes dark with the picture, the level's own as it goes out,
+    // and the next level's comes in with it.
     (void)session.step(0, Play::MenuKeys{.next_level = true});
+    REQUIRE(session.minimap() != nullptr);
+    const Minimap going = *session.minimap();
     const std::vector<Screen> loading = session.step(0);
     REQUIRE(session.scene_loaded());
     REQUIRE(loading.size() > 140);
     CHECK(std::ranges::count_if(loading, [](const Screen& screen) { return screen.fading; }) > 140);
     CHECK_FALSE(loading.back().fading);
+    const auto dark = std::ranges::find_if(loading, [](const Screen& screen) { return screen.bright <= 0.0F; });
+    REQUIRE(dark != loading.end());
+    CHECK(std::all_of(loading.begin(), dark,
+                      [&going](const Screen& screen) { return screen.minimap && *screen.minimap == going; }));
+    CHECK(loading.front().bright > 0.9F);
+    CHECK(loading.front().bright > std::prev(dark)->bright);
+    REQUIRE(loading.back().minimap);
+    CHECK(*loading.back().minimap == *session.minimap());
+    CHECK(*loading.back().minimap != going);
+    CHECK(loading.back().bright == 1.0F);
+    CHECK(session.minimap(loading.front()) == loading.front().minimap.get());
+    session.toggle_minimap();  // (switched off: none over any picture)
+    CHECK(session.minimap(loading.front()) == nullptr);
+    session.toggle_minimap();
     CHECK(loading.back().motion.view == farthest);
     CHECK(loading.back().part == Screen::Part{.x = 0, .y = 0, .width = 640, .height = 480});
 }
@@ -1076,4 +1094,31 @@ TEST_CASE("real data: Remaster rules: the menu's QUIT GAME isn't held up by a te
         (void)session.step(0, yes);
     }
     CHECK(session.quit());
+}
+
+TEST_CASE("real data: Remaster rules: the GAME OVER letters are seen as they fall, as under Vanilla rules",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    std::vector<std::uint8_t> vanilla;
+    for (const Rules rules : {Rules::kVanilla, Rules::kRemaster}) {
+        auto opened = Session::open(LVR_ORIGINAL_DIR, scene::kGameOver, {}, rules);
+        REQUIRE(opened);
+        Session& session = **opened;
+        for (int step = 0; step < 300; ++step) {  // (until "try again?" is asked)
+            (void)session.step(0);
+        }
+        session.key_pressed('N');
+        std::vector<Screen> pictures;
+        for (int step = 0; step < 80; ++step) {
+            pictures = session.step(0);
+        }
+        REQUIRE_FALSE(pictures.empty());
+        if (rules == Rules::kVanilla) {
+            vanilla = pictures.back().pixels;
+        } else {  // (the letters, packed, from the front pool: they had no frame buffer and weren't drawn)
+            CHECK(pictures.back().pixels == vanilla);
+        }
+    }
 }

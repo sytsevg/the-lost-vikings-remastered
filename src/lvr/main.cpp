@@ -273,7 +273,7 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
             }
             gpu->set_overlay(menu_picture(menu, session.font()));
         }
-        if (!save_shown(*gpu, last, session.minimap(), out)) {
+        if (!save_shown(*gpu, last, session.minimap(last), out)) {
             return EXIT_FAILURE;
         }
         for (std::size_t picture = 0; picture < frames.size() && options.moments > 0; ++picture) {
@@ -282,7 +282,7 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
                 each.replace_filename(
                     std::format("{}-{}-{}{}", out.stem().string(), picture, moment, out.extension().string()));
                 const float between = static_cast<float>(moment) / static_cast<float>(options.moments);
-                if (!save_shown(*gpu, frames[picture], session.minimap(), each, between)) {
+                if (!save_shown(*gpu, frames[picture], session.minimap(frames[picture]), each, between)) {
                     return EXIT_FAILURE;
                 }
             }
@@ -788,7 +788,7 @@ Go run(Window& in, Place& place) {
             } else if (menu) {
                 coop_shown = {};  // (drawn again when the menu closes)
             }
-            const Minimap* minimap = last_shown.fading ? nullptr : session.minimap();  // when the level is there
+            const Minimap* minimap = session.minimap(last_shown);  // (a scene's fades darken it with the picture)
             const std::uint64_t show_began = SDL_GetPerformanceCounter();
             const auto done = gpu->show(last_shown, minimap, between);
             if (report_slow) {

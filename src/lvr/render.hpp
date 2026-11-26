@@ -21,6 +21,11 @@
 
 namespace lvr {
 
+struct Minimap;  // (minimap.hpp)
+
+// The display the original runs on: Mode X, 527 lines (docs/original/timing.md). A tick is three refreshes.
+inline constexpr double kDisplayHz = 25'175'000.0 / (800.0 * 527.0);
+
 inline constexpr int kScreenWidth = 320;
 inline constexpr int kScreenHeight = 240;
 inline constexpr int kPlayfieldHeight = 176;  // above the HUD
@@ -150,7 +155,13 @@ struct Screen {
     // which goes on whatever the play does.
     std::uint32_t refresh = 0;
     bool rewinding = false;  // the picture is one of time running backwards (Remaster rules): it is marked so
-    bool fading = false;     // a scene's going dark or coming in: nothing is laid over it (the minimap)
+    bool fading = false;     // a scene's going dark or coming in
+    // How bright the picture is for a scene's fade (or a game online rising from black): 1 not darkened, 0 black.
+    // What is laid over it (the minimap) goes as dark.
+    float bright = 1;
+    // Remaster rules, in a level: its minimap as it was when the picture was drawn (a scene fading out keeps its
+    // own while the next is already there).
+    std::shared_ptr<const Minimap> minimap;
     // Remaster rules, in a level being played: how much of the level's rewind is left (0 to 1), shown in a bar along
     // the minimap's bottom.
     std::optional<float> rewind_left;

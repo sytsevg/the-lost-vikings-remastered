@@ -66,7 +66,7 @@ only under Remaster rules; Vanilla rules must stay exactly what they are, and th
   kept than are left; a scene's start (`Play::scenes_started`, a level started again too) lets go of what was
   kept and gives all 199 again. Only in a level being played: never back from the game-over scene.
 - **The rewind's bar** (2026-11-25): `Screen::rewind_left` (set by `Session::picture` in a level being played,
-  not over a fade) says how much is left; the GPU renderer draws the bar along the minimap's bottom when it draws
+  over its fades too, darkened as the minimap is) says how much is left; the GPU renderer draws the bar along the minimap's bottom when it draws
   the minimap, faded in and out with it (`kGaugeAt` in `gpu.cpp`, in the original's pixels from the minimap's
   corner; `gpu_gauge.frag`: in the original's pixels, each one colour, as the user asked, 85% opaque: a white frame with
   two pixels cut off each corner, light grey inside from the left in whole columns, dark past that, and the

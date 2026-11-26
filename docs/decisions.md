@@ -289,8 +289,11 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   by a column of its stone tiles to make room (it slides aside, then the minimap fades in; the other way round
   when it is put away); zoomed out the smaller HUD is clear of the corner and stays in the middle. M puts it
   away (not Tab, which is the inventory). What was seen is the player's, not the simulation's: `Session` keeps
-  it per level, and it is kept in the player's profile (below). Only in the 37 levels, and not while a scene
-  fades in or out.
+  it per level, and it is kept in the player's profile (below). Only in the 37 levels. A scene's fades darken it
+  with the picture: each picture carries its level's minimap and how bright it is (`Screen::minimap`,
+  `Screen::bright`), so a level going out keeps its own and the next one's rises with it (the user, 2026-11-26:
+  it vanished at once). Its slide and fade, and the rewind's flashing mark, go by the refreshes by the time gone,
+  not by the pictures shown (with pictures shown as fast as the window may, they went twice as fast).
 - **Shots stop at a slope** (Remaster rules): the original's straight shots (the gunners', the troopers')
   stop at walls only and fly on through a slope's ground; zoomed out that is seen, so they burst there.
 - **The game-over letters drop in front of the Vikings** (Remaster rules): their pieces come from the front

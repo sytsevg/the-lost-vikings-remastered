@@ -446,14 +446,16 @@ void Session::update_minimap() {
     const World& world = play_.world;
     if (world.rules != Rules::kRemaster || world.scene > scene::kLastLevel || !world.has_vikings ||
         !play_.loaded().level.hud || world.map.cells.empty()) {
-        minimap_ = {};
+        minimap_.reset();
+        minimap_scene_ = play_.scenes_started;
         return;
     }
     SeenLevel& seen = seen_[world.level];
     seen.width = world.map.width * kMinimapCell;
     seen.height = world.map.height * kMinimapCell;
     reveal(seen.seen, world, player_);  // (what was kept for a map of another size is dropped there)
-    minimap_ = draw_minimap(world, seen.seen);
+    minimap_ = std::make_shared<const Minimap>(draw_minimap(world, seen.seen));
+    minimap_scene_ = play_.scenes_started;
 }
 
 std::vector<Screen> Session::numbered(std::vector<Screen> shown) {
@@ -496,15 +498,23 @@ Screen Session::picture(bool dimmed) {
     if ((dimmed || dimmed_) && view.darken == std::array<std::uint8_t, 3>{}) {
         view.darken = kMenuTint;
     }
+    constexpr int kDarkest = 63;  // (of the VGA's levels a colour)
+    int darkened = 0;
     if (play_.fade) {  // between scenes every colour is darkened
         view.darken = {*play_.fade, *play_.fade, *play_.fade};
         view.darken_all = true;
-    } else if (fade_in_left_ > 0) {  // (one joining under way: the game as it is, coming in)
-        constexpr int kDarkest = 63;
+        darkened = *play_.fade;
+    } else if (fade_in_left_ > 0) {  // (a game online, coming in)
         const auto dark = static_cast<std::uint8_t>(kDarkest * fade_in_left_ / kFadeInRefreshes);
         view.darken = {dark, dark, dark};
         view.darken_all = true;
+        darkened = dark;
         --fade_in_left_;
+    }
+    // A new scene's first picture (its first tick, as it fades in): its minimap now, not after the step. (A scene
+    // fading out has its own still.)
+    if (minimap_scene_ != play_.scenes_started) {
+        update_minimap();
     }
     Screen screen;
     if (effects_on_) {
@@ -516,7 +526,9 @@ Screen Session::picture(bool dimmed) {
         effects_.add(world, play_.graphics(), view, screen, moving_ && !play_.fade && !play_.in_menu(), brightness);
     }
     draw_(screen, view, play_.graphics(), shared_);
-    if (view.hud && gauge_shown(world) && !play_.fade) {  // (not laid over a scene's fades, as the minimap isn't)
+    screen.bright = static_cast<float>(std::max(0, kDarkest - darkened)) / static_cast<float>(kDarkest);
+    screen.minimap = minimap_;
+    if (view.hud && gauge_shown(world)) {  // (through a scene's fades too, with the minimap)
         // (A scene that was just started, still in its first step: all of its rewind, as the next step has it.)
         const int left = play_.scenes_started == rewind_scene_ ? rewind_left_ : kRewindSteps;
         screen.rewind_left = static_cast<float>(left) / static_cast<float>(kRewindSteps);

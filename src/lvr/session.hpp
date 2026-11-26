@@ -30,9 +30,6 @@
 
 namespace lvr {
 
-// The display the original runs on: Mode X, 527 lines (docs/original/timing.md). A tick is three refreshes.
-inline constexpr double kDisplayHz = 25'175'000.0 / (800.0 * 527.0);
-
 // The sound's versions (ADR-0015): which one is heard, and the Modern one's SoundFont. Without a SoundFont there
 // is only the Classic one.
 struct SessionSound {
@@ -156,7 +153,9 @@ class Session {
     bool waiting_for_key() const noexcept { return play_.world.waiting_for_key; }
     // Remaster rules' minimap, as the last step left it: the level as far as a view has shown it since the game
     // was started. None in a scene that isn't a level, under Vanilla rules, or while it is switched off.
-    const Minimap* minimap() const noexcept { return minimap_on_ && !minimap_.pixels.empty() ? &minimap_ : nullptr; }
+    const Minimap* minimap() const noexcept { return minimap_on_ ? minimap_.get() : nullptr; }
+    // The one to lay over a picture: the picture's own (Screen::minimap), unless it is switched off.
+    const Minimap* minimap(const Screen& shown) const noexcept { return minimap_on_ ? shown.minimap.get() : nullptr; }
     // The player's profile is kept in `folder` from here on (Remaster rules; Vanilla keeps none): what is there is
     // read now, and written by save_profile() and whenever a scene is loaded. An error says what couldn't be read;
     // the profile is used all the same, and the file that couldn't be read is written over at the next save.
@@ -169,7 +168,7 @@ class Session {
     bool minimap_wanted() const noexcept { return minimap_on_; }
     void set_minimap(bool on) noexcept { minimap_on_ = on; }
     bool toggle_minimap() noexcept {
-        if (!takes_play_keys() || minimap_.pixels.empty()) {  // only where there is one: in a level
+        if (!takes_play_keys() || !minimap_) {  // only where there is one: in a level
             return false;
         }
         minimap_on_ = !minimap_on_;
@@ -352,8 +351,9 @@ class Session {
     std::vector<std::int16_t>
         heard_;        // live: the sound of the last ten seconds as it was heard, for hearing it backwards
     SeenLevels seen_;  // by level: what a view has shown of it (the minimap's pixels)
-    std::filesystem::path profile_;  // where the player's profile is kept; empty: nowhere
-    Minimap minimap_;
+    std::filesystem::path profile_;               // where the player's profile is kept; empty: nowhere
+    std::shared_ptr<const Minimap> minimap_;      // (none where there is none)
+    std::optional<std::uint32_t> minimap_scene_;  // the scene it was drawn for (Play::scenes_started)
     bool minimap_on_ = true;
     bool dimmed_ = false;            // online, the menu open: the pictures darkened
     std::uint8_t fade_in_left_ = 0;  // refreshes of fade_in's still to come

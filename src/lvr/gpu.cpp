@@ -73,9 +73,11 @@ constexpr int kHudHeight = kScreenHeight - kPlayfieldHeight;
 constexpr int kMinimapSide = kHudHeight;
 constexpr int kMinimapCells = 64;
 constexpr int kHudSpare = 31;  // (a pixel less than a tile: the panel's tiles start a pixel in)
-constexpr float kSlidePictures = 10;
-constexpr float kFadePictures = 7;
-constexpr int kMarkPictures = 18;  // the rewind's mark: shown this long, then away this long
+// (In refreshes of the original's display, by the time gone: however many pictures a second are shown.)
+constexpr float kSlideRefreshes = 10;
+constexpr float kFadeRefreshes = 7;
+constexpr float kMarkRefreshes = 18;         // the rewind's mark: shown this long, then away this long
+constexpr float kMostRefreshesAPicture = 6;  // (a picture shown late moves what slides no more than this)
 // The Modern visuals' light (gpu_show.frag): how far around a colour that gives light its glow reaches, in the
 // picture's pixels.
 constexpr float kGlowReach = 5;
@@ -236,9 +238,10 @@ struct GpuRenderer::State {
     SDL_GPUTexture* crt_source = nullptr;
     int crt_width = 0;
     int crt_height = 0;
-    int marked = 0;       // for how many pictures in a row it has been wanted
-    float made_room = 0;  // how far the HUD has slid aside for the minimap: 0 not at all, 1 all the way
-    float faded_in = 0;   // how much of the minimap is there: 0 nothing, 1 all of it
+    float marked = 0;                // for how many refreshes in a row it has been wanted
+    std::uint64_t last_show_ns = 0;  // when the window last showed a picture (what slides and fades goes by it)
+    float made_room = 0;             // how far the HUD has slid aside for the minimap: 0 not at all, 1 all the way
+    float faded_in = 0;              // how much of the minimap is there: 0 nothing, 1 all of it
     SDL_GPUTransferBuffer* palette_upload = nullptr;
     // What stops the Modern visuals' light (Screen::ground): a texture of it, and which one it holds (0: the empty
     // one it starts with).
@@ -1309,17 +1312,29 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
     // The HUD slides aside first, and the minimap fades in when it is there; taken away, the minimap fades out and
     // then the HUD slides back. (A picture read back is shown as it ends up.) Fading out, it is the minimap as it
     // last was.
+    // A scene's fades darken it with the picture; in a picture all dark it is as it will be (the next scene's
+    // rises with it, or there is none).
     const bool wanted = minimap != nullptr && upload_over(commands, *minimap);
-    if (own) {
+    float passed = 1;  // refreshes since the last picture shown
+    if (!own) {
+        const std::uint64_t now = SDL_GetTicksNS();
+        passed = last_show_ns == 0
+                     ? 1.0F
+                     : std::min(static_cast<float>(static_cast<double>(now - last_show_ns) / 1e9 * kDisplayHz),
+                                kMostRefreshesAPicture);
+        last_show_ns = now;
+    }
+    if (own || screen.bright <= 0.0F) {
         made_room = faded_in = wanted ? 1.0F : 0.0F;
     } else if (wanted) {
-        made_room = std::min(made_room + (1.0F / kSlidePictures), 1.0F);
-        faded_in = made_room >= 1.0F ? std::min(faded_in + (1.0F / kFadePictures), 1.0F) : 0.0F;
+        made_room = std::min(made_room + (passed / kSlideRefreshes), 1.0F);
+        faded_in = made_room >= 1.0F ? std::min(faded_in + (passed / kFadeRefreshes), 1.0F) : 0.0F;
     } else {
-        faded_in = std::max(faded_in - (1.0F / kFadePictures), 0.0F);
-        made_room = faded_in <= 0.0F ? std::max(made_room - (1.0F / kSlidePictures), 0.0F) : made_room;
+        faded_in = std::max(faded_in - (passed / kFadeRefreshes), 0.0F);
+        made_room = faded_in <= 0.0F ? std::max(made_room - (passed / kSlideRefreshes), 0.0F) : made_room;
     }
-    const bool with_minimap = faded_in > 0.0F && over_width != 0;
+    const float seen = faded_in * std::clamp(screen.bright, 0.0F, 1.0F);
+    const bool with_minimap = seen > 0.0F && over_width != 0;
     const bool with_overlay = whole == 0 && upload_overlay(commands);
     void* mapped = SDL_MapGPUTransferBuffer(device, palette_upload, true);
     if (mapped == nullptr) {
@@ -1580,11 +1595,10 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
             .source = {source_x, source_y, side, side},
             .size = {static_cast<float>(width), static_cast<float>(height)},
             .unused = {}};
-        Over how{
-            .size = {static_cast<float>(over_width), static_cast<float>(over_height), side / kMinimapSide, faded_in},
-            .window = {source_x, source_y, source_x + side, source_y + side},
-            .view = view,
-            .vikings = {}};
+        Over how{.size = {static_cast<float>(over_width), static_cast<float>(over_height), side / kMinimapSide, seen},
+                 .window = {source_x, source_y, source_x + side, source_y + side},
+                 .view = view,
+                 .vikings = {}};
         for (std::size_t who = 0; who < how.vikings.size(); ++who) {
             const Screen::Viking& viking = screen.vikings.at(who);
             how.vikings.at(who) = {static_cast<float>(viking.x) * kToMinimap, static_cast<float>(viking.y) * kToMinimap,
@@ -1609,7 +1623,7 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
                              .size = placed.size,
                              .unused = {}};
             const Gauge gauge{.size = {kGaugeAt[2], kGaugeAt[3], kGaugeRadius, 1},
-                              .left = {std::clamp(*screen.rewind_left, 0.0F, 1.0F), faded_in, 0, 0}};
+                              .left = {std::clamp(*screen.rewind_left, 0.0F, 1.0F), seen, 0, 0}};
             SDL_BindGPUGraphicsPipeline(pass, own_format ? gauge_pipeline_own : gauge_pipeline);
             SDL_PushGPUVertexUniformData(commands, 0, &bar, sizeof(bar));
             SDL_PushGPUFragmentUniformData(commands, 0, &gauge, sizeof(gauge));
@@ -1618,8 +1632,9 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
     }
     // Time running backwards: two triangles pointing left in the screen's top right corner, flashing (about twice
     // a second; in a picture read back they are there). First dark, a pixel down and right, then light over it.
-    marked = screen.rewinding ? marked + 1 : 0;
-    if (whole == 0 && screen.rewinding && (own || ((marked - 1) / kMarkPictures) % 2 == 0)) {
+    const float marked_before = marked;
+    marked = screen.rewinding ? marked + passed : 0;
+    if (whole == 0 && screen.rewinding && (own || static_cast<int>(marked_before / kMarkRefreshes) % 2 == 0)) {
         constexpr std::uint32_t kCorners = 6;
         constexpr int kWide = 18;  // the two together, in the original's pixels
         constexpr int kHigh = 11;

@@ -274,8 +274,8 @@ class Player {
             one.packed_set = set;
             one.from = Piece::From::kUnpacked;
             if (layout.buffer_each) {  // its own buffer, from the start of it (PiecePainter finds it by the piece)
-                one.frame =
-                    place >= layout.middle_begin && place < layout.middle_end ? std::uint16_t{1} : std::uint16_t{0};
+                // (The front pool's too: Remaster rules' GAME OVER letters, packed, are drawn from it.)
+                one.frame = place < layout.middle_end ? std::uint16_t{1} : std::uint16_t{0};
             } else {
                 one.frame = context_.tables != nullptr && buffer >= 0 && buffer < 16
                                 ? context_.tables->buffer_offsets.at(static_cast<std::size_t>(buffer))
@@ -466,10 +466,10 @@ std::optional<std::size_t> PiecePainter::buffer_of(const Pieces& pieces, std::si
     if (!layout.buffer_each) {
         return std::size_t{piece.frame} - 1;
     }
-    if (std::cmp_less(index, layout.middle_begin) || std::cmp_greater_equal(index, layout.middle_end)) {
+    if (std::cmp_greater_equal(index, layout.middle_end)) {  // (the front and the middle pool's pieces have one)
         return std::nullopt;
     }
-    return ((index - static_cast<std::size_t>(layout.middle_begin)) * kBufferBytes) + piece.frame - 1;
+    return (index * kBufferBytes) + piece.frame - 1;
 }
 
 void PiecePainter::unpack(const Pieces& pieces, const Sprite& sprite, const SpriteMemory& memory) {
@@ -484,8 +484,7 @@ void PiecePainter::unpack(const Pieces& pieces, const Sprite& sprite, const Spri
         return;
     }
     if (const PieceLayout& layout = pieces.layout(); layout.buffer_each) {
-        buffers_.resize(std::max(buffers_.size(),
-                                 static_cast<std::size_t>(layout.middle_end - layout.middle_begin) * kBufferBytes));
+        buffers_.resize(std::max(buffers_.size(), static_cast<std::size_t>(layout.middle_end) * kBufferBytes));
     }
     // The set starts with a table of where each frame is. A frame is, per plane and row, a byte that says which
     // of 8 pixels are there, then those pixels, two to a byte (the first in the high half).
