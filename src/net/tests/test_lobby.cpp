@@ -49,7 +49,7 @@ TEST_CASE(
     CHECK(host.connection->names() == std::vector<std::string>{"HOST", "SECOND"});
     CHECK(second.connection->names() == host.connection->names());
 
-    host.lobby.reset();
+    host.hosting.reset();
     host.connection.reset();
     host.gone = true;
     REQUIRE(table.until([&] { return !second.error.empty(); }));
@@ -63,18 +63,18 @@ TEST_CASE(
     Machine<>& host = table.host();
     Machine<>& guest = table.join("guest");
     REQUIRE(table.until([&] { return guest.lobby->welcomed(); }));
-    host.lobby->set_slot(5);
+    host.hosting->set_slot(5);
     REQUIRE(table.until([&] { return guest.lobby->slot() == 5; }));
 
-    host.lobby->start();
+    host.hosting->start();
     REQUIRE(table.until([&] { return guest.lobby->countdown() == 3; }));
-    host.lobby->cancel_start();
+    host.hosting->cancel_start();
     REQUIRE(table.until([&] { return guest.lobby->countdown() == 0; }));
     table.wait(300);  // (five seconds: nothing starts)
     CHECK(host.match == nullptr);
     CHECK(guest.match == nullptr);
 
-    host.lobby->start();
+    host.hosting->start();
     bool counted = false;
     REQUIRE(table.until([&] {
         counted = counted || (guest.lobby != nullptr && guest.lobby->countdown() == 1);  // (3, 2, 1)

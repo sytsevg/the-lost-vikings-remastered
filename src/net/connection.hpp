@@ -2,8 +2,9 @@
 
 // A machine's connection to the others of a game online (ADR-0012), through its transport: who is who and their
 // names, the round trips, the game's number, and what came, a message at a time. It outlives the games played over
-// it: the lobby (net::Lobby) has it, a game (net::Match) has it while it lasts, and the lobby has it back. What one
-// of them leaves unread (what came after the word to start a game, or to go back to the lobby) is the other's.
+// it: the lobby (net::HostLobby, net::GuestLobby) has it, a game (net::Match) has it while it lasts, and the lobby has
+// it back. What one of them leaves unread (what came after the word to start a game, or to go back to the lobby) is the
+// other's.
 //
 // The host is in the middle: a guest talks to the host only. The host's players are numbered from 0 (himself), each
 // with his machine's peer number in the transport; a guest's only peer is the host (0).

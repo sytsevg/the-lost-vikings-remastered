@@ -59,18 +59,24 @@ struct Stepped {
     Go go;
 };
 
-// What a place may ask of the window's menu.
+// The window's menu as a place sees it: open or not (`menu`), opened as the window opens it (with the place's
+// choices, as Escape opens it), its picture drawn again. A window's, or one without (headless_ui).
 class Ui {
   public:
-    Ui() = default;
-    Ui(const Ui&) = delete;
-    Ui& operator=(const Ui&) = delete;
-    Ui(Ui&&) = delete;
-    Ui& operator=(Ui&&) = delete;
-    virtual ~Ui() = default;
-    virtual Menu* menu() = 0;       // open: the menu; none: closed
-    virtual Menu& open_menu() = 0;  // opened with the place's choices, as Escape opens it
-    virtual void redraw() = 0;      // its picture drawn again
+    Ui(std::optional<Menu>& menu, std::function<Menu&()> open, std::function<void()> redraw)
+        : menu_{&menu}, open_{std::move(open)}, redraw_{std::move(redraw)} {}
+    Menu* menu() { return *menu_ ? &**menu_ : nullptr; }
+    Menu& open_menu() { return open_(); }
+    void redraw() {
+        if (redraw_) {
+            redraw_();
+        }
+    }
+
+  private:
+    std::optional<Menu>* menu_;
+    std::function<Menu&()> open_;
+    std::function<void()> redraw_;
 };
 
 class Place {
@@ -117,20 +123,9 @@ class Place {
     virtual void leave(const Go& go) { (void)go; }
 };
 
-// The menu without a window (a dump, a test): opened with the place's choices and the settings given, drawn nowhere.
-class HeadlessUi final : public Ui {
-  public:
-    explicit HeadlessUi(Place& place, Settings settings = {}) : place_{&place}, settings_{std::move(settings)} {}
-    Menu* menu() override { return menu_ ? &*menu_ : nullptr; }
-    Menu& open_menu() override { return menu_.emplace(settings_, place_->choices()); }
-    void redraw() override {}
-    void close() { menu_.reset(); }
-
-  private:
-    Place* place_;
-    Settings settings_;
-    std::optional<Menu> menu_;
-};
+// The menu without a window (a dump, a test): kept in `menu`, opened with the place's choices and the settings
+// given, drawn nowhere.
+Ui headless_ui(std::optional<Menu>& menu, Place& place, Settings settings = {});
 
 // What the menu has to choose from: the Modern sound if there is one, the screen's looks, the passwords (HOST GAME's
 // level); online, whether this machine hosts a game from the title's lobby (RETURN TO LOBBY).
@@ -186,7 +181,7 @@ class ConnectingPlace final : public Place {
 
     // For the move on: the connection, the guest's lobby, and the game if it is under way.
     std::unique_ptr<net::Connection> take_connection() { return std::move(connection_); }
-    std::unique_ptr<net::Lobby> take_lobby() { return std::move(lobby_); }
+    std::unique_ptr<net::GuestLobby> take_lobby() { return std::move(lobby_); }
     const std::optional<net::Started>& started() const noexcept { return started_; }
 
   private:
@@ -197,7 +192,7 @@ class ConnectingPlace final : public Place {
     std::uint16_t port_ = 0;
     CoopOverlay overlay_;
     std::unique_ptr<net::Connection> connection_;
-    std::unique_ptr<net::Lobby> lobby_;
+    std::unique_ptr<net::GuestLobby> lobby_;
     std::optional<net::Started> started_;
     std::uint32_t began_ = 0;  // when the connection was made (the connection's clock)
     int refreshes_ = 0;
@@ -207,7 +202,9 @@ class ConnectingPlace final : public Place {
 // START (after a countdown) and its cancelling; LEAVE.
 class LobbyPlace final : public Place {
   public:
-    LobbyPlace(Session& offline, std::unique_ptr<net::Connection> connection, std::unique_ptr<net::Lobby> lobby);
+    // The host's lobby, or a guest's.
+    LobbyPlace(Session& offline, std::unique_ptr<net::Connection> connection, std::unique_ptr<net::HostLobby> lobby);
+    LobbyPlace(Session& offline, std::unique_ptr<net::Connection> connection, std::unique_ptr<net::GuestLobby> lobby);
 
     Session& session() override { return *offline_; }
     Menu::Choices choices() override { return menu_choices(*offline_); }
@@ -223,7 +220,8 @@ class LobbyPlace final : public Place {
   private:
     Session* offline_;
     std::unique_ptr<net::Connection> connection_;
-    std::unique_ptr<net::Lobby> lobby_;
+    std::unique_ptr<net::HostLobby> host_;  // (one of the two)
+    std::unique_ptr<net::GuestLobby> guest_;
     std::optional<net::Started> started_;
 };
 
@@ -303,12 +301,18 @@ class Places {
     net::Identity identity() const;  // (the name the settings' now)
     void offline(bool host, const std::string& why);
     void host(int level);
-    void lobby(std::unique_ptr<net::Connection> connection, std::unique_ptr<net::Lobby> lobby);
     void online(std::unique_ptr<net::Connection> connection, const net::Started& started);
+    // Into a place online, out of the one it was (what it hands on taken already).
+    void enter(std::unique_ptr<ConnectingPlace> place);
+    void enter(std::unique_ptr<LobbyPlace> place);
+    void enter(std::unique_ptr<OnlinePlace> place);
 
     OfflinePlace* offline_;
     Needs needs_;
-    std::unique_ptr<Place> online_;  // Connecting, Lobby or Online
+    // While online, one of these (current_ it).
+    std::unique_ptr<ConnectingPlace> connecting_;
+    std::unique_ptr<LobbyPlace> lobby_;
+    std::unique_ptr<OnlinePlace> game_;
     Place* current_;
     bool hosting_ = false;  // the last page online the title opened: HOST GAME
     bool done_ = false;

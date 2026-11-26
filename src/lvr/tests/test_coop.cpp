@@ -85,7 +85,7 @@ TEST_CASE("real data: one who joins level 1 under way comes to the very game the
     auto& host = table.host();
     auto& guest = table.join("guest");
     REQUIRE(table.until([&] { return guest.lobby->welcomed(); }));
-    host.lobby->start();
+    host.hosting->start();
     REQUIRE(table.until([&] { return host.match != nullptr && guest.match != nullptr; }));
     REQUIRE(table.run_to(100));
 

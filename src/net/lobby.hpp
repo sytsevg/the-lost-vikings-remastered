@@ -7,7 +7,6 @@
 
 #include <cstdint>
 #include <expected>
-#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -34,35 +33,56 @@ struct Started {
     std::vector<Presence> presence;
 };
 
-class Lobby {
-  public:
-    Lobby() = default;
-    Lobby(const Lobby&) = delete;
-    Lobby& operator=(const Lobby&) = delete;
-    Lobby(Lobby&&) = delete;
-    Lobby& operator=(Lobby&&) = delete;
-    virtual ~Lobby() = default;
-
-    // A pass: what came, and what is due. Once the game starts: what it is (what comes after the word to start is
-    // left for the game). An error: refused, or the host gone.
-    virtual std::expected<std::optional<Started>, std::string> poll() = 0;
-    // A guest: the host has given him a place (until then he is only connected). The host: always.
-    virtual bool welcomed() const noexcept = 0;
-    // The scene the game starts in: the host's choice, as a guest has it from the host.
-    virtual int slot() const noexcept = 0;
-    // The countdown's seconds left (3, 2, 1; 0: none), the host's, as a guest has it.
-    virtual int countdown() const = 0;
-    // The host's (a guest's: nothing): the scene to start in; START, after a countdown everyone is told of; and its
-    // cancelling.
-    virtual void set_slot(int slot) = 0;
-    virtual void start() = 0;
-    virtual void cancel_start() = 0;
-};
-
 // The host's lobby on `connection` (which it keeps until it is dropped), the game to start in `slot`. Those there
 // already (back from a game) are told their places again, closed up.
-std::unique_ptr<Lobby> host_lobby(Connection& connection, int slot, bool cheat);
-// A guest's: one connecting says hello first; one back from a game has his place (and the scene he last heard of).
-std::unique_ptr<Lobby> guest_lobby(Connection& connection, bool back, int slot = 0);
+class HostLobby {
+  public:
+    HostLobby(Connection& connection, int slot, bool cheat);
+
+    // A pass: what came, and what is due. Once the game starts: what it is (what comes after the word to start is
+    // left for the game). An error: the host's connection broken.
+    std::expected<std::optional<Started>, std::string> poll();
+    // The scene the game starts in, and the countdown's seconds left (3, 2, 1; 0: none).
+    int slot() const noexcept;
+    int countdown() const;
+    // The scene to start in; START, after a countdown everyone is told of; and its cancelling.
+    void set_slot(int slot);
+    void start();
+    void cancel_start();
+
+  private:
+    void welcome(int peer, const Hello& hello);
+    void send_status();
+
+    Connection* connection_;
+    std::optional<std::uint32_t> status_sent_at_;
+    std::optional<std::uint32_t> counting_until_;  // when the countdown ends
+    int slot_ = 0;
+    int countdown_sent_ = 0;  // the seconds everyone was last told
+    bool cheat_ = false;
+    bool start_wanted_ = false;
+};
+
+// A guest's lobby: one connecting says hello first; one back from a game has his place (and the scene he last heard
+// of). He follows the host: who is there, the start, the countdown.
+class GuestLobby {
+  public:
+    GuestLobby(Connection& connection, bool back, int slot = 0);
+
+    // A pass: what came. Once the game starts (or, joining, the game under way): what it is. An error: refused, or
+    // the host gone.
+    std::expected<std::optional<Started>, std::string> poll();
+    // The host has given him a place (until then he is only connected).
+    bool welcomed() const noexcept;
+    // The scene the game starts in, and the countdown's seconds left, as the host says.
+    int slot() const noexcept;
+    int countdown() const;
+
+  private:
+    Connection* connection_;
+    int slot_ = 0;
+    int countdown_ = 0;
+    bool welcomed_ = false;
+};
 
 }  // namespace lvr::net

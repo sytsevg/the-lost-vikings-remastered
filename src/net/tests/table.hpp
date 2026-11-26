@@ -48,8 +48,9 @@ struct ToyGame : Toy {
 template <typename G = ToyGame>
 struct Machine {
     std::unique_ptr<Connection> connection;
-    std::unique_ptr<Lobby> lobby;
-    std::unique_ptr<G> game;  // the game's, made afresh for each
+    std::unique_ptr<HostLobby> hosting;  // the host's lobby, until a game starts
+    std::unique_ptr<GuestLobby> lobby;   // a guest's
+    std::unique_ptr<G> game;             // the game's, made afresh for each
     std::unique_ptr<Match> match;
     std::optional<Started> started;
     std::uint32_t given = 0;  // the inputs given so far
@@ -88,14 +89,14 @@ class Table {
     Machine<G>& host(int slot = 0) {
         Machine<G>& machine = machines.emplace_back();
         machine.connection = std::make_unique<Connection>(network.host(), identity("host"));
-        machine.lobby = host_lobby(*machine.connection, slot, false);
+        machine.hosting = std::make_unique<HostLobby>(*machine.connection, slot, false);
         return machine;
     }
     Machine<G>& join(const std::string& name, Identity as = identity("")) {
         Machine<G>& machine = machines.emplace_back();
         as.name = name;
         machine.connection = std::make_unique<Connection>(network.join(), std::move(as));
-        machine.lobby = guest_lobby(*machine.connection, false);
+        machine.lobby = std::make_unique<GuestLobby>(*machine.connection, false);
         return machine;
     }
     // Back to the lobby: the host's word to everyone (the host's machine), or a guest's, told.
@@ -106,13 +107,17 @@ class Table {
         machine.match.reset();
         machine.started.reset();
         machine.back = false;
-        machine.lobby = machine.connection->hosting() ? host_lobby(*machine.connection, slot, false)
-                                                      : guest_lobby(*machine.connection, true);
+        if (machine.connection->hosting()) {
+            machine.hosting = std::make_unique<HostLobby>(*machine.connection, slot, false);
+        } else {
+            machine.lobby = std::make_unique<GuestLobby>(*machine.connection, true);
+        }
     }
     void leave(Machine<G>& machine) {
         machine.match->quit();
         machine.match.reset();
         machine.lobby.reset();
+        machine.hosting.reset();
         machine.connection.reset();
         machine.gone = true;
     }
@@ -228,8 +233,8 @@ class Table {
             }
             return;
         }
-        if (machine.lobby != nullptr && machine.error.empty()) {
-            auto polled = machine.lobby->poll();
+        if ((machine.lobby != nullptr || machine.hosting != nullptr) && machine.error.empty()) {
+            auto polled = machine.hosting != nullptr ? machine.hosting->poll() : machine.lobby->poll();
             if (!polled) {
                 machine.error = polled.error();
             } else if (*polled) {
@@ -237,6 +242,7 @@ class Table {
                 machine.game = G::made(*machine.started);
                 machine.match = std::make_unique<Match>(*machine.connection, *machine.game, *machine.started);
                 machine.lobby.reset();
+                machine.hosting.reset();
             }
         }
     }

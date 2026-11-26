@@ -32,7 +32,8 @@ struct Machine {
     std::unique_ptr<OfflinePlace> offline;
     Settings settings;
     std::unique_ptr<Places> places;
-    std::unique_ptr<HeadlessUi> ui;
+    std::optional<Menu> kept;  // the menu of the place it shows, when open
+    std::unique_ptr<Ui> ui;
     Place* shown = nullptr;  // the place the menu is for
     int due = 0;             // refreshes until its next step
     Screen last;             // the last picture it showed
@@ -44,17 +45,18 @@ struct Machine {
         return dynamic_cast<P*>(&place());
     }
     // The menu of the place it shows now: begun as the window's loop begins a place.
-    HeadlessUi& menu() {
+    Ui& menu() {
         if (&place() != shown) {
             shown = &place();
-            ui = std::make_unique<HeadlessUi>(place(), settings);
+            kept.reset();
+            ui = std::make_unique<Ui>(headless_ui(kept, place(), settings));
             place().begin(*ui);
         }
         return *ui;
     }
     // A refresh: what came, and every third (every one while it waits) the next pictures.
     void turn() {
-        HeadlessUi& shown_menu = menu();
+        Ui& shown_menu = menu();
         Go go = place().refresh(shown_menu);
         if (go.to == Go::To::kStay && --due < 0) {
             const Stepped stepped = place().step(Tick{}, shown_menu);
@@ -68,22 +70,22 @@ struct Machine {
     }
     // What the menu is asked, as a key in it asks it: the place's answer, and the menu closed unless kept.
     void ask(Menu::Asked asked) {
-        HeadlessUi& shown_menu = menu();
+        Ui& shown_menu = menu();
         Menu& open = shown_menu.menu() != nullptr ? *shown_menu.menu() : shown_menu.open_menu();
         const Place::Answer answer = place().asked(asked, open);
         if (!answer.handled) {
-            shown_menu.close();
+            kept.reset();
         }
         places->go(answer.go);
     }
     // A key in its menu, as the window's loop gives it: the menu's answer, the place's to it.
     void press(Menu::Key key) {
-        HeadlessUi& shown_menu = menu();
+        Ui& shown_menu = menu();
         Menu& open = shown_menu.menu() != nullptr ? *shown_menu.menu() : shown_menu.open_menu();
         const Menu::Asked asked = open.press(key);
         const Place::Answer answer = place().asked(asked, open);
         if (!answer.handled && asked != Menu::Asked::kNothing) {
-            shown_menu.close();
+            kept.reset();
         }
         places->go(answer.go);
     }

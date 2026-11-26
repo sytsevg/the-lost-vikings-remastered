@@ -16,7 +16,7 @@ namespace {
 
 // The host's START: everyone there into the game, after the countdown.
 void start(Table<>& table, Machine<>& host) {
-    host.lobby->start();
+    host.hosting->start();
     REQUIRE(table.until([&] {
         return std::ranges::all_of(table.machines, [](const Machine<>& one) { return one.gone || one.match; });
     }));

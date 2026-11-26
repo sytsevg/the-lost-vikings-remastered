@@ -166,7 +166,7 @@ Go ConnectingPlace::refresh(Ui& /*ui*/) {
             return back(said(std::format("NO GAME AT {}", where)));
         }
         connection_ = std::make_unique<net::Connection>(std::move(*joined), identity_);
-        lobby_ = net::guest_lobby(*connection_, false);
+        lobby_ = std::make_unique<net::GuestLobby>(*connection_, false);
         began_ = connection_->now_ms();
     }
     auto polled = lobby_->poll();
@@ -203,8 +203,13 @@ Stepped ConnectingPlace::step(const Tick& tick, Ui& /*ui*/) {
 
 // --- Lobby ---
 
-LobbyPlace::LobbyPlace(Session& offline, std::unique_ptr<net::Connection> connection, std::unique_ptr<net::Lobby> lobby)
-    : offline_{&offline}, connection_{std::move(connection)}, lobby_{std::move(lobby)} {}
+LobbyPlace::LobbyPlace(Session& offline, std::unique_ptr<net::Connection> connection,
+                       std::unique_ptr<net::HostLobby> lobby)
+    : offline_{&offline}, connection_{std::move(connection)}, host_{std::move(lobby)} {}
+
+LobbyPlace::LobbyPlace(Session& offline, std::unique_ptr<net::Connection> connection,
+                       std::unique_ptr<net::GuestLobby> lobby)
+    : offline_{&offline}, connection_{std::move(connection)}, guest_{std::move(lobby)} {}
 
 void LobbyPlace::begin(Ui& ui) {
     ui.open_menu().open_lobby(connection_->hosting());
@@ -212,7 +217,7 @@ void LobbyPlace::begin(Ui& ui) {
 }
 
 Go LobbyPlace::refresh(Ui& ui) {
-    auto polled = lobby_->poll();
+    auto polled = host_ != nullptr ? host_->poll() : guest_->poll();
     if (!polled) {
         std::println(stderr, "vikings-remaster: {}", polled.error());
         return Go{.to = Go::To::kOffline, .why = said(polled.error()), .failed = false, .host = false, .level = 0};
@@ -222,8 +227,8 @@ Go LobbyPlace::refresh(Ui& ui) {
         return Go{.to = Go::To::kOnline, .why = {}, .failed = false, .host = false, .level = 0};
     }
     if (Menu* menu = ui.menu(); menu != nullptr && menu->in_lobby()) {
-        if (const std::optional<int> level = menu->level_typed(); level && connection_->hosting()) {
-            lobby_->set_slot(*level < 0 ? scene::kIntro : *level);  // (the others see it as it is typed)
+        if (const std::optional<int> level = menu->level_typed(); level && host_ != nullptr) {
+            host_->set_slot(*level < 0 ? scene::kIntro : *level);  // (the others see it as it is typed)
         }
         std::vector<Menu::PlayerLine> lines;
         for (int who = 0; std::cmp_less(who, connection_->names().size()); ++who) {
@@ -231,11 +236,12 @@ Go LobbyPlace::refresh(Ui& ui) {
                              .network = round_trip_words(connection_->network_ms(who)),
                              .engine = round_trip_words(connection_->engine_ms(who))});
         }
-        std::string start_with = start_words(*offline_, lobby_->slot());
-        if (lines != menu->players() || start_with != menu->start() || lobby_->countdown() != menu->countdown()) {
+        std::string start_with = start_words(*offline_, host_ != nullptr ? host_->slot() : guest_->slot());
+        const int countdown = host_ != nullptr ? host_->countdown() : guest_->countdown();
+        if (lines != menu->players() || start_with != menu->start() || countdown != menu->countdown()) {
             menu->set_players(std::move(lines));
             menu->set_start(std::move(start_with));
-            menu->set_countdown(lobby_->countdown());
+            menu->set_countdown(countdown);
             ui.redraw();
         }
     }
@@ -253,11 +259,15 @@ Stepped LobbyPlace::step(const Tick& /*tick*/, Ui& ui) {
 Place::Answer LobbyPlace::asked(Menu::Asked asked, Menu& menu) {
     switch (asked) {
         case Menu::Asked::kStart:  // the host's: it starts, after a countdown
-            lobby_->set_slot(menu.level() < 0 ? scene::kIntro : menu.level());
-            lobby_->start();
+            if (host_ != nullptr) {
+                host_->set_slot(menu.level() < 0 ? scene::kIntro : menu.level());
+                host_->start();
+            }
             return {.handled = true, .go = {}};
         case Menu::Asked::kCancel:
-            lobby_->cancel_start();
+            if (host_ != nullptr) {
+                host_->cancel_start();
+            }
             return {.handled = true, .go = {}};
         case Menu::Asked::kLeave:  // (the connection dropped: the title again)
             return {.handled = false,
@@ -458,52 +468,54 @@ std::unique_ptr<net::Connection> OnlinePlace::take_connection() {
 // --- The moves ---
 
 void Places::go(const Go& go) {
-    const Go::To to = go.to;
-    if (to == Go::To::kStay) {
+    if (go.to == Go::To::kStay) {
         return;
     }
     current_->leave(go);
     failed_ = failed_ || go.failed;
-    if (to == Go::To::kDone) {
-        done_ = true;
-        return;
-    }
-    if (to == Go::To::kOffline) {
-        offline(hosting_, go.why);
-        return;
-    }
-    if (to == Go::To::kLobby && current_ == offline_) {  // HOST GAME: hosting on the port, the lobby at once
-        hosting_ = true;
-        host(go.level);
-        return;
-    }
-    if (to == Go::To::kConnecting) {  // JOIN GAME
-        hosting_ = false;
-        online_ = std::make_unique<ConnectingPlace>(offline_->session(), needs_.join, identity(),
-                                                    needs_.settings->join_address);
-        current_ = online_.get();
-        return;
-    }
-    if (auto* connecting = dynamic_cast<ConnectingPlace*>(current_)) {
-        if (to == Go::To::kLobby) {
-            lobby(connecting->take_connection(), connecting->take_lobby());
-        } else if (const std::optional<net::Started> started = connecting->started()) {
-            online(connecting->take_connection(), *started);
-        }
-        return;
-    }
-    if (auto* lobby_place = dynamic_cast<LobbyPlace*>(current_)) {  // the game starts
-        if (const std::optional<net::Started> started = lobby_place->started()) {
-            online(lobby_place->take_connection(), *started);
-        }
-        return;
-    }
-    if (auto* game = dynamic_cast<OnlinePlace*>(current_)) {  // back to the lobby, the connection kept
-        const int slot = game->slot();
-        std::unique_ptr<net::Connection> connection = game->take_connection();
-        net::Connection& kept = *connection;
-        lobby(std::move(connection),
-              kept.hosting() ? net::host_lobby(kept, slot, false) : net::guest_lobby(kept, true, slot));
+    switch (go.to) {
+        case Go::To::kStay:
+            return;
+        case Go::To::kDone:
+            done_ = true;
+            return;
+        case Go::To::kOffline:
+            offline(hosting_, go.why);
+            return;
+        case Go::To::kConnecting:  // JOIN GAME
+            hosting_ = false;
+            enter(std::make_unique<ConnectingPlace>(offline_->session(), needs_.join, identity(),
+                                                    needs_.settings->join_address));
+            return;
+        case Go::To::kLobby:
+            if (current_ == offline_) {  // HOST GAME: hosting on the port, the lobby at once
+                hosting_ = true;
+                host(go.level);
+            } else if (connecting_ != nullptr) {  // a guest given a place
+                enter(std::make_unique<LobbyPlace>(offline_->session(), connecting_->take_connection(),
+                                                   connecting_->take_lobby()));
+            } else if (game_ != nullptr) {  // back from the game, the connection kept
+                const int slot = game_->slot();
+                std::unique_ptr<net::Connection> connection = game_->take_connection();
+                net::Connection& kept = *connection;
+                enter(kept.hosting()
+                          ? std::make_unique<LobbyPlace>(offline_->session(), std::move(connection),
+                                                         std::make_unique<net::HostLobby>(kept, slot, false))
+                          : std::make_unique<LobbyPlace>(offline_->session(), std::move(connection),
+                                                         std::make_unique<net::GuestLobby>(kept, true, slot)));
+            }
+            return;
+        case Go::To::kOnline:  // the game starts, or a guest comes into it under way
+            if (lobby_ != nullptr) {
+                if (const std::optional<net::Started> started = lobby_->started()) {
+                    online(lobby_->take_connection(), *started);
+                }
+            } else if (connecting_ != nullptr) {
+                if (const std::optional<net::Started> started = connecting_->started()) {
+                    online(connecting_->take_connection(), *started);
+                }
+            }
+            return;
     }
 }
 
@@ -515,7 +527,9 @@ net::Identity Places::identity() const {
 
 void Places::offline(bool host, const std::string& why) {
     current_ = offline_;
-    online_.reset();  // (the connection dropped: the others see this one go now)
+    connecting_.reset();  // (the connection dropped: the others see this one go now)
+    lobby_.reset();
+    game_.reset();
     if (!why.empty()) {
         offline_->tell(host, why);
     }
@@ -532,13 +546,8 @@ void Places::host(int level) {
     std::println("vikings-remaster: hosting on port {}", port);
     auto connection = std::make_unique<net::Connection>(std::move(*hosted), identity());
     net::Connection& made = *connection;
-    lobby(std::move(connection), net::host_lobby(made, level < 0 ? scene::kIntro : level, false));
-}
-
-void Places::lobby(std::unique_ptr<net::Connection> connection, std::unique_ptr<net::Lobby> lobby) {
-    auto place = std::make_unique<LobbyPlace>(offline_->session(), std::move(connection), std::move(lobby));
-    current_ = place.get();
-    online_ = std::move(place);
+    auto lobby = std::make_unique<net::HostLobby>(made, level < 0 ? scene::kIntro : level, false);
+    enter(std::make_unique<LobbyPlace>(offline_->session(), std::move(connection), std::move(lobby)));
 }
 
 void Places::online(std::unique_ptr<net::Connection> connection, const net::Started& started) {
@@ -548,8 +557,35 @@ void Places::online(std::unique_ptr<net::Connection> connection, const net::Star
         offline(hosting_, said(opened.error()));
         return;
     }
-    current_ = opened->get();
-    online_ = std::move(*opened);
+    enter(std::move(*opened));
+}
+
+void Places::enter(std::unique_ptr<ConnectingPlace> place) {
+    current_ = place.get();
+    connecting_ = std::move(place);
+    lobby_.reset();
+    game_.reset();
+}
+
+void Places::enter(std::unique_ptr<LobbyPlace> place) {
+    current_ = place.get();
+    lobby_ = std::move(place);
+    connecting_.reset();
+    game_.reset();
+}
+
+void Places::enter(std::unique_ptr<OnlinePlace> place) {
+    current_ = place.get();
+    game_ = std::move(place);
+    connecting_.reset();
+    lobby_.reset();
+}
+
+Ui headless_ui(std::optional<Menu>& menu, Place& place, Settings settings) {
+    return Ui{
+        menu,
+        [&menu, &place, settings = std::move(settings)]() -> Menu& { return menu.emplace(settings, place.choices()); },
+        {}};
 }
 
 }  // namespace lvr

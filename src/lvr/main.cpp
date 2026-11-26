@@ -181,7 +181,8 @@ struct DumpOptions {
 int dump(Session& session, int steps, const std::filesystem::path& out, const std::filesystem::path& wav,
          GpuRenderer* gpu, const DumpOptions& options) {
     OfflinePlace offline{session, options.showcase, false};  // (stepped as the window steps it)
-    HeadlessUi ui{offline};
+    std::optional<Menu> unopened;                            // (no menu opens)
+    Ui ui = headless_ui(unopened, offline);
     // (The original's keys, under either rules: what --hold and --tap name.)
     InputHandler hands{input::original_controls(), session.rules() == Rules::kRemaster};
     Screen last = session.start_frames.empty() ? Screen{} : session.start_frames.back();
@@ -615,17 +616,7 @@ Go run(Window& in, Place& place) {
         }
     };
     // What the place asks of the menu.
-    struct LoopUi final : Ui {
-        std::optional<Menu>* menu_kept = nullptr;
-        std::function<Menu&()> opened;
-        std::function<void()> drawn;
-        Menu* menu() override { return *menu_kept ? &**menu_kept : nullptr; }
-        Menu& open_menu() override { return opened(); }
-        void redraw() override { drawn(); }
-    } ui;
-    ui.menu_kept = &menu;
-    ui.opened = open_menu;
-    ui.drawn = menu_changed;
+    Ui ui{menu, open_menu, menu_changed};
     if (remaster && gpu != nullptr && place.own_session()) {
         use_settings(session, gpu, remastered->settings);
     }
