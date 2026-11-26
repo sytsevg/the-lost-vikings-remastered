@@ -413,6 +413,74 @@ TEST_CASE("audio: the OPL3 chip renders the writes into sound") {
     CHECK(loudest > 1000);
 }
 
+TEST_CASE("audio: the OPL3 chip starts a note again keyed off and on between two samples, as a bass is") {
+    const auto loudest = [](const std::vector<std::int16_t>& out) {
+        int most = 0;
+        for (const std::int16_t s : out) {
+            most = std::max(most, std::abs(int{s}));
+        }
+        return most;
+    };
+    Opl3 chip;
+    // A plucked sine on channel 0 (no sustain: it dies away while the key is held), keyed on.
+    for (const auto [reg, value] : std::initializer_list<std::pair<std::uint16_t, std::uint8_t>>{{0x105, 1},
+                                                                                                 {0x23, 0x01},
+                                                                                                 {0x43, 0x00},
+                                                                                                 {0x63, 0xFA},
+                                                                                                 {0x83, 0xFA},
+                                                                                                 {0xC0, 0x31},
+                                                                                                 {0xA0, 0x80},
+                                                                                                 {0xB0, 0x32}}) {
+        chip.write(reg, value);
+    }
+    std::vector<std::int16_t> out;
+    chip.render(0.05, out);
+    CHECK(loudest(out) > 1000);
+    out.clear();
+    chip.render(2.0, out);
+    out.erase(out.begin(), out.end() - (std::ptrdiff_t{2} * 497));
+    CHECK(loudest(out) < 100);  // died away
+    // The note ends and the next starts on its channel in one service call: the chip hears it start again.
+    chip.write(0xB0, 0x12);
+    chip.write(0xB0, 0x32);
+    out.clear();
+    chip.render(0.01, out);
+    CHECK(out.size() == 2 * 497);  // (the sample made between the two is the first of these)
+    CHECK(loudest(out) > 1000);
+}
+
+TEST_CASE("audio: the OPL3 chip sounds a 4-operator voice made and keyed on at one moment, as the logos' bass is") {
+    Opl3 chip;
+    // Channels 0 and 3 made a 4-operator pair, its four operators in a chain (FM-FM: only the fourth is heard, the
+    // first three silent, so it is a sine), keyed on: all in one service call.
+    for (const auto [reg, value] : std::initializer_list<std::pair<std::uint16_t, std::uint8_t>>{{0x105, 1},
+                                                                                                 {0x104, 1},
+                                                                                                 {0x20, 0x01},
+                                                                                                 {0x23, 0x01},
+                                                                                                 {0x28, 0x01},
+                                                                                                 {0x2B, 0x01},
+                                                                                                 {0x40, 0x3F},
+                                                                                                 {0x43, 0x3F},
+                                                                                                 {0x48, 0x3F},
+                                                                                                 {0x4B, 0x00},
+                                                                                                 {0x6B, 0xF0},
+                                                                                                 {0x8B, 0x00},
+                                                                                                 {0xC0, 0x30},
+                                                                                                 {0xC3, 0x30},
+                                                                                                 {0xA0, 0x80},
+                                                                                                 {0xB0, 0x32}}) {
+        chip.write(reg, value);
+    }
+    std::vector<std::int16_t> out;
+    chip.render(0.05, out);
+    CHECK(out.size() == 2 * 2485);  // (the samples made between the writes are the first of these)
+    int loudest = 0;
+    for (const std::int16_t s : out) {
+        loudest = std::max(loudest, std::abs(int{s}));
+    }
+    CHECK(loudest > 1000);
+}
+
 TEST_CASE("audio: the logo's music, register for register as the original's driver plays it", "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR);

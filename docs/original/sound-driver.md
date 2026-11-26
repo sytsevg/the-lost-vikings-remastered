@@ -214,3 +214,18 @@ key-off compared with its channel's registers (frequency, timbre, levels, connec
   or shorter. The ones without a partner are in the windows a scene change falls in (the offset moves there,
   `timing.md`); within a scene every note pairs. The cut notes were the Remaster's volume, then turned down in the
   driver ([`../decisions.md`](../decisions.md): the volumes are gains on the sound made).
+- **Notes the chip never started** (2026-11-26, the user: in the first 25 s, the logos' tune, a bass riff cut out,
+  silent, and back at random, though the notes above were the same): the same writes as the original's, but a
+  service call's reach the chip at one moment, and ymfm does two things only at its next sample. A `0x104` write
+  gives a pair of channels its 4-operator use there (`assign_operators`), while a key-on goes at once to the
+  operators the channel has then: a 4-operator voice set up and keyed on in one call keyed on two of its four,
+  and the logos' bass, whose output is its last pair, stayed silent. And a key-on bit is looked at once a sample
+  (`fm_operator::prepare`): off and on again between two, a note's envelope didn't start again. The original's
+  writes take time (the driver reads the status between them; DOSBox and Nuked OPL3's buffered writes put
+  them a couple of samples apart). `Opl3::write` makes a sample first after a `0x104` write
+  and before a key change the chip hasn't seen is undone. Found by the sound itself: the original's first minute
+  recorded in DOSBox-X (`tools/spotcheck.py wave --slot 39 --frames 3600`, Nuked's core), ours (`--dump 900 F
+  --wav W`), lined up 5 s at a time and compared below ~250 Hz. Our writes played through ymfm at once: 17 stretches
+  of 100 ms with under 35% of the original's bass in the logos' tune; spaced 2 samples apart, or through Nuked at
+  once or spaced, or ymfm with the two samples made: 4, all at the title's scene change, where the two line up
+  badly. The register writes are unchanged: comparing them, as above, could never show it.

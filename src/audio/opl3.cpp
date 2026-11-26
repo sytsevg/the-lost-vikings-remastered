@@ -601,6 +601,25 @@ void Opl3::write(std::uint16_t reg, std::uint8_t value) {
     if (chip_->told) {
         chip_->told(reg, value);
     }
+    // A service call's writes reach the chip at one moment; the original's take time (on the chip, in DOSBox, and with
+    // Nuked OPL3's buffered writes a couple of samples apart). Two things ymfm only does at its next sample would
+    // then be lost (the user, 2026-11-26: the logos' tune's bass cut out), so a sample is made first:
+    // - after `0x104`: ymfm gives a pair of channels its 4-operator use (its operators, assign_operators) at the next
+    //   sample, but a key-on goes at once to the operators the channel has: a 4-operator voice made and keyed on in
+    //   one call would key on two of its four, and one whose output is the last pair's stays silent;
+    // - a key-on bit (B0-B8) is looked at once a sample (fm_operator::prepare): written off and on again between two,
+    //   as when a note ends and the next starts on its channel in one call, the new note's envelope doesn't start.
+    const unsigned low = reg & 0xFFU;
+    const bool key = low >= 0xB0 && low <= 0xB8;
+    const std::size_t channel = key ? (low - 0xB0) + ((reg & 0x100U) != 0 ? 9 : 0) : 0;
+    const bool on = (value & 0x20U) != 0;
+    if (four_op_written_ || (key && on != keyed_.at(channel) && keyed_.at(channel) != seen_.at(channel))) {
+        generate(early_);
+    }
+    if (key) {
+        keyed_.at(channel) = on;
+    }
+    four_op_written_ = reg == 0x104;
     if ((reg & 0x100U) != 0) {
         chip_->chip.write_address_hi(static_cast<std::uint8_t>(reg & 0xFFU));
     } else {
@@ -609,16 +628,27 @@ void Opl3::write(std::uint16_t reg, std::uint8_t value) {
     chip_->chip.write_data(value);
 }
 
+void Opl3::generate(std::vector<std::int16_t>& out) {
+    ymfm::ymf262::output_data frame{};
+    chip_->chip.generate(&frame, 1);
+    for (const int channel : {0, 1}) {  // outputs A (left) and B (right); C and D aren't wired on the SB Pro 2
+        out.push_back(static_cast<std::int16_t>(std::clamp(frame.data[channel], -32768, 32767)));
+    }
+    seen_ = keyed_;
+    four_op_written_ = false;
+}
+
 void Opl3::render(double seconds, std::vector<std::int16_t>& out) {
     pending_ += seconds * rate_;
     const auto samples = static_cast<std::uint32_t>(pending_);
     pending_ -= samples;
-    ymfm::ymf262::output_data frame{};
-    for (std::uint32_t i = 0; i < samples; ++i) {
-        chip_->chip.generate(&frame, 1);
-        for (const int channel : {0, 1}) {  // outputs A (left) and B (right); C and D aren't wired on the SB Pro 2
-            out.push_back(static_cast<std::int16_t>(std::clamp(frame.data[channel], -32768, 32767)));
-        }
+    // What was made between writes first (it is the start of this stretch), then the rest.
+    const std::size_t early = std::min<std::size_t>(samples, early_.size() / 2);
+    const auto made = static_cast<std::ptrdiff_t>(early * 2);
+    out.insert(out.end(), early_.begin(), early_.begin() + made);
+    early_.erase(early_.begin(), early_.begin() + made);
+    for (std::size_t i = early; i < samples; ++i) {
+        generate(out);
     }
 }
 

@@ -141,10 +141,20 @@ class Opl3 : public OplSink {
     std::uint32_t sample_rate() const noexcept { return rate_; }
 
   private:
+    static constexpr std::size_t kChannels = 18;
+    void generate(std::vector<std::int16_t>& out);  // a sample, the key bits written so far seen by the chip
+
     struct Chip;
     std::unique_ptr<Chip> chip_;
     std::uint32_t rate_;
     double pending_ = 0;
+    // A channel's key-on bit as written (B0-B8, both banks) and as the chip saw it at its last sample; whether the
+    // last write was 0x104 (4-operator use); and the samples made between two writes for these (write), which the
+    // next render hands out first.
+    std::array<bool, kChannels> keyed_{};
+    std::array<bool, kChannels> seen_{};
+    bool four_op_written_ = false;
+    std::vector<std::int16_t> early_;
 };
 
 }  // namespace lvr::audio
