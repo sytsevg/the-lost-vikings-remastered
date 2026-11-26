@@ -27,7 +27,8 @@ why: [`decisions.md`](decisions.md); what is ahead: [`ROADMAP.md`](ROADMAP.md).
   a level's password, or none for a new game from the intro) until the host starts it after a countdown; the host
   can bring everyone back there for another; who comes later joins the game under way. The game's messages go by
   UDP and TCP both, numbered, the newest taken. Reviewed by an ultrareview of its code (ten findings, all fixed).
-  Restructured after an architecture review with the user (2026-11-26, on the branch `m9-places`, not yet merged):
+  Restructured after an architecture review with the user (2026-11-26, the branch `m9-places`, merged into main the
+  same day after his play-test and its fixes):
   a module for each place (`GLOSSARY.md`: Offline, Connecting, Lobby, Online), the protocol in `src/net` tested on
   a toy game over a simulated network ("Open", "M9 restructured"). What each part is and where it lives: "Open",
   the M9 entries. Not yet tried by the user: the lobby and the title's pages in two windows, and a game over a real
@@ -119,11 +120,10 @@ were dropped by the user, 2026-11-25). The screen's look is built ("Screen look"
 The state at the end of 2026-11-25: M8 is done (the user). What is next, what the user still has to judge on the
 host, and what is open:
 
-- **Next (2026-11-26): the user tries M9 as restructured** (the branch `m9-places`) in two windows
-  (`vikings-remaster --rules remaster`, and a second with `--profile build/release/bin/profiles-guest`: HOST GAME,
-  JOIN GAME at 127.0.0.1), then over a real network, and Vanilla rules too (its keys now go through
-  `InputHandler`); what he finds is fixed before anything else. Then `m9-places` merged into main (the user's
-  word). Then the tests are to be cut back a lot (the user: "WAY too many": a proposal first, "Open"; the three
+- **Next (2026-11-26):** M9 as restructured was played by the user (two windows, HOST GAME and JOIN GAME at
+  127.0.0.1) and everything he found fixed (the play-test's commits on `m9-places`, merged into main the same day:
+  the places timed by the screen's refreshes, the title's OPTIONS, the effects' twirl, fuse and blasts, halos hidden
+  by what is in front, the volumes as gains, ...). Then the tests are to be cut back a lot (the user: "WAY too many": a proposal first, "Open"; the three
   copies of the protocol and the loopback tests are gone already). Then M10, the extra sound effects (footsteps by
   surface, the bow, Olaf's shield, an electric buzz).
 - **The Modern sound's effects placed by position (built and checked 2026-11-25; being heard on the host):**
@@ -340,7 +340,7 @@ black. Under Remaster rules, with the user's SNES image (`*.sfc`) in `gamedata/o
   per entity under Remaster rules): to be measured before anything is made flatter (ADR-0012). Written out, the
   unused sprite pieces are a count (state version 9), and what a player joining under way is sent has numbers of
   variable length (ADR-0020).
-- **M9 restructured** (2026-11-26, the branch `m9-places`; the user, after an architecture review:
+- **M9 restructured** (2026-11-26, the branch `m9-places`, merged into main; the user, after an architecture review:
   `gamedata/previews/architecture/`; the words in `GLOSSARY.md`). Four commits, each checked (check.sh; the goldens
   and `lv-replay --rollback 8` after the second and at the end):
   - The places, `src/lvr/front.*`: `OfflinePlace` (the game alone; the only place under Vanilla rules),
