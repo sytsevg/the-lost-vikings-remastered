@@ -129,6 +129,9 @@ TEST_CASE("profile: the settings are written as lines and read back the same") {
     settings.zoom = 2;
     settings.minimap = false;
     settings.visual_fx = false;
+    settings.window_width = 1250;
+    settings.window_height = 1026;
+    settings.window_maximized = true;
     REQUIRE(input::bind_key(settings.controls, input::Action::kZoomIn, "Keypad -"));  // a name with spaces and -
     REQUIRE(input::bind_pad(settings.controls, input::Action::kRewind, "righttrigger"));
     settings.controls.keys.at(static_cast<std::size_t>(input::Action::kQuicksave)).clear();  // none
@@ -139,11 +142,18 @@ TEST_CASE("profile: the settings are written as lines and read back the same") {
     const std::string text = format_settings(settings);
     CHECK(text.ends_with("\nname RED BEARD\nhost-port 1234\nhost-password ABCD\njoin-address 10.0.0.2:4000\n"));
     CHECK(text.starts_with(
-        "lvr-settings 1\nsound modern\nmusic 3\nsound-fx 0\nscreen crt\nzoom 2\nminimap off\nvisual-fx off\n"));
+        "lvr-settings 1\nsound modern\nmusic 3\nsound-fx 0\nscreen crt\nzoom 2\nminimap off\nvisual-fx off\n"
+        "window 1250x1026\nwindow-maximized on\n"));
+    CHECK(format_settings(Settings{}).find("\nwindow ") == std::string::npos);  // (none yet: the default size)
     CHECK(text.find("\nkey zoom-in Keypad -\n") != std::string::npos);
     CHECK(text.find("\nkey quicksave\n") != std::string::npos);
     CHECK(parse_settings(text, problems) == settings);
     CHECK(problems.empty());
+    // A window's size of a sensible one only.
+    const Settings sized = parse_settings("lvr-settings 1\nwindow 10x10\nwindow 1280\nwindow 800x600\n", problems);
+    CHECK(problems == std::vector<std::string>{"line 2: not understood", "line 3: not understood"});
+    CHECK(sized.window_width == 800);
+    CHECK(sized.window_height == 600);
 }
 
 TEST_CASE("profile: settings are read leniently, a line at a time") {

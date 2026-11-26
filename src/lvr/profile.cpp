@@ -243,6 +243,22 @@ std::optional<int> whole_number(std::string_view text) {
     return value;
 }
 
+// "1280x960": a window's size, of a sensible one (from a quarter of the original's screen up).
+std::optional<std::pair<int, int>> window_size(std::string_view text) {
+    constexpr int kLeast = 80;
+    constexpr int kMost = 16384;
+    const std::size_t by = text.find('x');
+    if (by == std::string_view::npos) {
+        return std::nullopt;
+    }
+    const auto width = whole_number(text.substr(0, by));
+    const auto height = whole_number(text.substr(by + 1));
+    if (!width || !height || *width < kLeast || *height < kLeast || *width > kMost || *height > kMost) {
+        return std::nullopt;
+    }
+    return std::pair{*width, *height};
+}
+
 std::optional<bool> on_or_off(std::string_view text) {
     if (text == "on" || text == "off") {
         return text == "on";
@@ -258,6 +274,10 @@ std::string format_settings(const Settings& settings) {
     text += std::format("sound {}\nmusic {}\nsound-fx {}\nscreen {}\nzoom {}\nminimap {}\nvisual-fx {}\n",
                         settings.modern_sound ? "modern" : "classic", settings.music, settings.sound_fx,
                         settings.screen, settings.zoom, on(settings.minimap), on(settings.visual_fx));
+    if (settings.window_width > 0 && settings.window_height > 0) {
+        text += std::format("window {}x{}\n", settings.window_width, settings.window_height);
+    }
+    text += std::format("window-maximized {}\n", on(settings.window_maximized));
     const auto table = [&text](std::string_view word, const auto& bound) {
         for (std::size_t action = 0; action < input::kActionCount; ++action) {
             const std::string_view name = input::name_of(static_cast<input::Action>(action));
@@ -327,6 +347,11 @@ Settings parse_settings(std::string_view text, std::vector<std::string>& problem
             settings.minimap = *flag;
         } else if (flag && name == "visual-fx") {
             settings.visual_fx = *flag;
+        } else if (flag && name == "window-maximized") {
+            settings.window_maximized = *flag;
+        } else if (const auto size = window_size(line); size && name == "window") {
+            settings.window_width = size->first;
+            settings.window_height = size->second;
         } else if (name == "name") {  // (the rest of the line, as it may have a space; none: the default)
             settings.name = line;
         } else if (volume && *volume >= 1 && *volume <= 65535 && name == "host-port") {

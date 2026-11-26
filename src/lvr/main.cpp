@@ -145,6 +145,20 @@ void use_settings(Session& session, GpuRenderer* gpu, const Settings& settings) 
 }
 
 // What the GPU renderer shows of `screen`, three times the original's size, as a PNG.
+// The window as it is left, for the next time: maximized or not, and its size unless it is maximized (or
+// minimized), when the one it had before is kept.
+void remember_window(SDL_Window* window, Settings& settings) {
+    const SDL_WindowFlags flags = SDL_GetWindowFlags(window);
+    settings.window_maximized = (flags & SDL_WINDOW_MAXIMIZED) != 0;
+    int width = 0;
+    int height = 0;
+    if ((flags & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_MINIMIZED | SDL_WINDOW_FULLSCREEN)) == 0 &&
+        SDL_GetWindowSize(window, &width, &height) && width > 0 && height > 0) {
+        settings.window_width = width;
+        settings.window_height = height;
+    }
+}
+
 bool save_shown(GpuRenderer& gpu, const Screen& screen, const Minimap* minimap, const std::filesystem::path& out,
                 float between = 0) {
     constexpr int kScale = 3;
@@ -1058,6 +1072,14 @@ int main(int argc, char* argv[]) try {
             }
         }
         use_settings(**session, gpu.get(), remastered->settings);
+        if (window != nullptr) {  // (as it was last left)
+            if (remastered->settings.window_width > 0) {
+                SDL_SetWindowSize(window, remastered->settings.window_width, remastered->settings.window_height);
+            }
+            if (remastered->settings.window_maximized) {
+                SDL_MaximizeWindow(window);
+            }
+        }
     }
     if (!dump_to.empty()) {
         dumping.held = held;
@@ -1121,6 +1143,9 @@ int main(int argc, char* argv[]) try {
         std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
     }
     if (remastered && !profile.empty()) {
+        if (window != nullptr) {  // (the window as it is left: the next time it opens so)
+            remember_window(window, remastered->settings);
+        }
         if (const auto saved = save_settings(profile, remastered->settings); !saved) {
             std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
         }
