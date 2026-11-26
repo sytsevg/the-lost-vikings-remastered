@@ -89,13 +89,17 @@ Session::Session(assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, S
       modern_sound_{std::move(modern)},
       gm_{std::move(gm)} {
     opl_synth_ = std::make_unique<audio::OplSynth>(sound_.opl, chip_);
-    classic_ = std::make_unique<audio::Player>(sound_, *opl_synth_, opl_synth_.get(), true, true);
-    if (rules == Rules::kRemaster) {
+    if (rules == Rules::kRemaster) {  // the music, and the effects on a chip of their own
+        classic_ = std::make_unique<audio::Player>(sound_, *opl_synth_, opl_synth_.get(), true, false);
+        effects_synth_ = std::make_unique<audio::OplSynth>(sound_.opl, effects_chip_);
+        classic_effects_ = std::make_unique<audio::Player>(sound_, *effects_synth_, effects_synth_.get(), false, true);
         // The Classic sound's fire jets' roar is very loud (the user): under Remaster rules at 60% of its loudness,
         // which the chip gives at 87% of the volume (measured: its levels are steps of a decibel and less, not
         // shares). Vanilla rules' is the original's.
         constexpr int kRoarVolume = 87;
-        classic_->set_effect_loudness(effect::kRoar, kRoarVolume);
+        classic_effects_->set_effect_loudness(effect::kRoar, kRoarVolume);
+    } else {
+        classic_ = std::make_unique<audio::Player>(sound_, *opl_synth_, opl_synth_.get(), true, true);
     }
     if (gm_ != nullptr && modern_sound_) {
         gm_effects_ = gm_->copy();
@@ -152,8 +156,14 @@ void Session::set_zoom_level(int level) {
 
 void Session::set_volume(int music, int effects) {
     const std::scoped_lock lock{sound_mutex_};
-    const auto percent = [](int volume) { return std::clamp(volume, 0, kLoudest) * 100 / kLoudest; };
-    players([&](audio::Player& p) { p.set_loudness(percent(music), percent(effects)); });
+    // A gain on what is made, as the ear hears it: the square of the step (half way: a quarter, 12 dB down; the top
+    // step 2 dB from the next). The players play at the full volume, as written.
+    const auto gain = [](int volume) {
+        const std::int32_t step = std::clamp(volume, 0, kLoudest);
+        return (step * step * 65536) / (kLoudest * kLoudest);
+    };
+    music_gain_ = gain(music);
+    effects_gain_ = gain(effects);
 }
 
 // The view the zoom asks for here.
@@ -563,7 +573,7 @@ void Session::hear(const std::vector<SoundCue>& asked) {
         }
         switch (cue.kind) {
             case SoundCue::Kind::kEffect:
-                classic_->play_effect(cue.value);  // (the original's: as it is)
+                (classic_effects_ != nullptr ? *classic_effects_ : *classic_).play_effect(cue.value);  // (as it is)
                 if (modern_effects_ != nullptr) {
                     modern_effects_->play_effect(cue.value, placed(cue));
                 }
@@ -741,22 +751,37 @@ std::vector<Screen> Session::step_back() {
 // Half a display refresh of the sound: the driver serviced once (twice a refresh, docs/original/timing.md#audio),
 // then the chip and the synthesizers rendering that long.
 void Session::half_refresh_sound(std::vector<std::int16_t>& out) {
+    constexpr double kHalfRefresh = 0.5 / kDisplayHz;
     players([](audio::Player& p) { p.service(); });
-    chip_.render(0.5 / kDisplayHz, modern_on_ ? unheard_ : out);
+    // Both sounds are made (the one not heard all the same, so that it is where the other is when it is switched to):
+    // the Classic sound's chip, and under Remaster rules the effects' own; the Modern sound's synthesizers.
+    music_mix_.clear();
+    effects_mix_.clear();
+    chip_.render(kHalfRefresh, music_mix_);
+    if (classic_effects_ != nullptr) {
+        effects_chip_.render(kHalfRefresh, effects_mix_);
+    }
+    mix(music_mix_, effects_mix_, modern_on_ ? unheard_ : out);
     if (gm_ != nullptr) {
-        std::vector<std::int16_t>& heard = modern_on_ ? out : unheard_;
-        const std::size_t from = heard.size();
-        gm_->render(0.5 / kDisplayHz, heard);
-        if (gm_effects_ != nullptr) {  // the effects' synthesizer, mixed in
-            effects_mix_.clear();
-            gm_effects_->render(0.5 / kDisplayHz, effects_mix_);
-            for (std::size_t i = 0; i < effects_mix_.size() && from + i < heard.size(); ++i) {
-                heard[from + i] =
-                    static_cast<std::int16_t>(std::clamp(heard[from + i] + effects_mix_[i], -32768, 32767));
-            }
+        music_mix_.clear();
+        effects_mix_.clear();
+        gm_->render(kHalfRefresh, music_mix_);
+        if (gm_effects_ != nullptr) {
+            gm_effects_->render(kHalfRefresh, effects_mix_);
         }
+        mix(music_mix_, effects_mix_, modern_on_ ? out : unheard_);
     }
     unheard_.clear();
+}
+
+void Session::mix(const std::vector<std::int16_t>& music, const std::vector<std::int16_t>& effects,
+                  std::vector<std::int16_t>& out) const {
+    const std::size_t length = std::max(music.size(), effects.size());
+    for (std::size_t i = 0; i < length; ++i) {
+        const std::int64_t made = (std::int64_t{i < music.size() ? music[i] : 0} * music_gain_) +
+                                  (std::int64_t{i < effects.size() ? effects[i] : 0} * effects_gain_);
+        out.push_back(static_cast<std::int16_t>(std::clamp<std::int64_t>(made / 65536, -32768, 32767)));
+    }
 }
 
 std::vector<Screen> Session::held(bool dimmed) {

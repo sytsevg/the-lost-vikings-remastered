@@ -1283,3 +1283,32 @@ TEST_CASE("real data: Remaster rules' effects: a Viking teleporting gives off a 
     CHECK(going > 150);                       // (about 300 with it, 33 without: the level's own sparks)
     CHECK(coming > 150);
 }
+
+TEST_CASE("real data: Remaster rules' volumes are gains on the sound made: the music and the effects play as written",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    // Level 1 under Remaster rules, walked about (its music, and effects with it), at the full volume and at half
+    // (a quarter of the loudness): every sample a quarter of the other's. Turned down in the driver instead, the
+    // notes went quiet early (the user, 2026-11-26).
+    const auto heard = [](int volume) {
+        auto opened = Session::open(LVR_ORIGINAL_DIR, 0, {}, Rules::kRemaster);
+        REQUIRE(opened);
+        Session& session = **opened;
+        session.set_volume(volume, volume);
+        for (int step = 0; step < 90; ++step) {
+            (void)session.step(step < 6 && step % 2 != 0 ? key::kF : (step > 20 && step < 60 ? key::kRight : 0));
+        }
+        return session.samples;
+    };
+    const std::vector<std::int16_t> full = heard(kLoudest);
+    const std::vector<std::int16_t> half = heard(kLoudest / 2);
+    REQUIRE(full.size() == half.size());
+    REQUIRE(std::ranges::any_of(full, [](std::int16_t sample) { return std::abs(sample) > 1000; }));
+    std::size_t unlike = 0;
+    for (std::size_t i = 0; i < full.size(); ++i) {
+        unlike += std::abs((full[i] / 4) - half[i]) > 1 ? 1U : 0U;
+    }
+    CHECK(unlike == 0);
+}

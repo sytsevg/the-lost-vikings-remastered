@@ -358,10 +358,13 @@ Only under Remaster rules (ADR-0005). First called the QoL rules.
   see-through (the user), and laid over the screen as it is shown (through the screen's look like the rest), its
   pixels as large as the game's: smaller zoomed out, as the HUD and the text boxes are, but never smaller than at
   the zoom's middle step, 480 across (the user: at twice the view it was too small).
-- **The volumes** go through the sequencer's own volume of a tune or an effect (the driver's, which the game uses
-  for its fades): the same for both sounds, and at 10 the Classic sound's chip gets what it always did. At 0 no
-  note is played (the chip's quietest level can still be heard). The Classic sound is one chip for the music and
-  the effects together, so a gain on what it makes couldn't tell them apart.
+- **The volumes** are gains on the sound made (2026-11-26; first they went through the sequencer's volume of a
+  tune or an effect, the driver's, and turned down there the Classic sound's notes went quiet early, as if cut,
+  the user: at 6 of 10 the loudest 19 dB down, its levels being steps of the chip's): the players play at the full
+  volume, as written, and the music and the effects are each as loud as the square of their step (half way a
+  quarter, 12 dB down). So that they can be: under Remaster rules the Classic sound's effects have a chip of
+  their own, as the Modern sound's have a synthesizer (`Session::classic_effects_`; they no longer take channels
+  from the music, as the original's do). Vanilla rules keep the one chip, at the full volume.
 - **Controls** (built, 2026-11-25): what does each action, on the keyboard and on a gamepad, is the player's,
   set in the menu and kept in `settings.txt`; Remaster rules' own actions (rewind, zoom, minimap, the quicksave) are among them. On the keyboard a key an action (the user: not the original's several,
   the keypad's too): choosing a key puts it in place of the one the action had. On a gamepad any number (the

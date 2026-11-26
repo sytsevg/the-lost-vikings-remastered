@@ -218,7 +218,8 @@ class Session {
         modern_on_ = on && has_modern();
     }
     // Remaster rules' volume, the player's: how loud the music and the effects are, each 0 (not heard) to
-    // kLoudest (as the game asks for them; profile.hpp), in both versions of the sound (audio::Player::set_loudness).
+    // kLoudest (as the game asks for them; profile.hpp), in both versions of the sound: a gain on what is made, the
+    // players playing at the full volume, as written.
     void set_volume(int music, int effects);
 
     std::vector<Screen> start_frames;   // the start's pictures, shown first
@@ -240,8 +241,8 @@ class Session {
     void half_refresh_sound(std::vector<std::int16_t>& out);
     // A refresh's sound: made at once into `samples`, or (live) its requests kept in `cues` for when it is shown.
     void sound_of_refresh(std::vector<SoundCue> asked);
-    // The players the music's cues are for, and the ones the effects' are for. The Classic sound's one player
-    // has both, as the original's driver; the Modern sound has one for each (below).
+    // The players the music's cues are for, and the ones the effects' are for. Vanilla rules' Classic sound has one
+    // player for both, as the original's driver; the Modern sound, and Remaster rules' Classic, one for each.
     template <typename F>
     void music_players(F f) {
         f(*classic_);
@@ -251,7 +252,7 @@ class Session {
     }
     template <typename F>
     void effect_players(F f) {
-        f(*classic_);
+        f(classic_effects_ != nullptr ? *classic_effects_ : *classic_);
         if (modern_effects_ != nullptr) {
             f(*modern_effects_);
         }
@@ -259,10 +260,17 @@ class Session {
     template <typename F>
     void players(F f) {
         music_players(f);
+        if (classic_effects_ != nullptr) {
+            f(*classic_effects_);
+        }
         if (modern_effects_ != nullptr) {
             f(*modern_effects_);
         }
     }
+    // What a half refresh made of the music and of the effects (each may be empty), together as loud as the volumes
+    // have them, onto `out`.
+    void mix(const std::vector<std::int16_t>& music, const std::vector<std::int16_t>& effects,
+             std::vector<std::int16_t>& out) const;
 
     assets::GameFiles files_;
     std::optional<assets::SnesRom> snes_;  // the user's SNES image, for the backdrops (Remaster rules)
@@ -284,6 +292,12 @@ class Session {
     audio::Opl3 chip_;
     std::unique_ptr<audio::OplSynth> opl_synth_;
     std::unique_ptr<audio::Player> classic_;
+    // Remaster rules' Classic sound: the effects on a chip of their own, so that the music and the effects each have
+    // their own volume (the user, 2026-11-26; they no longer take channels from the music, as the original's do).
+    // Vanilla rules': one chip for both, as the original.
+    audio::Opl3 effects_chip_;
+    std::unique_ptr<audio::OplSynth> effects_synth_;
+    std::unique_ptr<audio::Player> classic_effects_;
     std::optional<audio::SoundData> modern_sound_;
     // The Modern sound is ours to shape: the effects have a synthesizer of their own, so they don't take channels
     // from the music while they sound (in the original, and in the Classic sound, they do), and more than four
@@ -292,8 +306,13 @@ class Session {
     std::unique_ptr<audio::GmSynth> gm_effects_;
     std::unique_ptr<audio::Player> modern_;          // the music
     std::unique_ptr<audio::Player> modern_effects_;  // the effects
+    std::vector<std::int16_t> music_mix_;
     std::vector<std::int16_t> effects_mix_;
     std::vector<std::int16_t> unheard_;  // the version not heard: rendered all the same, and dropped
+    // Remaster rules' volumes (set_volume), as gains on what is made, in 1/65536: the music's and the effects'. The
+    // players play as written, at the full volume (turned down in the driver, a note went quiet early: the user).
+    std::int32_t music_gain_ = 65536;
+    std::int32_t effects_gain_ = 65536;
     bool modern_on_ = false;
     bool live_ = false;
     bool effects_on_ = false;
