@@ -275,8 +275,8 @@ inline void draw_nothing(Screen& /*screen*/, const View& /*view*/, const SceneGr
 
 // A picture `share` (0 to 1) as bright, and everything that goes dark with it: its colours, the original's levels off
 // them as a scene's fade takes them (unless they were darkened so as it was drawn: View::darken), the lights on it,
-// and Screen::bright, by which what is laid over it (the minimap, the rewind's bar) loses as many. Every fade goes through here, the scenes' and
-// the places' (the user, 2026-11-26: online the minimap stayed lit on a black screen).
+// and Screen::bright, by which what is laid over it (the minimap, the rewind's bar) loses as many. Every fade goes
+// through here, the scenes' and the places' (the user, 2026-11-26: online the minimap stayed lit on a black screen).
 void darken(Screen& picture, float share, bool colours_drawn_dark = false);
 
 }  // namespace lvr
