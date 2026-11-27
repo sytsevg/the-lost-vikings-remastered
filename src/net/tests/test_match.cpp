@@ -1,4 +1,4 @@
-// Tests for src/net/match.* (co-op online, ADR-0012): games online on the toy game over the simulated network, the
+// Tests for src/net/match.* (co-op online): games online on the toy game over the simulated network, the
 // host in the middle. Every machine comes to the same game through a network that loses, delays and reorders; one
 // that goes its own way is found out; what isn't a player's own isn't taken as his; back to the lobby and another
 // game; joining under way, leaving and coming back.

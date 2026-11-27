@@ -1,6 +1,6 @@
 #pragma once
 
-// The Modern visuals' effects (Remaster rules, ADR-0005; docs/ROADMAP.md, M8): what the engine shows gives off
+// The Modern visuals' effects (Remaster rules, ADR-0005): what the engine shows gives off
 // light and particles. The game never reads any of it; it is laid into and over its pictures, in the game's own
 // pixels. Which animations do what is the table in effects.cpp, by the names animations.hpp gives them (what an
 // entity was last started on: Sprite::started); which of a world's colours give light, by its database.

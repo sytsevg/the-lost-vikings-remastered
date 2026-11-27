@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Which replays are needed: each replay's own coverage of src/lvr/ (lines and branch directions, in the coverage
 # build, the engine against the goldens alone: --plain), then the smallest set found that still reaches everything
-# all of them reach, twice over where two replays reach it (scripts/replay_cover.py). The set was pruned with this on
-# 2026-11-23 (replays/README.md). About ten minutes. Shares build/coverage with check.sh: not at the same time.
+# all of them reach, twice over where two replays reach it (scripts/replay_cover.py). The set was pruned with this
+# (replays/README.md). About ten minutes. Shares build/coverage with check.sh: not at the same time.
 #   ./scripts/replay_cover.sh [TIMES]    TIMES: by how many kept replays each line and branch is reached (2)
 set -euo pipefail
 cd "$(dirname "$0")/.."

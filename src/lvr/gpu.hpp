@@ -29,13 +29,9 @@ class GpuRenderer {
     // time:
     // - as it is;
     // - crt: the picture in the game's whole pixels (nothing moved between ticks), as Hyllian's CRT shader shows
-    //   it: a scanline a row, its beam wider where it is brighter, and an aperture grille's mask (the user's choice
-    //   over crt-royale, which is GPL, 2026-11-25);
+    //   it: a scanline a row, its beam wider where it is brighter, and an aperture grille's mask;
     // - xbr: the picture in the game's whole pixels (nothing moved between ticks), its stair-steps rounded off and
     //   their edges blended (Hyllian's xBR).
-    // (Tried and dropped, the user: a VGA monitor's look, its 480 fine lines, only blurry; a television of our own,
-    // its lines, mask and flat glass, "not great" beside crt; xBR without blending, each tile and sprite's piece
-    // rounded by itself.)
     enum class Look : std::uint8_t { kNone, kCrt, kXbr };
     static constexpr std::array kLooks{Look::kNone, Look::kCrt, Look::kXbr};
     static constexpr std::string_view name_of(Look look) noexcept {
@@ -108,7 +104,7 @@ class GpuRenderer {
     std::size_t pages_set_up() const noexcept;
     // Whether showing a picture waits for the screen's refresh (vsync). Where the window can, it doesn't: the newest
     // picture is taken at each refresh (mailbox), and the window's loop paces itself (some compositors take only
-    // every second picture of a game that waits: the user's, 2026-11-26).
+    // every second picture of a game that waits).
     bool waits_for_refresh() const noexcept;
     // How the last show() went, for finding what is slow: milliseconds waiting for the window's picture to draw
     // on (long when the card is behind), recording the drawing, and handing it over; and what was drawn.

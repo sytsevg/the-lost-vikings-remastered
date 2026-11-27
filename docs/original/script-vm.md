@@ -1,6 +1,6 @@
 # Script VM
 
-**Status:** observed: read from `VIKINGS.EXE` by static disassembly (2026-11-16). Every opcode handler was read.
+**Status:** observed: read from `VIKINGS.EXE` by static disassembly. Every opcode handler was read.
 The instruction **lengths** are verified against the real data: every script in the six object databases
 (449–454, about 62,000 instructions reached from the records' entry points) decodes with no unknown opcode, no
 invalid operand kind, and no two instructions sharing a byte (the `[real-data]` tests in

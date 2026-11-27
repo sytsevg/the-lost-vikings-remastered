@@ -195,8 +195,8 @@ Go ConnectingPlace::refresh(Ui& ui) {
     }
     refreshes_ = static_cast<int>(ui.refreshes() - *began_at_);
     if (failed_) {
-        // Why, beside JOIN, and the page JOIN GAME's again at once: back, the lines, JOIN once more (the user,
-        // 2026-11-26: control given back as soon as it fails).
+        // Why, beside JOIN, and the page JOIN GAME's again at once: back, the lines, JOIN once more: control
+        // is given back as soon as it fails.
         if (!failed_said_at_ && refreshes_ >= kLeastTurning && menu != nullptr) {
             failed_said_at_ = refreshes_;
             menu->set_joining(std::nullopt);
@@ -292,7 +292,7 @@ LobbyPlace::LobbyPlace(Session& offline, std::unique_ptr<net::Connection> connec
 void LobbyPlace::begin(Ui& ui) {
     Menu& menu = ui.open_menu();
     menu.open_lobby(connection_->hosting());
-    (void)show_lobby(menu);  // (its first picture as it is, not empty: the user, 2026-11-26, a flash of it so)
+    (void)show_lobby(menu);  // (its first picture as it is, not empty: else a flash of it so)
     ui.redraw();
 }
 
@@ -311,7 +311,7 @@ bool LobbyPlace::show_lobby(Menu& menu) {
     if (lines == menu.players() && start_with == menu.start() && countdown == menu.countdown()) {
         return false;
     }
-    // A tick for each second of the countdown (the user, 2026-11-26), the original's menus' own.
+    // A tick for each second of the countdown, the original's menus' own.
     tick_due_ = tick_due_ || (countdown > 0 && countdown != menu.countdown());
     menu.set_players(std::move(lines));
     menu.set_start(std::move(start_with));
@@ -415,9 +415,8 @@ std::expected<std::unique_ptr<OnlinePlace>, std::string> OnlinePlace::open(std::
     }
     if (started.state.empty()) {
         // From the lobby, which has gone dark: of the original's level start (Session::open) only its tick and its fade
-        // in, the start's picture rising from black as the original's level does, its sound with it (the user,
-        // 2026-11-26: online a level came after two seconds of black, the minimap already there). One joining under
-        // way fades in once he is there.
+        // in, the start's picture rising from black as the original's level does, its sound with it (not two
+        // seconds of black with the minimap already there). One joining under way fades in once he is there.
         constexpr std::size_t kTick = 4;
         constexpr std::size_t kFadeIn = 71;
         std::vector<Screen>& frames = (*opened)->start_frames;

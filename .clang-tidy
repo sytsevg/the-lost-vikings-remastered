@@ -59,7 +59,7 @@ CheckOptions:
   - { key: readability-identifier-naming.PrivateMemberSuffix,    value: _ }
   - { key: readability-identifier-naming.ProtectedMemberSuffix,  value: _ }
   # A kind's state is its member `s` (a kind others are derived from: `enemy`, `shot`, `wall`), short on purpose:
-  # it is before every field a kind reads (ADR-0018).
+  # it is before every field a kind reads.
   - { key: readability-identifier-naming.PrivateMemberIgnoredRegexp,   value: '^(s|enemy|shot|wall)$' }
   - { key: readability-identifier-naming.ProtectedMemberIgnoredRegexp, value: '^(s|enemy|shot|wall)$' }
   - { key: readability-identifier-naming.ConstexprVariableCase,  value: CamelCase }

@@ -1,4 +1,4 @@
-// Tests for src/net/simulated.*: the simulated network keeps what Transport promises (ADR-0012), as the tests of the
+// Tests for src/net/simulated.*: the simulated network keeps what Transport promises, as the tests of the
 // game online count on it.
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>

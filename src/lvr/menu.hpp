@@ -5,7 +5,7 @@
 // options, the keyboard's and the gamepad's controls, giving up the level, quitting), the options (the sound and
 // its two volumes, the screen's look, the zoom, the minimap, the visual effects), and the controls, where an action is
 // bound to the next key or button pressed. And at the title, under Remaster rules offline, HOST GAME and JOIN GAME
-// (ADR-0012): opened by the title's own menu, their lines typed into, closed again by going back; and the LOBBY of a
+//: opened by the title's own menu, their lines typed into, closed again by going back; and the LOBBY of a
 // game online, where everyone waits for the host to start it (the host's in a game online: RETURN TO LOBBY). It works
 // on a copy of the player's settings (profile.hpp), which the front end takes into use as they change. Nothing here
 // knows about windows or devices: the front end gives it the keys (Key) and the names of what is pressed, and lays its
@@ -32,7 +32,7 @@ class Menu {
     struct Choices {
         bool has_modern = false;
         std::vector<std::string> screens{"none"};
-        bool online = false;   // co-op online (ADR-0012): the players and their latency, under the first page's lines
+        bool online = false;   // co-op online: the players and their latency, under the first page's lines
         bool hosting = false;  // online, this machine hosts: it drives the game (GIVE UP LEVEL is its only)
         bool lobby = false;    // online, from the title's lobby: the host's RETURN TO LOBBY
         // Every level's password, in order: what HOST GAME's is checked against (the level the host starts in).
@@ -184,7 +184,7 @@ class Menu {
 std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<assets::IndexedImage>& font,
                                        bool flash_shown = true);
 
-// Co-op online (ADR-0012): what is laid over the screen for the players, in the menu's look: while the game waits
+// Co-op online: what is laid over the screen for the players, in the menu's look: while the game waits
 // for a player's input, a box at the screen's top saying for whom.
 struct CoopOverlay {
     std::string waiting;  // none: empty

@@ -68,7 +68,7 @@ struct DumpIndex {
 
 // levels/NN-level.json and levels/<cutscene>-level.json: the level as the engine has it (lvr::Level), with every
 // placement. Every exported file records the DATA.DAT entries it came from
-// (ADR-0014).
+//.
 struct LevelSources {
     std::uint16_t header{};
     std::uint16_t map{};  // 65535 = none, here and below

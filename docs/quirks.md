@@ -73,7 +73,7 @@
   starts at piece 24, the word it reads is `0x3000`, and its two writes land `0x3000` past the pieces' tables: in
   the HUD's portraits, which are loaded once (`ds:344D` loses a bit, in Baleog's; `ds:414D` becomes 2, in Erik's
   as he is gone). From then on that portrait has one white pixel at (1, 2); a game started by password has none.
-  Found 2026-11-24 with `tools/lockstep.py`, traced in DOSBox. Not kept (another known picture difference; the
+  Found with `tools/lockstep.py`, traced in DOSBox. Not kept (another known picture difference; the
   user's rule: a fault like this isn't copied).
 - **The health the game-over scene shows is the HUD's bookkeeping,** not the Vikings': the scene reads the words
   the HUD last recorded. [`original/game-flow.md`](original/game-flow.md#slots)
@@ -83,7 +83,7 @@
 
 - **A scene's fade-out can flicker.** The fade (`0FA0`) draws nothing: each of its 70 steps darkens the palette
   and flips between the two pages, which hold the last two pictures drawn before the scene ended. Where something
-  moved in that last tick, the screen alternates between the two while it goes dark (seen in DOSBox, 2026-11-24).
+  moved in that last tick, the screen alternates between the two while it goes dark (seen in DOSBox).
   Not kept: the engine fades the last picture shown, with everyone still in it (`Play::shown`).
   [`original/drawing.md`](original/drawing.md#palette)
 

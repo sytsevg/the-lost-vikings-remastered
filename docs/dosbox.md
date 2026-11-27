@@ -1,6 +1,6 @@
 # A scriptable DOSBox: checking the game against the original
 
-Built 2026-11-17. The decision: [`decisions.md`](decisions.md), ADR-0016.
+The decision: [`decisions.md`](decisions.md), ADR-0016.
 
 Everything in `docs/original/` was read from `VIKINGS.EXE` without running it. What only a running game can show
 is checked in a DOSBox that a script can drive, so those checks run as code instead of by hand. This is how it was
@@ -63,7 +63,7 @@ version for a picture.
 Still to add, when needed: the raw VGA memory and the DAC (a 320 × 240 index picture instead of the doubled RGB
 PNG), and save states.
 
-### First results (2026-11-17)
+### First results
 - The game loads at segment **`0824`** (so `ds` = `2072`); its entry is `0824:0000`.
 - **3 frames per tick**: in level 1, 40 passes of the main loop `0000:001E` in a row, each exactly 3 frames apart
   ([`original/timing.md`](original/timing.md#checked-in-dosbox)).
@@ -85,7 +85,7 @@ PNG), and save states.
   stops at `0000:2980`, right after that `int 21h`, and sets DX and CX to the seed asked for (`seed=`, default 0,
   the engine's starting seed). It also sets the BIOS tick count to 0 at the game's start, because DOSBox-X starts
   it from the host's clock (with that alone DOS reports 00:00:00.00 and the seed is 0 as well).
-- **Checked** (2026-11-17): two runs to level 1 (frame 1500, same Enters) have the same conventional memory
+- **Checked**: two runs to level 1 (frame 1500, same Enters) have the same conventional memory
   (`0000:0000`–`9FFF:FFFF`), byte for byte. Without the two fixes the only differences were the seed and the tick
   count. The intro and level 1's opening draw no random numbers (the seed is still 0 at frame 1500).
 - **Game files**: `tools/dosbox.py prepare` copies the user's `gamedata/original` to `build/dosbox/game/`
@@ -94,7 +94,7 @@ PNG), and save states.
   copy-protection fingerprint ([`original/game-flow.md`](original/game-flow.md)). The fingerprint is computed in our
   DOSBox-X by a small `.COM` that does what `0000:29D4`–`2A13` does (BIOS ROM checksum, `int 21h` `36h` for C:, `30h`)
   and prints it; with the working copy mounted as C: it is `02BA`, the same every run. A wrong value gives "Copy
-  protection failure", the right one doesn't (checked 2026-11-17).
+  protection failure", the right one doesn't (checked).
 - **Input**: for lockstep runs, the keyboard word `ds:86DE` (and the key-state array `ds:916C` for Y/N and the hot
   keys) is written at the start of each tick, so both sides get exactly the same input; key events through the
   keyboard controller are for checks of the keyboard handler itself.
@@ -141,7 +141,7 @@ first step that does, halve the step count.
   the title's first choice (not by password), every comparison reports one pixel at (46, 197).
 
 ### Before: memory against a reference engine
-Until 2026-11-23 the lockstep compared state, not pictures. A reference engine ran the original's own bytecode and
+At first the lockstep compared state, not pictures. A reference engine ran the original's own bytecode and
 mirrored its data segment, and after every step that memory was compared with the original's, byte for byte. Every
 state matched over the whole attract cycle, the menus and scenes, a fixed pattern of input in each of the 37
 levels, and a camera sweep over every level. The engine was then matched against that reference engine on the

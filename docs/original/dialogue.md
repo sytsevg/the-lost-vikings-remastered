@@ -1,7 +1,7 @@
 # Dialogue
 
-**Status:** observed (static disassembly of `VIKINGS.EXE`, 2026-11-16). The text table is read from the real file
-(`src/assets/text.*`; `lv-export assets` writes them to `dialogue/texts.txt`). The engine's: `src/lvr/dialogue.*` (the text layer and the boxes) and `conversations.cpp` (who says what). Checked against the original through the reference engine (retired 2026-11-23): every level's opening answered in lockstep, and the boxes' pictures (level 1, the village intro, the ending's scenes) pixel for pixel.
+**Status:** observed (static disassembly of `VIKINGS.EXE`). The text table is read from the real file
+(`src/assets/text.*`; `lv-export assets` writes them to `dialogue/texts.txt`). The engine's: `src/lvr/dialogue.*` (the text layer and the boxes) and `conversations.cpp` (who says what). Checked against the original through the reference engine (since retired): every level's opening answered in lockstep, and the boxes' pictures (level 1, the village intro, the ending's scenes) pixel for pixel.
 
 ## Where the text is
 - All dialogue is in **`VIKINGS.EXE` segment `07A6`** (image offset `0x7A60`, `0x4070` bytes), plain **upper-case

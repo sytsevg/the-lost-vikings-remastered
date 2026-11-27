@@ -5,7 +5,7 @@ The golden replays walk a little way from each level's start, and most of a leve
 them. A reach replay puts the Vikings (the replay format's `place` line, in both engines alike) beside one
 placement after another and makes the same moves at each: wait, walk right, left, right, act, and each Viking's own
 keys. What the entities there do is then held by the replay's golden like everything else
-(`lv-replay replays/reach-NN.replay`; docs/ROADMAP.md, M6: "script paths no replay reaches reached on purpose").
+(`lv-replay replays/reach-NN.replay`): script paths no replay reaches, reached on purpose.
 
   tools/reach_replays.py [--levels gamedata/exported/levels] [--out replays] [--moves walk|updown|ride|fight|duel] [LEVEL..]
 

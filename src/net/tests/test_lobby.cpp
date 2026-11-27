@@ -1,4 +1,4 @@
-// Tests for src/net/lobby.* and src/net/connection.* (co-op online, ADR-0012): the lobby on the simulated network.
+// Tests for src/net/lobby.* and src/net/connection.* (co-op online): the lobby on the simulated network.
 // Who is given a place and who is turned away; one who leaves, the others closed up; the countdown and the start.
 #include <catch2/catch_test_macros.hpp>
 #include <string>

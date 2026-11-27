@@ -35,7 +35,7 @@ class Logo : public Entity {
 
 // The title. Left alone for 220 ticks it shows a demo. Enter or F opens the menu (the screen dims, clears and
 // comes back with it): a new game, a password, or quit, chosen with up and down, or N, P and Q. Under Remaster
-// rules offline also hosting a game online and joining one (ADR-0012), before quitting, or H and J: their pages are
+// rules offline also hosting a game online and joining one, before quitting, or H and J: their pages are
 // the Remaster menu's, over the title (the front end opens them, World::Title::online). The password's
 // four letters are typed, or turned with up and down, left and right moving between them; a level's password
 // starts that level.
@@ -114,8 +114,8 @@ class Title : public Entity {
                     return;
                 } else if (world.typed == 'P' || (world.typed != 'Q' && confirm && s.choice == 1)) {
                     world.sound(*this, effect::kTitlePassword);
-                    // (The pointer stays on PASSWORD, wherever the menu has it, until the password's screen comes:
-                    // the user, 2026-11-26, saw it jump to the original's row under Remaster rules' five.)
+                    // (The pointer stays on PASSWORD, wherever the menu has it, until the password's screen comes,
+                    // not at the original's row under Remaster rules' five.)
                     point_at(world, 1, row_of(world, 1));
                     animate_moved(world);
                     s.state = State::kPasswordComing;
@@ -263,8 +263,8 @@ class Title : public Entity {
     }
     // From the password's screen to the menu, PASSWORD chosen. Under Remaster rules the pointer is put at its row
     // first: the menu's first tick runs the animation there is (the pointer's at PASSWORD never runs, the next
-    // replacing it), and what the password's screen left is at the original's row, between two of six (the user,
-    // 2026-11-26). The original's three keep the original's way.
+    // replacing it), and what the password's screen left is at the original's row, between two of six. The
+    // original's three keep the original's way.
     void back_to_menu(World& world, int last) {
         if (last == kRemasterLast) {
             point_at(world, 1, row_of(world, 1));
@@ -307,7 +307,7 @@ class Title : public Entity {
 
     // One tick of the password being put in. True if the turn ended here.
     bool password(World& world, bool confirm) {
-        if (world.typed == kEscape) {  // back to the menu, as after a wrong password (the user, 2026-11-26)
+        if (world.typed == kEscape) {  // back to the menu, as after a wrong password
             world.typed = 0;
             world.clear_text();
             s.choice = 1;

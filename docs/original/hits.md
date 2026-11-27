@@ -1,6 +1,6 @@
 # Hit tests
 
-**Status:** observed (static disassembly of `VIKINGS.EXE`, 2026-11-17). The engine's: `src/lvr/hits.*`, `looks.*` and `terrain.*`. Checked against the original through the reference engine (retired 2026-11-23): its state was the original's in DOSBox, step for step, on every path tried ([`../formats/unknowns.md`](../formats/unknowns.md#5-what-has-not-been-compared-with-the-original) lists them), and the engine matches its runs (`replays/`).
+**Status:** observed (static disassembly of `VIKINGS.EXE`). The engine's: `src/lvr/hits.*`, `looks.*` and `terrain.*`. Checked against the original through the reference engine (since retired): its state was the original's in DOSBox, step for step, on every path tried ([`../formats/unknowns.md`](../formats/unknowns.md#5-what-has-not-been-compared-with-the-original) lists them), and the engine matches its runs (`replays/`).
 
 The opcodes `1A`, `1D`, `37`, `38` (another object touches this one) and `32`, `33`, `3C` (the terrain) don't test
 when the script runs them. Each tick has two extra passes over every object, and each hit opcode does its test in

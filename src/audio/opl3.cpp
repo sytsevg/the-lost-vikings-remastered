@@ -603,7 +603,7 @@ void Opl3::write(std::uint16_t reg, std::uint8_t value) {
     }
     // A service call's writes reach the chip at one moment; the original's take time (on the chip, in DOSBox, and with
     // Nuked OPL3's buffered writes a couple of samples apart). Two things ymfm only does at its next sample would
-    // then be lost (the user, 2026-11-26: the logos' tune's bass cut out), so a sample is made first:
+    // then be lost (the logos' tune's bass cut out), so a sample is made first:
     // - after `0x104`: ymfm gives a pair of channels its 4-operator use (its operators, assign_operators) at the next
     //   sample, but a key-on goes at once to the operators the channel has: a 4-operator voice made and keyed on in
     //   one call would key on two of its four, and one whose output is the last pair's stays silent;

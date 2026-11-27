@@ -209,3 +209,19 @@ TEST_CASE("profile: the settings are kept in the profile's folder") {
     CHECK(problems.front().ends_with("settings.txt: line 2: not understood"));
     std::filesystem::remove_all(folder);
 }
+
+TEST_CASE("profile: a folder it can be kept in is made and left empty; one it can't be says why") {
+    const std::filesystem::path folder = folder_for("writable");
+    REQUIRE(profile_writable(folder / "profiles"));
+    CHECK(std::filesystem::is_directory(folder / "profiles"));
+    CHECK(std::filesystem::is_empty(folder / "profiles"));
+    // Under a file there can be no folder, whoever runs the test (root may write anywhere else).
+    std::ofstream{folder / "a-file", std::ios::binary} << "x";
+    const auto under_a_file = profile_writable(folder / "a-file" / "profiles");
+    REQUIRE_FALSE(under_a_file);
+    CHECK(under_a_file.error().starts_with("can't make the folder "));
+    const auto a_file = profile_writable(folder / "a-file");
+    REQUIRE_FALSE(a_file);
+    CHECK(a_file.error().contains("a-file"));
+    std::filesystem::remove_all(folder);
+}

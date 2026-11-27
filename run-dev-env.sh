@@ -6,13 +6,14 @@ set -eu
 #   ./run-dev-env.sh build     build the game, and only it (release: no tests, tools, clang-tidy or sanitizers):
 #                              build/release/bin/vikings-remaster
 #   ./run-dev-env.sh test      build, then every check: lint, unit tests, coverage, and the replays
+#   ./run-dev-env.sh release   the Linux and Windows release archives in build/dist/ (scripts/release.sh; `make release`)
 #   ./run-dev-env.sh claude    Claude Code in the container
 # UPDATE=1 rebuilds only the Claude Code layer if a newer version exists; REBUILD=1 rebuilds the whole image.
 
 MODE="${1:-claude}"
 case "$MODE" in
-  build|test|claude) ;;
-  *) echo "usage: $0 [build|test|claude]" >&2; exit 1 ;;
+  build|test|release|claude) ;;
+  *) echo "usage: $0 [build|test|release|claude]" >&2; exit 1 ;;
 esac
 
 IMAGE_NAME="claude-code"
@@ -63,6 +64,7 @@ BUILD_GAME="cmake --preset release && cmake --build --preset release --target vi
 case "$MODE" in
   build) run_in_container "$BUILD_GAME && echo && echo 'Built: build/release/bin/vikings-remaster (run it on the host)'" ;;
   test) run_in_container "$BUILD_GAME && ./scripts/check.sh && ./scripts/goldens.sh" ;;
+  release) run_in_container "./scripts/release.sh" ;;
 esac
 
 mkdir -p "$PWD/.claude"

@@ -191,7 +191,7 @@ class Viking : public Entity {
     void keep_on_ground() { set_flag(entity_flag::kPutOnGround); }
     void face(World& world, bool left);
     bool played(const World& world) const { return world.is_played(slot); }
-    // The keys he goes by (ADR-0012): his player's, or those of the last one who played him (as the original's
+    // The keys he goes by: his player's, or those of the last one who played him (as the original's
     // Vikings not being played read its one keyboard in some of their states).
     const Player& input(const World& world) const { return world.keys_of(slot); }
     bool on_ground(const World& world) const;

@@ -23,7 +23,7 @@ if(LVR_BUILD_APPS)
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
     set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
     set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(SDL_X11 OFF CACHE BOOL "" FORCE)  # Linux: Wayland only (docs/decisions.md, ADR-0013)
+    set(SDL_X11 OFF CACHE BOOL "" FORCE)  # Linux: Wayland only
     FetchContent_Declare(SDL3
         GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
         GIT_TAG release-3.4.20
@@ -32,7 +32,7 @@ if(LVR_BUILD_APPS)
     FetchContent_MakeAvailable(SDL3)
     lvr_silence_dependency_warnings(${sdl3_SOURCE_DIR})
 
-    # SDL3_net (zlib): the sockets for co-op online (ADR-0012), on the SDL3 above. Patched to set TCP_NODELAY and,
+    # SDL3_net (zlib): the sockets for co-op online, on the SDL3 above. Patched to set TCP_NODELAY and,
     # on Linux, TCP_QUICKACK on its stream sockets (it sets neither and gives no access to the socket), and, for
     # Windows, to rename its read() and write() for sockets, which mingw-w64's io.h has for files.
     set(SDLNET_INSTALL OFF CACHE BOOL "" FORCE)
@@ -51,7 +51,7 @@ if(LVR_BUILD_APPS)
     lvr_silence_dependency_warnings(${sdl3_net_SOURCE_DIR})
 endif()
 
-# ymfm: the OPL3 (YMF262) for the Classic sound (ADR-0015, ADR-0009). No tags upstream: a pinned commit. It has no
+# ymfm: the OPL3 (YMF262) for the Classic sound. No tags upstream: a pinned commit. It has no
 # CMake target of its own that fits, so its sources are built into lvr_ymfm in src/CMakeLists.txt.
 FetchContent_Declare(ymfm
     GIT_REPOSITORY https://github.com/aaronsgiles/ymfm.git
@@ -62,7 +62,7 @@ if(NOT ymfm_POPULATED)
     FetchContent_Populate(ymfm)
 endif()
 
-# TinySoundFont: the SoundFont synthesizer for the Modern sound (ADR-0015, ADR-0009). Header-only, no tags
+# TinySoundFont: the SoundFont synthesizer for the Modern sound. Header-only, no tags
 # upstream: a pinned commit; its implementation is built into lvr_tsf in src/CMakeLists.txt.
 FetchContent_Declare(tsf
     GIT_REPOSITORY https://github.com/schellingb/TinySoundFont.git

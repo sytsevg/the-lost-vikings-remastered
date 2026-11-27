@@ -28,7 +28,7 @@ struct Inventory {
     bool operator==(const Inventory&) const = default;
 };
 
-// Each player has one (ADR-0012), on the Viking he plays. Offline it holds the game, as the original's; online it
+// Each player has one, on the Viking he plays. Offline it holds the game, as the original's; online it
 // doesn't: its passes are part of the tick (inventories_in_tick), the player's Viking standing while it is open.
 
 // Whether the player's key that opens it was just pressed, in a level that has the HUD, and he plays a Viking.

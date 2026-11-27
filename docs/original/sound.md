@@ -1,6 +1,6 @@
 # Sound: what the game asks of the sound driver
 
-**Status:** observed (static disassembly of `VIKINGS.EXE`, `0000:7561`–`7912` and `08C8`, 2026-11-17). The
+**Status:** observed (static disassembly of `VIKINGS.EXE`, `0000:7561`–`7912` and `08C8`). The
 simulation's part (the flags, the loaded tune) is in `src/lvr/play.*` and was compared with the original in lockstep
 (Alt+S / Alt+M, the music actions); the player itself is `src/audio/` (the sequencer, the OPL3 and General MIDI
 outputs, ADR-0015). Formats in [`../formats/audio.md`](../formats/audio.md); the rate in
@@ -60,6 +60,6 @@ With a sound device and Alt held (key-state `ds:91A4`):
   (`76BD`, slot 0); **off**: it is stopped and released.
 
 The key-state bytes are set by each make code of the key (a press, and every typematic repeat) and cleared by its
-release or by `08C8` here, so holding Alt+S toggles again at every repeat. Checked by lockstep (2026-11-17): Alt+S
+release or by `08C8` here, so holding Alt+S toggles again at every repeat. Checked by lockstep: Alt+S
 held over six steps (toggled at each, as the lockstep writes the byte at every step), Alt+M, Alt+S: `0302`/`0304` as
 the original's.

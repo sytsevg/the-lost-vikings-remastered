@@ -78,7 +78,7 @@ inline bool in_front(const std::vector<std::uint8_t>& masks, std::size_t tile, s
     return at < masks.size() && (masks[at] & (0x80U >> (stored % 8))) != 0;
 }
 
-// Smooth movement (Remaster rules, ADR-0005): what moves in a tick, so that a picture can be shown with it where
+// Smooth movement (Remaster rules): what moves in a tick, so that a picture can be shown with it where
 // an even movement over the tick puts it at the moment it is shown, between the screen's refreshes too. The
 // original moves a tick's distance in three whole-pixel shares (7 is 3, 2, 2: share_of_move); shown smoothly, a
 // thing is a third of a tick behind where the picture has it, and goes on evenly from there.
@@ -109,7 +109,7 @@ struct Light {
     float half_height = 0;
     float reach = 0;
     std::array<float, 3> colour{};
-    // What gives it off, so that what is in front of that hides its halo (the user, 2026-11-26: a laser behind a
+    // What gives it off, so that what is in front of that hides its halo (a laser behind a
     // column, an enemy behind a Viking): the view's sprite (its place in View::sprites), the map (kFromMap: behind
     // every sprite), or nothing in particular (kAnywhere: laid over all).
     static constexpr std::int32_t kAnywhere = -1;
@@ -158,7 +158,7 @@ struct Screen {
     std::array<Viking, 3> vikings{};
     // Which refresh of the display this picture is shown for, counted from the session's start (a picture shown
     // again has the refresh it is shown again for), and back with a rewind: for a backdrop that moves by itself (the
-    // spaceship's stars), which goes back with the play (the user, 2026-11-26) and on while it holds.
+    // spaceship's stars), which goes back with the play and on while it holds.
     std::uint32_t refresh = 0;
     bool rewinding = false;  // the picture is one of time running backwards (Remaster rules): it is marked so
     bool fading = false;     // a scene's going dark or coming in
@@ -232,7 +232,7 @@ struct HudView {
         int health = 0;  // which of the health pictures
     };
     std::array<Viking, 3> vikings;  // Erik, Baleog, Olaf
-    // Co-op online (ADR-0012): under each portrait the name of the player who plays him, in the game's font, its
+    // Co-op online: under each portrait the name of the player who plays him, in the game's font, its
     // letters only; above it, grey, those watching him, in their line's order, as one name (A/B). Empty: none.
     std::array<std::string, 3> names;
     std::array<std::vector<std::string>, 3> watching;
@@ -248,8 +248,8 @@ struct View {
     int width = kScreenWidth;
     int height = kPlayfieldHeight;
     // Rows under the playfield its sprites and text are drawn on too, where the HUD's place has nothing: Remaster
-    // rules' title menu, its pointer on the last of six choices reaching under the text layer's last row (the user,
-    // 2026-11-26). Elsewhere they end at the playfield's bottom.
+    // rules' title menu, its pointer on the last of six choices reaching under the text layer's last row.
+    // Elsewhere they end at the playfield's bottom.
     int drawn_below = 0;
     int text_x = 0;  // where the text layer's first cell is on screen (it moves with the camera's last 3 bits)
     int text_y = 0;
@@ -276,7 +276,7 @@ inline void draw_nothing(Screen& /*screen*/, const View& /*view*/, const SceneGr
 // A picture `share` (0 to 1) as bright, and everything that goes dark with it: its colours, the original's levels off
 // them as a scene's fade takes them (unless they were darkened so as it was drawn: View::darken), the lights on it,
 // and Screen::bright, by which what is laid over it (the minimap, the rewind's bar) loses as many. Every fade goes
-// through here, the scenes' and the places' (the user, 2026-11-26: online the minimap stayed lit on a black screen).
+// through here, the scenes' and the places' (so the minimap never stays lit on a black screen).
 void darken(Screen& picture, float share, bool colours_drawn_dark = false);
 
 }  // namespace lvr

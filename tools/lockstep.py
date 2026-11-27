@@ -15,7 +15,7 @@ input as a replay, which is kept: build/dosbox/lockstep/run.replay.
 
 The pictures: the original's screenshot (640 x 480, each pixel doubled) and the engine's last refresh
 (original-shot.png, engine-last.png in build/dosbox/lockstep/). The exit status is 1 if they differ. To find the
-first step that differs, halve STEPS. (Until 2026-11-23 this compared the reference engine's memory with the
+first step that differs, halve STEPS. (At first this compared the reference engine's memory with the
 original's, byte for byte, at every step; the engine keeps its state in its own terms, so the picture is what
 there is to compare.)
 

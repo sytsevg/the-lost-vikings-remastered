@@ -22,7 +22,7 @@ int shaken(int camera, const World::Shake& shake, int limit) noexcept {
     return plus <= static_cast<std::uint16_t>(limit) ? wrapped(plus) : wrapped(camera - shake.offset);
 }
 
-// Online (ADR-0012): every layer of text, into a player's view of it. What is at a place of the level (Line::
+// Online: every layer of text, into a player's view of it. What is at a place of the level (Line::
 // in_level) is there in every view that has that place; what is at a place of the screen is in the middle of each
 // view as the first player's has it (the shared layer), or only in its own player's view (said to him alone). The
 // boxes' colour is the viewer's own text's, else the shared layer's, else another player's.
@@ -340,7 +340,7 @@ World prepare_world(const LoadedLevel& loaded, const Map* map_before, Rules rule
         world.kinds.at(game_over_kind::kLetters).pool = Pool::kFront;
     }
     if (rules == Rules::kRemaster) {
-        // Baleog's arrows fly in front of what is there (the user, 2026-11-26: behind the hint boxes, in level 2).
+        // Baleog's arrows fly in front of what is there (not behind the hint boxes, as in level 2).
         // (The original takes their pieces from the back pool, as the hint boxes', doors' and items', where what
         // came first is drawn in front: an arrow shot later goes behind them.)
         world.kinds.at(kind::kArrow).pool = Pool::kFront;
@@ -600,8 +600,8 @@ int Play::change_scene(const std::function<void()>& picture) {
     scene_loaded = true;
     if (world.rules == Rules::kRemaster && state_.playback && world.game_over && !world.leave) {
         // A demo whose Vikings are all gone ends as its recording's end does: the logos and the title again, the
-        // next demo the next time (the user, 2026-11-26: it went to the game-over scene, and "yes" played the
-        // level). Under Remaster rules what the recording does can come out otherwise, the rules being others.
+        // next demo the next time (not the game-over scene, where "yes" would play the level). Under Remaster rules
+        // what the recording does can come out otherwise, the rules being others.
         state_.demo_index = (state_.demo_index + 1) % 6;
         world.next_scene = scene::kLogo;
         state_.playback = false;

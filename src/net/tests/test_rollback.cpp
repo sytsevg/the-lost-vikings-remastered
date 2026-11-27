@@ -1,4 +1,4 @@
-// Tests for src/net/rollback.*: GGPO's way of keeping machines in step (ADR-0012), on the toy game, its inputs given
+// Tests for src/net/rollback.*: GGPO's way of keeping machines in step, on the toy game, its inputs given
 // by hand: predictions put right, the window, the delay, who is there when, out of step. (Over a network, with the
 // host in the middle: test_match.cpp.)
 #include <catch2/catch_test_macros.hpp>

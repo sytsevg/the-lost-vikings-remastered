@@ -94,7 +94,7 @@ std::string_view to_string(EntryKind kind) noexcept;
 // --- Release identification ---
 
 // Bytes inside VIKINGS.EXE, by file offset (the 0x200-byte MZ header included). Only valid for the release they
-// belong to (ADR-0014, update of 2026-11-17).
+// belong to.
 struct ExeRange {
     std::size_t offset = 0;
     std::size_t size = 0;

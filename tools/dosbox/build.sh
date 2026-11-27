@@ -39,7 +39,7 @@ fi
 cmp -s "$tools/control.cpp" src/misc/lvr_control.cpp || cp "$tools/control.cpp" src/misc/lvr_control.cpp
 
 # Its own SDL2, static, into vs/sdl2/linux-host, where DOSBox-X's configure looks; so the container needs no SDL2
-# package. The flags are vs/sdl2/build-dosbox.sh's, plus no X11 (the container is Wayland only, ADR-0013).
+# package. The flags are vs/sdl2/build-dosbox.sh's, plus no X11 (the container is Wayland only).
 if [ ! -x vs/sdl2/linux-host/bin/sdl2-config ]; then
     echo "== SDL2 (in-tree)"
     mkdir -p vs/sdl2/linux-build

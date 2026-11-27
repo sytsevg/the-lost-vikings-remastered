@@ -187,8 +187,8 @@ TEST_CASE("real data: Remaster rules' zoom widens the view over a moment and clo
     CHECK(part_after(session, 30) == Screen::Part{.x = 0, .y = 0, .width = 480, .height = 360});
     session.zoom(-5);
     CHECK(part_after(session, 30) == original);
-    // Pressed twice, quickly: the second step follows when the first's change of view has been shown, never a jump
-    // (the user, 2026-11-26): from picture to picture the part shown widens by a little at most, to twice the view.
+    // Pressed twice, quickly: the second step follows when the first's change of view has been shown, never a jump:
+    // from picture to picture the part shown widens by a little at most, to twice the view.
     CHECK(session.zoom(1));
     (void)session.step(0);
     CHECK(session.zoom(1));
@@ -333,7 +333,7 @@ TEST_CASE("real data: Remaster rules' rewind goes back at twice the speed, and t
         CHECK(shown.at(0).pixels == steps.at(later).at(0));
         CHECK(shown.at(1).pixels == steps.at(later - 1).at(1));
         CHECK(shown.at(2).pixels == steps.at(later - 2).back());
-        // Each for the refresh it was shown for then (the user, 2026-11-26: the stars went on).
+        // Each for the refresh it was shown for then (the stars too).
         CHECK(shown.at(0).refresh == refreshes.at(later).at(0));
         CHECK(shown.at(1).refresh == refreshes.at(later - 1).at(1));
         CHECK(shown.at(2).refresh == refreshes.at(later - 2).back());
@@ -882,7 +882,7 @@ TEST_CASE("real data: Remaster rules' effects: lights, glowing colours, what sto
     CHECK(plain.back().lights.empty());
     CHECK(std::ranges::none_of(plain.back().glow, [](std::uint8_t glow) { return glow != 0; }));
     CHECK(plain.back().ground == nullptr);
-    // The game-over scene's water (its colour cycles: the spaceship's database) glows, less (the user, 2026-11-26).
+    // The game-over scene's water (its colour cycles: the spaceship's database) glows, less.
     auto over = Session::open(LVR_ORIGINAL_DIR, scene::kGameOver, {}, Rules::kRemaster);
     REQUIRE(over);
     (*over)->set_effects(true);
@@ -913,8 +913,8 @@ TEST_CASE("real data: Remaster rules' effects: a Viking electrocuted or burning 
     }
     // The showcase's deaths: the same play twice, the Viking put there in the one. While he dies there is a light
     // at him that the other play doesn't have (where the lights are doesn't hang on their flicker): blue for
-    // electricity, orange for fire. When he is dead it is gone. Electrocuted, a great deal of sparks fly off him
-    // (the user, 2026-11-26): many more particles than the other play has at once.
+    // electricity, orange for fire. When he is dead it is gone. Electrocuted, a great deal of sparks fly off him:
+    // many more particles than the other play has at once.
     int deaths = 0;
     for (const Scenario& scenario : kScenarios) {
         if (!scenario.death) {
@@ -1282,8 +1282,8 @@ TEST_CASE("real data: Remaster rules' title demos play as their recordings, zoom
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
     // The title left alone, from its start through the six demos to the first again: under Remaster rules, zoomed
-    // out as far as it goes, every entity of a demo where Vanilla rules have it at every step (the user, 2026-11-26:
-    // they played otherwise; a larger view takes in more of the level).
+    // out as far as it goes, every entity of a demo where Vanilla rules have it at every step (a
+    // larger view takes in more of the level).
     // (Nothing drawn and no sound made: only where the entities are is looked at.)
     auto vanilla = Session::open(LVR_ORIGINAL_DIR, scene::kTitle, {}, Rules::kVanilla, draw_nothing);
     auto remaster = Session::open(LVR_ORIGINAL_DIR, scene::kTitle, {}, Rules::kRemaster, draw_nothing);
@@ -1364,7 +1364,7 @@ TEST_CASE("real data: Remaster rules' volumes are gains on the sound made: the m
     }
     // Level 1 under Remaster rules, walked about (its music, and effects with it), at the full volume and at half
     // (a quarter of the loudness): every sample a quarter of the other's. Turned down in the driver instead, the
-    // notes went quiet early (the user, 2026-11-26).
+    // notes would go quiet early.
     const auto heard = [](int volume) {
         auto opened = Session::open(LVR_ORIGINAL_DIR, 0, kListening, Rules::kRemaster);
         REQUIRE(opened);

@@ -1,6 +1,6 @@
 # Terrain: the tile map, the tile tests, movement
 
-**Status:** observed (static disassembly of `VIKINGS.EXE`, 2026-11-17). The engine's: `src/lvr/terrain.*` and `movement.*`. Checked against the original through the reference engine (retired 2026-11-23): its state was the original's in DOSBox, step for step, on every path tried ([`../formats/unknowns.md`](../formats/unknowns.md#5-what-has-not-been-compared-with-the-original) lists them), and the engine matches its runs (`replays/`).
+**Status:** observed (static disassembly of `VIKINGS.EXE`). The engine's: `src/lvr/terrain.*` and `movement.*`. Checked against the original through the reference engine (since retired): its state was the original's in DOSBox, step for step, on every path tried ([`../formats/unknowns.md`](../formats/unknowns.md#5-what-has-not-been-compared-with-the-original) lists them), and the engine matches its runs (`replays/`).
 
 ## The tile map
 - Segment `ds:2E63`: a word per 16 × 16 cell, row by row (row table `ds:8F68` = row × width × 2, 256 rows). Bits
@@ -41,7 +41,7 @@ In the contact pass ([`hits.md`](hits.md)):
   its edge (an object standing still is run into by one moving towards it).
 - `33`: if it moved vertically, the leading row (top or bottom) → pushed out to the cell's top (bottom = (bottom &
   ~15) − 1) or below the ceiling; else, moved or not, an object, by the vertical steps (fields `3A`). (Found by
-  lockstep, 2026-11-17, in attract demo 5.)
+  lockstep, in attract demo 5.)
 - `3C` (moving down only): if the list has slope types, onto the slope's surface (from the slope it was on or is in);
   else, when the bottom crossed into a new cell row, onto the top of a cell of the list's types under the bottom
   edge; else onto an object whose top its bottom passed this tick (both sweeps compared).
@@ -66,13 +66,13 @@ the camera and the hit pass: the whole tick is in [`game-loop.md`](game-loop.md#
 
 ## Open
 - What each type means in play: the scripts decide, through their lists. Named from where the levels have them
-  (the level dump's collision maps, [`../formats/level.md`](../formats/level.md#exported-output), 2026-11-18): `03`
+  (the level dump's collision maps, [`../formats/level.md`](../formats/level.md#exported-output)): `03`
   a **ladder** (free; list `03 04 0D`), `04` the **top of a ladder** (ground), `12` **lava** (prehistoric). Named
-  by the user from the same pictures: `0A` where a **moving platform's way ends** (the ends of its range), `0B` a
+  by eye from the same pictures: `0A` where a **moving platform's way ends** (the ends of its range), `0B` a
   **hidden platform** that appears when its button is shot (level 21), `10` **water** and `13` **quicksand** (a
   Viking drowns in both), `14` **spikes**, `15` **electricity** (deadly to fall into), `16` **springs** (they
   bounce), `17` **rotating spikes** (a death trap to fall into). `10`–`17` are one family: list `5C` holds all
   eight, and each has a list of its own. Still open: `0D` (levels 35 and 36 only; in the ladders' list; always a row of two cells inside a ladder, below
-  its top; the user doesn't know what it does either), `11` (no
+  its top; what it does isn't known), `11` (no
   level uses it), and what sets `02`, `05`, `0C` and `20` apart from plain ground and free cells. The names say
   what a player sees; what each does exactly is confirmed when the kinds that test for it are translated.

@@ -266,7 +266,7 @@ bool World::load(Reader& from) {
 std::array<int, 2> World::view_for(int player, std::array<int, 2> asked) const {
     const Camera& camera = players.at(static_cast<std::size_t>(player)).camera;
     // (A demo plays at the original's view, whatever the zoom: its recording is the original's play, and a larger
-    // view takes in more of the level, its entities there at other times. The user, 2026-11-26: they played otherwise.)
+    // view takes in more of the level, its entities there at other times.)
     if (rules != Rules::kRemaster || scene > scene::kLastLevel || !has_hud || map.cells.empty() ||
         map.pixel_width() < kViewWidth || map.pixel_height() < kViewHeight || attract) {
         return {camera.view_width, camera.view_height};

@@ -26,7 +26,7 @@
 
 namespace lvr {
 
-// The rules a game is played by (ADR-0005). Vanilla: the original's, exactly. Remaster: ours on top of them (ADR-0011).
+// The rules a game is played by. Vanilla: the original's, exactly. Remaster: ours on top of them.
 enum class Rules : std::uint8_t { kVanilla, kRemaster };
 
 inline constexpr int kSlots = 20;  // Vanilla rules: the original's 20 entities at a time
@@ -79,11 +79,11 @@ struct Creation {
 // The part of the view placements are looked for in: all of it, or the strip that came into view.
 enum class ViewPart : std::uint8_t { kWhole, kLeft, kRight, kBottom, kTop };
 
-// Co-op online (ADR-0012): up to three players, each with his keys, the Viking he plays and a view of his own. One
+// Co-op online: up to three players, each with his keys, the Viking he plays and a view of his own. One
 // player is the original's game: his keys are its keyboard word, his view its camera.
 inline constexpr int kMostPlayers = 3;
 
-// How a game is played (ADR-0012): offline, or online (Remaster rules) with that many players there from the start.
+// How a game is played: offline, or online (Remaster rules) with that many players there from the start.
 // An online world has a place for every player there can be (kMostPlayers): the others absent until they come.
 struct Online {
     bool on = false;
@@ -119,13 +119,13 @@ struct MenuKeys {
     bool previous_level = false;
     bool next_level = false;
     // Remaster rules: Enter pressed (and not yet taken by a step), which answers the original's pause box and quit
-    // box with the word shown chosen, as F does (the user, 2026-11-26: Enter did nothing there).
+    // box with the word shown chosen, as F does.
     bool choose = false;
 };
 
 // What a step is given: each player's input, the first player's first; and the first player's character typed
 // since the last step (the title's password, Y and N) and the menus' keys. All that changes the game is here, so a
-// step given the same input from the same state comes out the same, shown or not (ADR-0003, ADR-0012).
+// step given the same input from the same state comes out the same, shown or not.
 struct StepInput {
     std::array<PlayerInput, kMostPlayers> players{};
     std::uint16_t typed = 0;  // none: 0
@@ -223,7 +223,7 @@ struct WorldState {
         bool cheat = false;           // the cheat's password was typed: F5 and F6 change the level
         bool quit = false;            // its menu: the game ends
         bool screen_cleared = false;  // its menu cleared the scene's picture; what that showed below is at the top
-        // Remaster rules, offline: HOST GAME or JOIN GAME (ADR-0012), or OPTIONS (the user, 2026-11-26), was chosen
+        // Remaster rules, offline: HOST GAME, JOIN GAME or OPTIONS was chosen
         // in its menu this tick: the front end opens that page (0: none).
         static constexpr std::uint8_t kHostGame = 1;
         static constexpr std::uint8_t kJoinGame = 2;
@@ -289,7 +289,7 @@ struct WorldState {
     assets::Palette palette{};        // as the cycles have turned it
     std::vector<ColourCycle> cycles;  // at most 8
     bool has_vikings = true;          // a level, not a cutscene
-    // The players (ADR-0012), as many as `player_count`; the first drives the game (the scenes, the menus, the
+    // The players, as many as `player_count`; the first drives the game (the scenes, the menus, the
     // texts that hold everyone), the host online.
     std::array<Player, kMostPlayers> players{};
     int player_count = 1;
@@ -297,7 +297,7 @@ struct WorldState {
     // Vikings that aren't played read its one keyboard too, in some of their states.)
     std::array<int, kVikingSlots> keys_from{};
     std::uint16_t line_joins = 0;  // how many times a viewer joined a Viking's line: what the next one's place is
-    // A game played online (ADR-0012): what a player does doesn't hold the others (his tooltips, his inventory).
+    // A game played online: what a player does doesn't hold the others (his tooltips, his inventory).
     bool online = false;
     bool game_over = false;   // the last Viking died: the scene ends
     bool level_done = false;  // the Vikings have all reached the exit: the scene ends
@@ -462,7 +462,7 @@ class World : public WorldState {
     // Online, at a tick's start: each player's own lines (Aside) shown up to the next wait for his key, which his
     // action key answers; while one waits his Viking stands.
     void show_players_lines();
-    // Online (ADR-0012): while one lasts, what is said is for the player who plays the Viking in `slot` alone: his
+    // Online: while one lasts, what is said is for the player who plays the Viking in `slot` alone: his
     // lines, laid out in his view, answered by his key, holding nobody. Offline, or for a Viking nobody plays, it
     // is everyone's and holds the game, as the original's.
     class Aside {
@@ -489,7 +489,7 @@ class World : public WorldState {
     // Each player's keys as they are now: held, and newly pressed since they were last read; and his stick's pace.
     void read_keys(const StepInput& input);
 
-    // --- The players (ADR-0012) ---
+    // --- The players ---
 
     // The first player: the only one, or the host online. He drives the game: the scenes, the menus, the texts.
     Player& host() noexcept { return players[0]; }
@@ -509,7 +509,7 @@ class World : public WorldState {
     void player_arrives(int player);
     // Online, a scene played by a recording (the intro of a new game, `attract`): only the first player plays it, as
     // the recording has it; the others have no Viking (every Viking reads his keys, as with one player), and their
-    // views follow his (the user: the intro is everyone watching the Viking it plays).
+    // views follow his: everyone watches the Viking it plays.
     void watch_recording();
     // The Viking a player's view follows: his own; while a recording plays online, the first player's.
     int followed_by(const Player& player) const noexcept {
@@ -526,7 +526,7 @@ class World : public WorldState {
     bool is_played(int slot) const noexcept;
     // The player who plays the Viking in `slot`; kNobody for none.
     int player_of(int slot) const noexcept;
-    // A player goes to the Viking in `slot` (ADR-0012): he plays him if nobody does, else he joins the end of his
+    // A player goes to the Viking in `slot`: he plays him if nobody does, else he joins the end of his
     // line of viewers. The Viking he leaves goes to the first in its own line, if he played him.
     void move_player(int player, int slot);
     // The view the entity in `slot` is seen in: his player's, if a player plays him; else the first player's.
@@ -609,7 +609,7 @@ class World : public WorldState {
     // created at the next tick's start. Not part of the world's state that is written out.
     void hold_camera(int x, int y, int width, int height);
     bool camera_held = false;
-    // The view a zoom that asks for `asked` gives here (Remaster rules, ADR-0011): in a level (not a scene with
+    // The view a zoom that asks for `asked` gives here (Remaster rules): in a level (not a scene with
     // a map of its own: the village) as large as the original's view at least, never more than the level;
     // elsewhere the view as it is.
     std::array<int, 2> view_for(int player, std::array<int, 2> asked) const;

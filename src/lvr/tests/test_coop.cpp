@@ -1,4 +1,4 @@
-// Tests for src/lvr/coop.* (co-op online, ADR-0012): the game itself under rollback, a step's input as bytes, and a
+// Tests for src/lvr/coop.* (co-op online): the game itself under rollback, a step's input as bytes, and a
 // game online on the real game: a host and a guest play level 1 over a network that delays and loses what is sent,
 // and one who joins under way comes to the same game.
 #include <catch2/catch_test_macros.hpp>

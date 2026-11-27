@@ -189,7 +189,7 @@ struct SdlTransport::Inner {
     }
 
     // A ping or a fast message, by UDP while it gets through, else over TCP.
-    // A fast message both ways, the same bytes (the user: the first to come wins; UDP drops, reorders and doubles,
+    // A fast message both ways, the same bytes (the first to come wins; UDP drops, reorders and doubles,
     // and TCP is there behind it): what takes it must take it twice as once.
     void write_fast(Peer& peer, std::uint8_t kind, std::span<const std::uint8_t> payload) {
         if (peer.udp_ok && payload.size() <= kMostDatagram) {

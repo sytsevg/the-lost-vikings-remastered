@@ -1,6 +1,6 @@
 # Static analysis of the executables
 
-How we read `VIKINGS.EXE` and `SETUP.EXE` directly (ADR-0001 update, 2026-11-16), what we know about their layout,
+How we read `VIKINGS.EXE` and `SETUP.EXE` directly (ADR-0001), what we know about their layout,
 and every routine and variable identified so far. Findings go into the other `docs/original/` pages as **rules**; this
 page is the toolbox and the address book. Never copy disassembly into the docs or the code (ADR-0001).
 

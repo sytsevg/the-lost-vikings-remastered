@@ -53,8 +53,8 @@ level ends. Then the header's lists are loaded ([`../formats/level.md`](../forma
 - **The galaxy** (41) is shown between worlds, but its header says "next = title": its script (database 454 at
   `8C00`) sets the next slot from the previous one (`ds:25AB`): 3 → 4, 10 → 11, 16 → 17, 24 → 25, 32 → 33 (the
   worlds' last levels), 45 → 46 (the starfield, at the end), anything else → 38 (the title). Checked in DOSBox
-  (`tools/spotcheck.py flow`, 2026-11-17): after levels 4, 11 and 17 it plays 77 steps, then loads the next level.
-  **Compared in lockstep** (2026-11-17, the reference engine against the original): level 4 ended → the galaxy → level 5, and level
+  (`tools/spotcheck.py flow`): after levels 4, 11 and 17 it plays 77 steps, then loads the next level.
+  **Compared in lockstep** (the reference engine against the original): level 4 ended → the galaxy → level 5, and level
   1 ended into the galaxy → the title, every state the same, and the galaxy's picture pixel for pixel.
 - **The game-over scene** (37), checked the same way: without a key it stays; a key restarts the level it came from
   (the previous slot), not its header's "level 5".
@@ -69,7 +69,7 @@ level ends. Then the header's lists are loaded ([`../formats/level.md`](../forma
 | `0x20` | **529** into the HUD area, then load as a tiled scene (`0000:12A2`) | ship (218) |
 | `0x40` | image scene: the header's image into the three pages, **531** below it (`0000:127B`); no map loaded, as `0x02` | starfield (433) |
 
-Read elsewhere (every test of `ds:25CF`, 2026-11-17):
+Read elsewhere (every test of `ds:25CF`):
 | Bit | Effect | Headers |
 |---|---|---|
 | `0x08` | Alt+X/Q/F10 quit at once, without the quit box (`0000:037F`; demo playback does the same) | Interplay, Silicon & Synapse, galaxy, title, game-over scene |

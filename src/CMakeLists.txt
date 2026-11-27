@@ -2,11 +2,11 @@
 #   Pure C++ (no SDL):                         lvr::assets (its only file access: reading the original game files),
 #                                              lvr::audio, lvr::input
 #   SDL3-based (only with LVR_BUILD_APPS):     lvr::image, lv-export, lv-replay, vikings-remaster
-#   The engine (src/lvr/, ADR-0017):       lvr::engine (pure C++; so far the level model)
+#   The engine (src/lvr/, ADR-0017):           lvr::engine (pure C++)
 #   Tests (LVR_BUILD_TESTS):                   lvr_tests, from <dir>/tests/
 #   Fuzzers (LVR_BUILD_FUZZERS):               fuzz_*, from assets/fuzz/
 
-# --- assets: the decoders of the game's files (docs/decisions.md, ADR-0014), used by everything: the formats (fuzzed,
+# --- assets: the decoders of the game's files, used by everything: the formats (fuzzed,
 # assets/fuzz/), the catalogue of what DATA.DAT holds, and levels, scenes, images, sprites, object databases and
 # dialogue texts as the files hold them ---
 add_library(lvr_assets STATIC
@@ -32,7 +32,7 @@ add_library(lvr::input ALIAS lvr_input)
 target_include_directories(lvr_input PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 lvr_target_defaults(lvr_input)
 
-# Co-op online (ADR-0012): the connection, the lobby, the match, rollback, the protocol and the simulated network,
+# Co-op online: the connection, the lobby, the match, rollback, the protocol and the simulated network,
 # plain C++ (the sockets are lvr_transport's).
 add_library(lvr_net STATIC
     net/connection.cpp
@@ -136,7 +136,7 @@ target_include_directories(lvr_session PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(lvr_session PUBLIC lvr::assets lvr::engine lvr::audio lvr::input lvr::net)
 lvr_target_defaults(lvr_session)
 
-# --- The pixel-match harness (ADR-0017): replays, what an engine shows per refresh, the comparison ---
+# --- The pixel-match harness: replays, what an engine shows per refresh, the comparison ---
 add_library(lvr_replay STATIC
     replay/player.cpp
     replay/golden.cpp
@@ -163,7 +163,7 @@ if(LVR_BUILD_APPS)
     target_link_libraries(lvr_image PUBLIC lvr::assets PRIVATE SDL3::SDL3)
     lvr_target_defaults(lvr_image)
 
-    # --- transport: co-op online's sockets, TCP and UDP through SDL3_net (ADR-0012) ---
+    # --- transport: co-op online's sockets, TCP and UDP through SDL3_net ---
     add_library(lvr_transport STATIC
         net/transport.cpp)
     add_library(lvr::transport ALIAS lvr_transport)
@@ -176,7 +176,7 @@ if(LVR_BUILD_APPS)
     target_link_libraries(lv-export PRIVATE lvr::assets lvr::engine lvr::level_dump lvr::image glaze::glaze)
     lvr_target_defaults(lv-export)
 
-    # --- The GPU renderer (ADR-0006), on SDL_GPU. Its shaders are compiled to SPIR-V here (glslc) and built in. ---
+    # --- The GPU renderer, on SDL_GPU. Its shaders are compiled to SPIR-V here (glslc) and built in. ---
     find_program(LVR_GLSLC glslc REQUIRED)
     set(lvr_shader_dir ${CMAKE_CURRENT_BINARY_DIR}/shaders)
     file(MAKE_DIRECTORY ${lvr_shader_dir})
@@ -202,7 +202,7 @@ if(LVR_BUILD_APPS)
     target_link_libraries(lv-replay PRIVATE lvr::replay lvr::session lvr::image lvr::gpu)
     lvr_target_defaults(lv-replay)
 
-    # --- front: the game's places (GLOSSARY.md): offline, connecting, the lobby, a game online (ADR-0012) ---
+    # --- front: the game's places (GLOSSARY.md): offline, connecting, the lobby, a game online ---
     add_library(lvr_front STATIC
         lvr/front.cpp
         lvr/handler.cpp
@@ -214,7 +214,7 @@ if(LVR_BUILD_APPS)
 
     # --- vikings-remaster: the game on the engine ---
     # The build's ID, a hash of the game's sources worked out at every build: two machines play online only with
-    # the same (ADR-0012; cmake/build_id.cmake).
+    # the same (cmake/build_id.cmake).
     set(lvr_build_id ${CMAKE_BINARY_DIR}/generated/lvr/build_id.hpp)
     add_custom_target(lvr_build_id
         COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DOUTPUT=${lvr_build_id}
@@ -233,7 +233,7 @@ if(LVR_BUILD_APPS)
 
 endif()
 
-# --- Tests: <dir>/tests/test_<name>.cpp tests <dir>/<name>.* (docs/decisions.md, ADR-0010) ---
+# --- Tests: <dir>/tests/test_<name>.cpp tests <dir>/<name>.* ---
 if(LVR_BUILD_TESTS)
     add_executable(lvr_tests
         assets/tests/test_assets.cpp
@@ -303,7 +303,7 @@ if(LVR_BUILD_TESTS)
     catch_discover_tests(lvr_tests ADD_TAGS_AS_LABELS)
 endif()
 
-# --- Fuzzers: libFuzzer targets for the decoders in assets/ (docs/decisions.md, ADR-0002). All of them live in assets/fuzz/fuzzers.cpp; each
+# --- Fuzzers: libFuzzer targets for the decoders in assets/. All of them live in assets/fuzz/fuzzers.cpp; each
 # binary compiles it with one LVR_FUZZ_<TARGET> define.
 #   cmake --preset fuzz && cmake --build --preset fuzz
 #   ./build/fuzz/bin/fuzz_lzss -max_total_time=60
@@ -311,7 +311,7 @@ if(LVR_BUILD_FUZZERS)
     function(lvr_add_fuzzer name define)
         add_executable(${name} assets/fuzz/fuzzers.cpp)
         target_compile_definitions(${name} PRIVATE ${define})
-        # Debian's libclang_rt.fuzzer is built against libstdc++ while we use libc++ (ADR-0002). The two use
+        # Debian's libclang_rt.fuzzer is built against libstdc++ while we use libc++. The two use
         # different inline namespaces, so linking libstdc++ for the fuzzer runtime alone is safe. Named by file:
         # clang rewrites a plain -lstdc++ to libc++ when -stdlib=libc++ is set.
         target_link_libraries(${name} PRIVATE lvr::assets -l:libstdc++.so.6)

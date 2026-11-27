@@ -1,6 +1,6 @@
 # Animation programs
 
-**Status:** observed (static disassembly of `VIKINGS.EXE`, 2026-11-17). The engine's: `src/lvr/sprites.*`. Checked against the original through the reference engine (retired 2026-11-23): its state was the original's in DOSBox, step for step, on every path tried ([`../formats/unknowns.md`](../formats/unknowns.md#5-what-has-not-been-compared-with-the-original) lists them), and the engine matches its runs (`replays/`).
+**Status:** observed (static disassembly of `VIKINGS.EXE`). The engine's: `src/lvr/sprites.*`. Checked against the original through the reference engine (since retired): its state was the original's in DOSBox, step for step, on every path tried ([`../formats/unknowns.md`](../formats/unknowns.md#5-what-has-not-been-compared-with-the-original) lists them), and the engine matches its runs (`replays/`).
 
 A second, smaller bytecode in the same object database, that moves and changes an object's **sprite pieces**
 ([`objects.md`](objects.md)). Scripts drive it:

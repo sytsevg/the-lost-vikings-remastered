@@ -34,8 +34,7 @@ bool InputHandler::act(input::Actions actions, Session& session) const {
 }
 
 // Any key ends a demo (the original); under Remaster rules a scene that plays by itself (the intro and the night
-// after it, the title's demos, the ending) only an action key, Enter or Escape (the user: not a key pressed by the
-// way).
+// after it, the title's demos, the ending) only an action key, Enter or Escape (not a key pressed by the way).
 bool InputHandler::skips_demo(std::uint16_t keys) const {
     constexpr auto kSkips = static_cast<std::uint16_t>(key::kAction | key::kEnter);
     return !remaster_ || (unsigned{keys} & unsigned{kSkips}) != 0;
@@ -61,7 +60,7 @@ InputHandler::Asks InputHandler::pressed(std::string_view key, bool repeat, bool
     // Remaster's own (not repeated) go first; one they take isn't the game's.
     input::Actions actions = key_actions(key);
     // At the title, under Remaster rules, Enter chooses as Space does and Escape doesn't: the original's Enter and its
-    // pause are one bit (key::kEnter), which its title takes as Enter (the user, 2026-11-26). Escape still goes back
+    // pause are one bit (key::kEnter), which its title takes as Enter. Escape still goes back
     // from the title's password (a typed Escape, below); at its menu it does nothing.
     if (at_title(session)) {
         if (key == "Escape") {

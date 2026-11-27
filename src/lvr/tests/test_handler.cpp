@@ -85,7 +85,7 @@ TEST_CASE(
     CHECK(hands.keyboard() == 0);
     CHECK_FALSE(hands.tick(nothing_held, *level).escaped);
 
-    // At the title Escape isn't the original's pause, which its title takes as Enter (the user, 2026-11-26): it goes
+    // At the title Escape isn't the original's pause, which its title takes as Enter: it goes
     // back from the password, and at the menu does nothing. Enter is the original's Enter there, as Space chooses too.
     auto title = opened(scene::kTitle, Rules::kRemaster);
     InputHandler at_title{input::remaster_controls(), true};

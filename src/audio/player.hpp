@@ -3,7 +3,7 @@
 // The game's side of the sound (docs/original/sound.md): what VIKINGS.EXE asks of the driver. The music in player slot
 // 0, the sound effects in slots 8, 6, 4, 2; each play registers the sequence, installs the instruments it lacks
 // from the bank (the OPL3 driver only), and starts it (0000:76BD). The front end calls these from the simulation's
-// events, on both versions of the sound (ADR-0015): they run side by side and one is heard.
+// events, on both versions of the sound: they run side by side and one is heard.
 
 #include <array>
 #include <cstdint>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static analysis of the original DOS executables (ADR-0001 update; method in docs/original/static-analysis.md).
+"""Static analysis of the original DOS executables (ADR-0001; method in docs/original/static-analysis.md).
 
   tools/disasm.py dis 0000:001e 0000:0130     disassemble a range (end exclusive) ...
   tools/disasm.py dis 0bad:040c +40           ... or a length (hex)

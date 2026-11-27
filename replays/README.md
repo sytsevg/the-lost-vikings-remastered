@@ -12,13 +12,13 @@ lv-replay --record replays/NAME.replay      # NAME.golden next to it, from the e
 ```
 
 The goldens here were recorded from the reference engine (the original's own bytecode on a rebuilt interpreter,
-compared with the original in DOSBox), which was retired on 2026-11-23 once the engine matched it on every
+compared with the original in DOSBox), which was retired once the engine matched it on every
 replay. They are what is left of it: record one again only for a new replay, never to make a difference go away.
 
-One exception, decided by the user (2026-11-24): **the fade-outs.** The goldens held our renderer's picture of the
+One exception: **the fade-outs.** The goldens held our renderer's picture of the
 original's state, and when a scene ends the original removes every entity before it fades. But its fade (`0FA0`)
 only darkens the palette and flips its two pages, which still hold the last pictures drawn: on its screen everyone
-stays there while it goes dark (the user saw it in DOSBox). The engine now fades the scene as it was last shown
+stays there while it goes dark, as DOSBox shows. The engine fades the scene as it was last shown
 (`Play::shown`), and the 102 goldens that change scene were recorded again from it. Compared refresh by refresh
 with the ones before: 885 runs of 69 or 70 refreshes changed (a fade-out is 70), nothing else, sounds included.
 
@@ -29,7 +29,7 @@ before the change the same way and compare the two pictures.
 
 ## Which replays are here
 
-115 of the 227 that were recorded with the reference engine, and four added since (`level-keys`, `level-keys-four`, `level-keys-kept`, `level-keys-gone`). On 2026-11-23, before the reference engine was retired, the set was pruned by
+115 of the 227 that were recorded with the reference engine, and four added since (`level-keys`, `level-keys-four`, `level-keys-kept`, `level-keys-gone`). Before the reference engine was retired, the set was pruned by
 measurement (`scripts/replay_cover.sh`): each replay's own coverage of `src/lvr/`, lines and branch directions,
 and then the smallest set found that still reaches everything the 227 reached together, by two different replays
 wherever two reached it. Always kept: the five scenes' replays and every level's `reach-NN`, so each level's own

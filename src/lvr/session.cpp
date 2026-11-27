@@ -94,7 +94,7 @@ Session::Session(assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, S
         classic_ = std::make_unique<audio::Player>(sound_, *opl_synth_, opl_synth_.get(), true, false);
         effects_synth_ = std::make_unique<audio::OplSynth>(sound_.opl, effects_chip_);
         classic_effects_ = std::make_unique<audio::Player>(sound_, *effects_synth_, effects_synth_.get(), false, true);
-        // The Classic sound's fire jets' roar is very loud (the user): under Remaster rules at 60% of its loudness,
+        // The Classic sound's fire jets' roar is very loud: under Remaster rules at 60% of its loudness,
         // which the chip gives at 87% of the volume (measured: its levels are steps of a decibel and less, not
         // shares). Vanilla rules' is the original's.
         constexpr int kRoarVolume = 87;
@@ -490,7 +490,7 @@ Screen Session::picture(bool dimmed) {
     View view = view_of(world, loaded, painter_, pictures_, player_);
     if (view.hud && world.online) {
         // Under each portrait the name of the player who plays him; above it those watching, in their line's order,
-        // as one name: A/B (ADR-0012; the user: two rows of them didn't fit).
+        // as one name: A/B (two rows of them don't fit).
         for (int viking = 0; viking < kVikingSlots; ++viking) {
             if (const int who = world.player_of(viking); who >= 0 && std::cmp_less(who, player_names_.size())) {
                 view.hud->names.at(static_cast<std::size_t>(viking)) = player_names_.at(static_cast<std::size_t>(who));
@@ -535,7 +535,7 @@ Screen Session::picture(bool dimmed) {
     }
     Screen screen;
     if (effects_on_) {
-        // (Under the original's pause box or quit box the world holds, and so does what it gives off: the user.)
+        // (Under the original's pause box or quit box the world holds, and so does what it gives off.)
         effects_.add(world, play_.graphics(), view, screen, moving_ && !play_.fade && !play_.in_menu());
     }
     draw_(screen, view, play_.graphics(), shared_);
@@ -695,7 +695,7 @@ bool Session::level_played() const {
 
 bool Session::gauge_shown(const World& world) const {
     return world.rules == Rules::kRemaster && world.scene <= scene::kLastLevel && world.has_vikings && !world.attract &&
-           !play_.playing_demo() && !world.online;  // (online there is no rewind: ADR-0012)
+           !play_.playing_demo() && !world.online;  // (online there is no rewind)
 }
 
 std::vector<Screen> Session::back_to(const Kept& step) {
@@ -723,7 +723,7 @@ std::vector<Screen> Session::back_to(const Kept& step) {
 // earlier one, and the play as it was before that. (With one step left, or a step that was more than a plain
 // tick, the pictures there are.) Each step undone is one less of the level's rewind. Each picture has the refresh it
 // was shown for the first time, and the count of them goes back as far: what moves by itself (a backdrop: the
-// spaceship's stars) goes back with the play (the user, 2026-11-26), and on from there.
+// spaceship's stars) goes back with the play, and on from there.
 std::vector<Screen> Session::step_back() {
     effects_.clear();
     std::vector<Screen> shown;
@@ -925,7 +925,7 @@ std::vector<Screen> Session::run(const StepInput& input, std::optional<std::uint
     moving_ = false;
     // A step that shows fewer pictures than its refreshes (a wait for a key: a text box, a password) shows the last
     // one again for the rest. While the zoom changes the view that held its change up: one stage a step, each shown
-    // three times (slow and not smooth, the user). Then the rest are pictures too, the view going on.
+    // three times (else slow and not smooth). Then the rest are pictures too, the view going on.
     while (std::cmp_less(frames.size(), refreshes) && !play_.scene_loaded && (grows_from_ || shrinking_)) {
         frames.push_back({.screen = picture(), .cues = {}});
     }

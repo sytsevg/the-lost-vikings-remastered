@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(vikings_remaster VERSION 0.0.1 LANGUAGES C CXX)
+project(vikings_remaster VERSION 1.0.0 LANGUAGES C CXX)
 
 if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(FATAL_ERROR "vikings-remaster builds with Clang only (docs/decisions.md, ADR-0002). Use a CMake preset: cmake --preset asan-ubsan")

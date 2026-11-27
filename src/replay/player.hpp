@@ -37,7 +37,7 @@ class LvrPlayer : public Player {
     // (lvr/archive.hpp): what a save holds must be all a replay needs, or the replay differs from its golden. A
     // world that can't be read back ends the run with an error.
     bool saves = false;
-    // GGPO's sync test (rollback, ADR-0012): before every step the last `rollback` steps are run again from the
+    // GGPO's sync test (rollback): before every step the last `rollback` steps are run again from the
     // snapshot before the first of them, without their pictures, and the play goes on from there. They must come
     // to the state the straight run had (its hash), and the replay must still match its golden. A snapshot is a
     // copy of the world (the rewind's and the quicksave's are too): from the steps run again on, the play is a

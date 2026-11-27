@@ -1,6 +1,6 @@
 # The SNES version's data
 
-**Status:** observed (2026-11-18), from the user's own ROM image with a Python prototype (`tools/snes.py`); the
+**Status:** observed, from the user's own ROM image with a Python prototype (`tools/snes.py`); the
 pictures it renders were looked at. **Implemented** for the chunk table and the backdrops in `src/assets/snes.*`
 (`SnesRom`, `load_level_backdrop`; `[real-data]` tests: every chunk decodes and uses up its bytes, all 37
 backdrops load, level 1's the same picture as the prototype's; fuzzed, `fuzz_snes`). The game reads the image
@@ -41,7 +41,7 @@ Each DOS level's SNES header was found by likeness (`tools/snes.py levels`). The
 113, … 125; the other worlds follow the DOS order too.
 
 **The levels are the same game.** In 26 of the 37 levels the fixed fields and the whole object list are identical
-in both versions. The other 11 (compared 2026-11-18, object by object):
+in both versions. The other 11 (compared object by object):
 
 | Level | Difference |
 |---|---|
@@ -88,7 +88,7 @@ too: the village leaves its sky in colour 0 as the levels do, and with the backd
 picture; the ship and game over cover every such pixel (game over has none), so their backdrops never show. The
 village's demo (344, the night the Vikings are taken) has a backdrop of its own (340): the console's night with the
 ship flying in. Behind the DOS night, whose sky and ship are its own, it shows as the ship scrolling past behind the
-houses: the Remaster leaves it out (the user, 2026-11-25; `kSnesSceneHeaders`).
+houses: the Remaster leaves it out (`kSnesSceneHeaders`).
 
 ## Maps, quads, tiles, colours
 - **Map** (the level's and the backdrop's): `u16` per cell, row by row. The low 10 bits are the quad; the level

@@ -105,7 +105,7 @@ vec3 cast_at(vec2 spot, uint here, out vec3 halo) {
 }
 
 // The glow around the colours that give light at `spot`: every pixel of the picture within reach, the nearer
-// counting for more; not from one that what shows here (`here`) was drawn in front of (the user, 2026-11-26: a
+// counting for more; not from one that what shows here (`here`) was drawn in front of (a
 // Viking before a screen).
 vec3 glow_at(vec2 spot, uint here) {
     vec3 glow = vec3(0.0);
@@ -122,7 +122,7 @@ vec3 glow_at(vec2 spot, uint here) {
             }
         }
     }
-    return stepped(glow * 0.065);  // (the user, 2026-11-26: the spaceship's screens a little brighter)
+    return stepped(glow * 0.065);
 }
 
 void main() {

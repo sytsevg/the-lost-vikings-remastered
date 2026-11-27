@@ -55,13 +55,49 @@ a spot where the effects are, `--no-effects` leaves them out).
 ### Windows
 `./scripts/windows.sh` builds the game for Windows (ADR-0021): the `windows` preset cross-builds it with
 llvm-mingw (`cmake/windows.cmake`) into `build/windows/`, and nothing else (no tests, no replays: those are the
-Linux build's; the user, 2026-11-26). Not part of `check.sh`.
+Linux build's). Not part of `check.sh`.
 
 What comes out is one file, `build/windows/bin/vikings-remaster.exe`, for Windows 10 and later. On the Windows
 PC it goes in a folder with a `gamedata/` beside it (`gamedata/original/`, and the SoundFont for the Modern
 sound), which the game finds wherever it is started from. Started without `--rules`, it asks which rules in a
 box. Remaster rules need Vulkan, which a graphics card's own driver has. It opens no console: an error that
 stops the game is shown in a box.
+
+## Releases
+```sh
+make release              # on the host: runs scripts/release.sh in the dev container
+./scripts/release.sh      # in the container
+```
+`scripts/release.sh` builds the `release` preset (Linux) and the `windows` preset, and packs each into
+`build/dist/`:
+
+| Archive | What is in it |
+|---|---|
+| `lost-vikings-remastered-VERSION-linux-x86_64.tar.gz` | `vikings-remaster` |
+| `lost-vikings-remastered-VERSION-windows-x86_64.zip` | `vikings-remaster.exe` |
+
+Both have, beside the program, `gamedata/original/` (empty but for a note: the player's own `DATA.DAT` and
+`VIKINGS.EXE` go there, and the SNES image if they have it), `gamedata/GeneralUser-GS.sf2` with its licence (taken
+from `gamedata/` here, which must have it), `README.txt` (`scripts/release-README.txt`: installing, playing,
+co-op), `LICENSE` and `THIRD-PARTY-NOTICES.md`. VERSION is the project's version in `CMakeLists.txt`; the archives
+are made afresh each time. The Linux program needs glibc 2.38 or later (the script prints
+the newest symbol version it uses), Wayland and Vulkan; the Windows one Windows 10 or later and Vulkan.
+
+### The README's screenshots
+`docs/screenshots/`, made in the container (the GPU renderer on the software driver) from level 7, past its
+password box, three times the original's size:
+```sh
+B="./build/release/bin/vikings-remaster --slot 6 --tap F 2"
+$B --rules vanilla --dump 60 vanilla.png             # 320 x 240: scaled up three times, nearest neighbour
+$B --rules remaster --dump 60 remaster.png --zoom 1 5
+$B --rules remaster --dump 220 zoom.png --hold Right --zoom 2 30
+$B --rules remaster --dump 170 rewind.png --hold Right --rewind 150 170
+$B --rules remaster --dump 60 crt.png --shader crt   # and xbr.png, --shader xbr
+$B --rules remaster --dump 60 menu.png --menu c --sound modern       # and controls.png, --menu dc
+./build/release/bin/vikings-remaster --rules remaster --showcase 12 --dump 150 effects-fire.png
+./build/release/bin/vikings-remaster --rules remaster --showcase 17 --dump 40 effects-electric.png
+./build/release/bin/lvr_tests "[readme]"            # online-lobby.png, online-game.png in gamedata/previews/readme/
+```
 
 ## Playing
 The game reads your own copy of the original files from `gamedata/original/` (or `--data DIR`), and the
@@ -81,11 +117,11 @@ made when it is first written to.
 |---|---|
 | `debug` | Debug, libc++ hardening `extensive` |
 | `asan-ubsan` | **Default for development.** Debug + AddressSanitizer + UndefinedBehaviorSanitizer |
-| `tsan` | Debug + ThreadSanitizer (once there are threads) |
+| `tsan` | Debug + ThreadSanitizer (the transport's thread) |
 | `release` | Optimised, libc++ hardening `fast`, C++ runtime linked statically (one self-contained executable, ADR-0013) |
 | `coverage` | Optimised (`-O2 -g`) + clang source-based coverage of our own targets (it counts by the source, optimised or not); used by `scripts/coverage.sh` |
 | `fuzz` | libFuzzer targets in `src/assets/fuzz/` (ASan + UBSan, no game, no tests) |
-| `ci` | `asan-ubsan` + clang-tidy + `-Werror`, optimised (`-O2 -g`; the user, 2026-11-26: the real-data tests took far too long unoptimised) |
+| `ci` | `asan-ubsan` + clang-tidy + `-Werror`, optimised (`-O2 -g`: the real-data tests take far too long unoptimised) |
 
 Fuzzing:
 ```sh

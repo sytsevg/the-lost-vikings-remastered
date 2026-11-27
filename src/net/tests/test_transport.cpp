@@ -1,4 +1,4 @@
-// Tests for src/net/transport.*'s SDL3_net adapter: a host and a client in one process over 127.0.0.1 (ADR-0012). The
+// Tests for src/net/transport.*'s SDL3_net adapter: a host and a client in one process over 127.0.0.1. The
 // messages come, in order, fast or reliably; with every datagram lost the fast ones come over TCP; a client that goes
 // is seen to.
 #include <algorithm>

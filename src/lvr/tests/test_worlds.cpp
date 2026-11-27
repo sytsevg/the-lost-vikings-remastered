@@ -1706,7 +1706,7 @@ TEST_CASE("play: without the game's files a level can't go on to the scene after
 
 // The ones to talk to, in every state of their hints and switches and for each Viking: what they say, where and
 // in which order, as one number. No replay reaches most of these conversations; the number was taken when they
-// moved into the dialogue table (2026-11-24), from the code before and after, which gave the same lines.
+// moved into the dialogue table, from the code before and after, which gave the same lines.
 TEST_CASE("the ones to talk to say what they said before the dialogue table") {
     struct Case {
         int database;

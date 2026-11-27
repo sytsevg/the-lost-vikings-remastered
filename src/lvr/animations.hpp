@@ -4,8 +4,8 @@
 // one place in the engine with these addresses (the Vikings' own, which are tables by Viking, are in
 // viking_looks.hpp). A name is the kind that plays it and what it shows: anim::kGunnerWalks.
 //
-// What an effect of the Modern visuals would answer to (a bullet's burst, electricity striking) is named here too:
-// docs/ROADMAP.md, M8.
+// What an effect of the Modern visuals answers to (a bullet's burst, electricity striking) is named here too
+// (effects.cpp).
 
 #include <array>
 

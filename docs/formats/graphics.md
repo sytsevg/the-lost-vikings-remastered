@@ -1,6 +1,6 @@
 # Graphics
 
-> Status: **verified** for level graphics and sprites (2026-11-16). All 37 levels decode and render correctly
+> Status: **verified** for level graphics and sprites. All 37 levels decode and render correctly
 > (checked by eye for several worlds), and the level-1 render matches an independent Python implementation pixel
 > for pixel (`[real-data]` tests in `src/assets/tests/test_level.cpp`). Sprites: see [below](#sprites).
 > Code: `src/assets/graphics.*`. Tests: `src/assets/tests/test_graphics.cpp`. Sources: RyanMallon's liblv (CC0), checked
@@ -26,7 +26,7 @@ Stored entries 1 (the HUD panel), 380, 384, 529, 530, 531: a `u16le` **plane siz
 image of `plane size × 4` pixels, **344 pixels wide** (the game's VGA drawing width). A full screen is 344×240: a
 176-line top part plus a 64-line HUD-area part. Code: `decode_screen_image`.
 
-**What is visible: 320×240, square pixels** (VGA Mode X, 4:3), columns 0–319 of the 344. Verified 2026-11-16
+**What is visible: 320×240, square pixels** (VGA Mode X, 4:3), columns 0–319 of the 344. Verified
 against a DOSBox screenshot of level 1 (1817×1368, nearest-neighbour scaled, 5 black rows at the top): sampled on a
 320×240 grid, 95% of the playfield pixels equal our level-1 map (camera at (0, 304), the bottom of the level) and
 92% of the HUD pixels equal the HUD panel's columns 0–319. Every difference is a sprite, a live HUD part or a
@@ -57,7 +57,7 @@ bottom-right tiles.
   exactly `width × height × 2` for all 37 levels.
 - One scene map is **short**: the Interplay logo's header says 20×15 but its map holds 20×14 (560 bytes). We keep
   the stored cells and leave the missing row undrawn (colour 0); liblv fills it with zeros. **Confirmed**
-  (2026-11-17, `tools/spotcheck.py logo`): the original's picture is the same, pixel for pixel.
+  (`tools/spotcheck.py logo`): the original's picture is the same, pixel for pixel.
 
 | Bits | Meaning |
 |---|---|
@@ -65,7 +65,7 @@ bottom-right tiles.
 | 15–10 | the **tile type** (0–63): ground, slopes, ladders, … as the tile tests and scripts read it ([`terrain.md`](../original/terrain.md#the-tile-map)) |
 
 ## Sprites
-> Status: **verified** (2026-11-16) for all 161 sprite entries: every entry that a level or scene header loads,
+> Status: **verified** for all 161 sprite entries: every entry that a level or scene header loads,
 > the HUD graphics, and five sets no header loads. `[real-data]` tests in `src/assets/tests/test_catalog.cpp` check that
 > every entry decodes exactly and compare pixel hashes for 9 entries with an independent Python decoder.
 > Code: `decode_unpacked_frame`, `decode_sprite_frames`, `decode_packed32`, `decode_tiled` in `sprites.*` (tests:

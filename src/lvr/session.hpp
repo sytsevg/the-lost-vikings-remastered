@@ -30,7 +30,7 @@
 
 namespace lvr {
 
-// The sound's versions (ADR-0015): which one is heard, and the Modern one's SoundFont. Without a SoundFont there
+// The sound's versions: which one is heard, and the Modern one's SoundFont. Without a SoundFont there
 // is only the Classic one.
 struct SessionSound {
     bool modern = false;
@@ -66,7 +66,7 @@ class Session {
     // stick pushed part way).
     std::vector<Screen> step(std::uint16_t keyboard, Play::MenuKeys keys = {}, Pace pace = {});
 
-    // --- Online (ADR-0012): what rollback drives (lvr/coop.hpp) ---
+    // --- Online: what rollback drives (lvr/coop.hpp) ---
 
     // This machine's player's part of the next step's input: his keys, stick and zoom, the character typed, the
     // menu keys (step() takes it this way too).
@@ -80,7 +80,7 @@ class Session {
     // The steps before `step` won't run again: the ledger lets go of them.
     void confirmed(std::uint32_t step) { ledger_.confirm(step); }
     Play::Snapshot snapshot() const { return play_.snapshot(); }
-    // A snapshot as bytes, for one joining the game under way (ADR-0012): the state's version, the scene and the
+    // A snapshot as bytes, for one joining the game under way: the state's version, the scene and the
     // database it was loaded with, the world, the play's own state. And taken: the play becomes it (its level
     // loaded from this machine's files). False with why, if they aren't such bytes of this version.
     static std::vector<std::uint8_t> state_bytes(const Play::Snapshot& snapshot);
@@ -134,9 +134,9 @@ class Session {
     // key like any other, for the game (the original's: any key ends a demo). So nothing pressed in a scene is
     // kept for the next level.
     bool takes_play_keys() const noexcept { return play_.world.rules == Rules::kRemaster && level_played(); }
-    // Remaster rules' zoom (ADR-0011): a step out (`by` > 0) or back in, between the original's view and twice
+    // Remaster rules' zoom: a step out (`by` > 0) or back in, between the original's view and twice
     // it. The next step's world has the view; the pictures go from the one to the other over a moment. Asked for
-    // while that is shown, the next step follows when it is done (the user, 2026-11-26: not a jump).
+    // while that is shown, the next step follows when it is done (not a jump).
     bool zoom(int by);
     // The zoom's step asked for (0 the original's view, up to kZoomSteps - 1: twice it), and it set to one from
     // anywhere (the profile's, at the start): a level played from then on is shown so.
@@ -181,21 +181,21 @@ class Session {
         return true;
     }
 
-    // Remaster rules' rewind (ADR-0011): while it is held, every step goes two steps back instead of one on (time
+    // Remaster rules' rewind: while it is held, every step goes two steps back instead of one on (time
     // runs backwards at twice its speed, with the pictures in between as they were). Only in a level being played,
     // and never back past its start. A level has ten seconds of it, shown in a bar in the minimap, used up as they are
     // gone back over and given again only when a level is started (that one again too). With nothing left to go
     // back to, or none of them, the rewind is over and the play goes on, until it is let go and held again. Live,
     // the sound of those seconds is heard backwards meanwhile, twice as fast. What the minimap has seen is not
     // taken back.
-    void rewind(bool held) noexcept { rewind_held_ = held && !play_.world.online; }  // (none online: ADR-0012)
+    void rewind(bool held) noexcept { rewind_held_ = held && !play_.world.online; }  // (none online)
     bool rewinding() const noexcept { return rewinding_; }
     static constexpr int kRewindSteps = 199;  // a level's ten seconds, in steps (ticks: three refreshes each)
     int rewind_left() const noexcept { return rewind_left_; }  // of the level's steps of rewind
     // The quicksave, only with the game's cheat on (the title was given its password, or `cheat` below): the play
     // as it is now is kept, in a level; and brought back, from wherever the game is by then but a menu (the
     // game-over scene, for one). One is kept, until the game is closed. Acted on at the next step.
-    // None online (ADR-0012).
+    // None online.
     bool quicksave() noexcept {
         save_wanted_ = takes_play_keys() && play_.world.title.cheat && !play_.world.online;
         return save_wanted_;
@@ -302,7 +302,7 @@ class Session {
     std::unique_ptr<audio::OplSynth> opl_synth_;
     std::unique_ptr<audio::Player> classic_;
     // Remaster rules' Classic sound: the effects on a chip of their own, so that the music and the effects each have
-    // their own volume (the user, 2026-11-26; they no longer take channels from the music, as the original's do).
+    // their own volume (they don't take channels from the music, as the original's do).
     // Vanilla rules': one chip for both, as the original.
     audio::Opl3 effects_chip_;
     std::unique_ptr<audio::OplSynth> effects_synth_;
@@ -319,7 +319,7 @@ class Session {
     std::vector<std::int16_t> effects_mix_;
     std::vector<std::int16_t> unheard_;  // the version not heard: rendered all the same, and dropped
     // Remaster rules' volumes (set_volume), as gains on what is made, in 1/65536: the music's and the effects'. The
-    // players play as written, at the full volume (turned down in the driver, a note went quiet early: the user).
+    // players play as written, at the full volume (turned down in the driver, a note would go quiet early).
     std::int32_t music_gain_ = 65536;
     std::int32_t effects_gain_ = 65536;
     bool modern_on_ = false;
@@ -378,7 +378,7 @@ class Session {
     bool rewind_over_ = false;  // held, but there was nothing left to go back to: not again until it is let go
     bool save_wanted_ = false;
     bool load_wanted_ = false;
-    // Which of the world's players this machine shows and plays (co-op online, ADR-0012): the first, so far.
+    // Which of the world's players this machine shows and plays (co-op online): the first, so far.
     std::uint8_t player_ = 0;
     std::uint16_t typed_ = 0;  // the character typed since the last step
     std::vector<std::int16_t>

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # The Windows build: the windows preset cross-builds the game with llvm-mingw (cmake/windows.cmake). Not part of
 # check.sh. What comes out: build/windows/bin/vikings-remaster.exe, one file, for Windows 10 and later. Nothing of
-# it is run here: the tests and the replays are the Linux build's (the user, 2026-11-26: the Windows build worked
-# as it was built; only the build is needed).
+# it is run here: the tests and the replays are the Linux build's.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

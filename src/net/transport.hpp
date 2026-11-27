@@ -31,7 +31,7 @@ struct Event {
     std::vector<std::uint8_t> bytes;
 };
 
-// What the game online hears and says through (ADR-0012), a machine's connections to the others: the host's to each
+// What the game online hears and says through, a machine's connections to the others: the host's to each
 // guest, a guest's to the host. Two adapters: SdlTransport (the network, below) and net::SimulatedNetwork's (tests).
 // Nothing here blocks: the game polls it every refresh.
 class Transport {

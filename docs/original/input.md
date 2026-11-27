@@ -44,8 +44,7 @@ The arrow keys are the keypad scancodes, so the grey arrows and the keypad arrow
   any other press clears it. Not written during demo playback, nor for Alt+S. The scripts read and clear it:
   the title menu's hot keys `N`, `P`, `Q` (database 454 at `85D2`), the password screen (typed letters, Backspace,
   Enter; `86D1`), and a yes/no question answered with `Y` / `N` in every level database (449 at `33C1`/`344D`).
-  **Found 2026-11-18**; the
-  lockstep runs never saw it because they write the keyboard word and the key states directly, past the
+  The lockstep runs never saw it because they write the keyboard word and the key states directly, past the
   handler. Checked in lockstep with the word poked on both sides: `P` at the title menu, then `T` `L` `P` `T` and
   Enter load level 3 in the original and in the reference engine of the time, every state and the picture the same. The game:
   `Session::key_pressed` with `input::typed_character` of the key, at every press.
@@ -59,8 +58,8 @@ Hot keys, read from the key-state array once per tick:
 | Alt+S | toggle sound effects (`ds:0304` bit 0); stops the playing effects | `0000:08C8` |
 | Alt+M | toggle music (`ds:0302` bit 0); restarts or stops the tune | `0000:08C8` |
 | F4 | executes `int 3` (a debugger breakpoint; does nothing without a debugger) | `0000:00EA` |
-| F5 / F6 | previous level / next level (the first stays the first), in a level, **only if `ds:0202` ≠ 0**. It is 0 in the EXE; the title sets it when its password screen is given a fifth password that is no level's. It is cleared only the first time the title runs, so it stays on back at the title (`replays/level-keys-kept.replay`). Checked in DOSBox 2026-11-24 (`replays/level-keys.replay`) | `0000:00F7` |
-| F + D + E + S, alone or with Left | with `ds:0202` ≠ 0 too, and read from the keyboard word (so from a joystick as well), in the script of Olaf's shield (type 03 of every database): the next level (not from slot 36), with Left the one before (not from slot 0). Each Viking whose field `0A` is 0 gets 6 first. With the switch on, the shield stays when Olaf is gone, put away, to go on watching. Checked in DOSBox 2026-11-24 with all three alive (`replays/level-keys-four.replay`); the branch for a Viking who is gone is from the listing only | 449 at `5AD6`, `5C38` |
+| F5 / F6 | previous level / next level (the first stays the first), in a level, **only if `ds:0202` ≠ 0**. It is 0 in the EXE; the title sets it when its password screen is given a fifth password that is no level's. It is cleared only the first time the title runs, so it stays on back at the title (`replays/level-keys-kept.replay`). Checked in DOSBox (`replays/level-keys.replay`) | `0000:00F7` |
+| F + D + E + S, alone or with Left | with `ds:0202` ≠ 0 too, and read from the keyboard word (so from a joystick as well), in the script of Olaf's shield (type 03 of every database): the next level (not from slot 36), with Left the one before (not from slot 0). Each Viking whose field `0A` is 0 gets 6 first. With the switch on, the shield stays when Olaf is gone, put away, to go on watching. Checked in DOSBox with all three alive (`replays/level-keys-four.replay`); the branch for a Viking who is gone is from the listing only | 449 at `5AD6`, `5C38` |
 | Alt+X, Alt+Q, F10 (held) | quit: at once in demos and slots with header flag `0x08`, else the quit box (`ds:91A4`, `9199`, `917C`, `91B0`) | `0000:0350` ([`menus.md`](menus.md#the-quit-box-00000350041b)) |
 
 ## Joystick
@@ -76,8 +75,7 @@ the reading (`79FB`, a PIT count) grows to the right and down; if it does, the a
 image, so it probably counts the other way. Not checked in DOSBox (the control channel has no joystick).
 
 **In the game** (`src/input/input.*`, the front end; the keyboard word kept as the original's handler keeps it by
-`InputHandler`, `src/lvr/handler.*`): under Vanilla rules the default keys above and only those (the keys file,
-`--keys`, is gone, 2026-11-26); under Remaster rules the player's, changed in the menu and kept in the profile
+`InputHandler`, `src/lvr/handler.*`): under Vanilla rules the default keys above and only those; under Remaster rules the player's, changed in the menu and kept in the profile
 (actions `right`, `left`, `up`, `down`, `previous-viking`, `next-viking`, `use-item`, `act`, `ability-d`,
 `ability-f`, `pause`, `inventory`, `none`, and Remaster's own). A gamepad works as the
 original's joystick: A/B/X/Y (south, east, west, north) are buttons 1–4, the d-pad or the left stick (past half

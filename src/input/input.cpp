@@ -202,7 +202,7 @@ Controls original_controls() {
 
 Controls remaster_controls() {
     Controls c = original_controls();
-    // A key an action (the user, 2026-11-25): the plain ones of the original's, the two Ctrls a Viking each way.
+    // A key an action: the plain ones of the original's, the two Ctrls a Viking each way.
     c.keys = {};
     add(c.keys, Action::kLeft, {"Left"});
     add(c.keys, Action::kRight, {"Right"});
@@ -218,7 +218,7 @@ Controls remaster_controls() {
     add(c.keys, Action::kPause, {"P"});  // (Escape and Start open the menu)
     unbind(c.pad, "start");
     // (Nothing pauses on the pad: the left stick's press, which pausing was on, is too easily pressed while
-    // walking, the user. The menu's "give up level" opens the original's pause box.)
+    // walking. The menu's "give up level" opens the original's pause box.)
     add(c.keys, Action::kRewind, {"Backspace"});
     add(c.keys, Action::kZoomOut, {"-"});
     add(c.keys, Action::kZoomIn, {"="});

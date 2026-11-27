@@ -1,6 +1,6 @@
 # Levels
 
-> Status: level table and header layout **verified** (2026-11-16): for all 37 levels and 10 scene headers the parser
+> Status: level table and header layout **verified**: for all 37 levels and 10 scene headers the parser
 > ends exactly at the last byte of the entry. The fields the game reads are decoded from `VIKINGS.EXE` (the loader
 > copies the header to `ds:25B3`); the bytes nothing reads, with their statistics, are in
 > [`unknowns.md`](unknowns.md#level-header-all-47-level-and-scene-headers).
@@ -77,7 +77,7 @@ Non-playable screens use the level header format too (`kScenes` in `catalog.hpp`
 | 0x0c | u16 | a scene's object type (mode 0) | `VIKINGS.EXE` |
 | 0x0e | u16 | flags of the started objects | `VIKINGS.EXE` |
 | 0x10 | u16 | field `16` of a scene's object (mode 0) | `VIKINGS.EXE` |
-| 0x12 | u16 | the **switch word**: the level's switches at the start, a bit each (`ds:25C5`). Buttons, keyholes and switches flip bits (`xor`); lasers, bridges, elevators, doors, fans, crushers, crumbling tiles, conversations and others test their own bit, named by the object's argument (field `16`). Found from the object types whose code reaches each `xor` or read of `25C5`, named by their sprites. Level 2: `0x20F`, so the janitor alien (argument `0x20`) doesn't talk until its bit is set | `VIKINGS.EXE`, the scripts (2026-11-18) |
+| 0x12 | u16 | the **switch word**: the level's switches at the start, a bit each (`ds:25C5`). Buttons, keyholes and switches flip bits (`xor`); lasers, bridges, elevators, doors, fans, crushers, crumbling tiles, conversations and others test their own bit, named by the object's argument (field `16`). Found from the object types whose code reaches each `xor` or read of `25C5`, named by their sprites. Level 2: `0x20F`, so the janitor alien (argument `0x20`) doesn't talk until its bit is set | `VIKINGS.EXE`, the scripts |
 | 0x14 | u16 | read by the scripts (`ds:25C7`, database 453 only); meaning per object type ([`unknowns.md`](unknowns.md#level-header-all-47-level-and-scene-headers)) | `VIKINGS.EXE` |
 | 0x16 | u16 | **next slot**: the level or scene that follows ([`game-flow.md`](../original/game-flow.md#slots)) | `VIKINGS.EXE` |
 | 0x1c | u8 | flags: `0x01` HUD, `0x02` / `0x40` image scene with HUD-area image 384 / 531, `0x20` image 529 in the HUD area, `0x08` quit without the quit box, `0x80` the text layer drawn straight onto the pages; `0x04` never tested ([`game-flow.md`](../original/game-flow.md#header-flags-offset-0x1c-read-by-the-loader)) | `VIKINGS.EXE` |

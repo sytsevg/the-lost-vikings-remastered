@@ -2,7 +2,7 @@
 
 // Sprites as the original has them: an entity's sprite is one or more pieces (8 x 8, 16 x 16 or 32 pixels wide),
 // taken from a layer of 128. Animations are imported: the original's animation programs, played here on the pieces
-// (docs/architecture.md, "Decided 2026-11-18"; the instructions are listed in docs/original/animation.md).
+// (docs/architecture.md, "Sprites and animations"; the instructions are listed in docs/original/animation.md).
 
 #include <array>
 #include <cstddef>

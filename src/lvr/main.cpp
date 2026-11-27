@@ -10,7 +10,7 @@
 //       --profile: where Remaster rules keep the player's profile (what the minimap has seen, the settings and
 //       controls, settings.txt); by default the folder `profiles` beside this program (a second window on one machine
 //       wants its own). --soundfont: the Modern sound's SoundFont. Vanilla rules play the
-//       Classic sound, the original's, only (the user). Under Remaster rules the sound, the screen's look, the visual
+//       Classic sound, the original's, only. Under Remaster rules the sound, the screen's look, the visual
 //       effects and the controls are the menu's (Escape in a level), and going online the title's (HOST GAME, JOIN
 //       GAME), all kept in the profile, not start-up options.
 //
@@ -60,6 +60,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -68,6 +69,7 @@
 #endif
 
 #include "assets/assets.hpp"
+#include "assets/snes.hpp"
 #include "image/png.hpp"
 #include "input/input.hpp"
 #include "lvr/build_id.hpp"
@@ -91,18 +93,22 @@ constexpr const char* kWindowTitle = "The Lost Vikings";
 // showing longer than the other (which includes the wait for the screen's refresh: up to a 60 Hz one's).
 constexpr double kSlowStepMilliseconds = 8;
 constexpr double kSlowShowMilliseconds = 20;
-// The most pictures shown a second where showing doesn't wait for the screen's refresh (GpuRenderer::waits_for_refresh;
-// the user: 120): smooth movement shows each where it is at that moment.
+// The most pictures shown a second where showing doesn't wait for the screen's refresh
+// (GpuRenderer::waits_for_refresh): smooth movement shows each where it is at that moment.
 constexpr std::uint64_t kMostShows = 120;
 
-// On Windows, a box that says why the game stops: a program of Windows' desktop has no console, and one started from
-// Explorer has nowhere else to say it. Elsewhere stderr is enough.
+// Whether what goes wrong is said in a box as well as on stderr: a game started from a file manager or Explorer has
+// nowhere else to say it. Not for a dump, a tool's run. (On Wayland SDL shows a box with zenity or kdialog.)
+bool boxes = true;
+
+void show_box(SDL_MessageBoxFlags kind, const char* text, SDL_Window* over = nullptr) noexcept {
+    if (boxes) {
+        (void)SDL_ShowSimpleMessageBox(kind, kWindowTitle, text, over);
+    }
+}
+
 void show_why(const char* why) noexcept {
-#ifdef SDL_PLATFORM_WINDOWS
-    (void)SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, kWindowTitle, why, nullptr);
-#else
-    (void)why;
-#endif
+    show_box(SDL_MESSAGEBOX_ERROR, why);
 }
 
 // On Windows, stdout and stderr that can't be written to go to NUL instead: a program of Windows' desktop has none
@@ -118,9 +124,51 @@ void quiet_without_console() noexcept {
 #endif
 }
 
+// What the player is told when the game's files can't be used: where they go, or what is wrong with those there.
+std::string about_game_files(const std::filesystem::path& dir, const std::string& why) {
+    std::error_code error;
+    std::filesystem::path where = std::filesystem::weakly_canonical(dir, error);
+    if (error) {
+        where = dir;
+    }
+    const auto has = [&dir](std::string_view name) {  // (as the game finds them: in any case)
+        std::error_code failed;
+        for (const auto& item : std::filesystem::directory_iterator{dir, failed}) {
+            std::string found = item.path().filename().string();
+            std::ranges::transform(found, found.begin(),
+                                   [](char c) { return c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c; });
+            if (found == name) {
+                return true;
+            }
+        }
+        return false;
+    };
+    if (!has("DATA.DAT") || !has("VIKINGS.EXE")) {
+        return std::format(
+            "The game plays from your own copy of the DOS release of The Lost Vikings: put its "
+            "DATA.DAT and VIKINGS.EXE in\n\n  {}\n\nand start it again.",
+            where.string());
+    }
+    return std::format("The game's files in\n\n  {}\n\ncan't be used:\n\n  {}", where.string(), why);
+}
+
+// What Remaster rules would play without, said in the box that asks for the rules: the SNES image's backdrops and
+// the Modern sound's SoundFont are the player's to add.
+std::vector<std::string> remaster_notes(const std::filesystem::path& dir, const std::filesystem::path& soundfont) {
+    std::vector<std::string> notes;
+    if (const auto rom = assets::SnesRom::open(dir); !rom) {
+        notes.push_back(std::format("{}: no backdrops behind the levels", rom.error()));
+    }
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(soundfont, error)) {
+        notes.push_back(std::format("no SoundFont at {}: the Classic sound only", soundfont.string()));
+    }
+    return notes;
+}
+
 // The rules to play under, asked in a box when no --rules says: none if the player quits there; Vanilla rules, the
 // default, if the box can't be shown (SDL shows one on Wayland with zenity or kdialog).
-std::optional<Rules> ask_rules() {
+std::optional<Rules> ask_rules(const std::vector<std::string>& notes) {
     constexpr int kVanillaButton = 0;
     constexpr int kRemasterButton = 1;
     constexpr int kQuitButton = 2;
@@ -129,18 +177,25 @@ std::optional<Rules> ask_rules() {
         {.flags = 0, .buttonID = kRemasterButton, .text = "Remaster"},
         {.flags = SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, .buttonID = kQuitButton, .text = "Quit"},
     }};
-    const SDL_MessageBoxData box{
-        .flags = SDL_MESSAGEBOX_INFORMATION | SDL_MESSAGEBOX_BUTTONS_LEFT_TO_RIGHT,
-        .window = nullptr,
-        .title = kWindowTitle,
-        .message =
-            "Which rules?\n\n"
-            "Vanilla: the original's, as it played.\n"
-            "Remaster: zoom, a minimap, rewind, co-op online, and the Modern visuals and sound.\n\n"
-            "(--rules vanilla or --rules remaster chooses at the start.)",
-        .numbuttons = static_cast<int>(buttons.size()),
-        .buttons = buttons.data(),
-        .colorScheme = nullptr};
+    std::string message =
+        "Which rules?\n\n"
+        "Vanilla: the original's, as it played.\n"
+        "Remaster: zoom, a minimap, rewind, co-op online, and the Modern visuals and sound.\n\n";
+    if (!notes.empty()) {
+        message += notes.size() == 1 ? "\u26a0 Note for Remaster:\n" : "\u26a0 Notes for Remaster:\n";
+        for (const std::string& note : notes) {
+            message += std::format("  \u2022 {}\n", note);
+        }
+        message += '\n';
+    }
+    message += "(--rules vanilla or --rules remaster chooses at the start.)";
+    const SDL_MessageBoxData box{.flags = SDL_MESSAGEBOX_INFORMATION | SDL_MESSAGEBOX_BUTTONS_LEFT_TO_RIGHT,
+                                 .window = nullptr,
+                                 .title = kWindowTitle,
+                                 .message = message.c_str(),
+                                 .numbuttons = static_cast<int>(buttons.size()),
+                                 .buttons = buttons.data(),
+                                 .colorScheme = nullptr};
     int pressed = kQuitButton;
     if (!SDL_ShowMessageBox(&box, &pressed)) {
         return Rules::kVanilla;
@@ -154,7 +209,7 @@ std::optional<Rules> ask_rules() {
     return std::nullopt;  // Quit, or the box closed
 }
 
-// Why the game stops: on stderr, and on Windows in a box too.
+// Why the game stops: on stderr, and in a box.
 void stop(const std::string& why) {
     std::println(stderr, "vikings-remaster: {}", why);
     show_why(why.c_str());
@@ -510,7 +565,7 @@ Go run(Window& in, Place& place) {
     // The sound card asks for its sound as it needs it (sound_wanted), a few milliseconds at a time.
     (void)SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "512");
     const SDL_AudioSpec spec{.format = SDL_AUDIO_S16, .channels = 2, .freq = static_cast<int>(Session::sample_rate())};
-    // (Every place is heard, a guest joining too: the title's music and sounds go on meanwhile, the user, 2026-11-26.)
+    // (Every place is heard, a guest joining too: the title's music and sounds go on meanwhile.)
     SDL_AudioStream* sound =
         SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, sound_wanted, &session);
     if (sound == nullptr) {
@@ -745,8 +800,8 @@ Go run(Window& in, Place& place) {
                                                 static_cast<double>(frequency) * kDisplayHz);
           }};
     // The player's settings to the place's session as it begins, a game online's or the title's again after one: what
-    // was changed in the one is the other's too (the user, 2026-11-26: the zoom set online was lost when the lobby
-    // or the title, whose session the game online's never was, gave theirs back as they were left).
+    // was changed in the one is the other's too (else the lobby or the title, whose session the game online's never
+    // was, would give theirs back as they were left).
     if (remaster && gpu != nullptr) {
         use_settings(session, gpu, remastered->settings);
     }
@@ -793,7 +848,7 @@ Go run(Window& in, Place& place) {
                 if (hands.pressed(key_name(event.key.scancode), event.key.repeat,
                                   held[SDL_SCANCODE_LALT] || held[SDL_SCANCODE_RALT],
                                   session) == InputHandler::Asks::kMenu &&
-                    !last_shown.fading) {  // (not while the level fades in or out: the user)
+                    !last_shown.fading) {  // (not while the level fades in or out)
                     (void)open_menu();
                 }
             } else if (event.type == SDL_EVENT_KEY_UP) {
@@ -825,8 +880,8 @@ Go run(Window& in, Place& place) {
         // Every refresh that is due shows the next picture; a step runs when the last one is used up.
         const double elapsed =
             static_cast<double>(SDL_GetPerformanceCounter() - start) / static_cast<double>(frequency);
-        // (The first at once: a place's first picture is shown with its menu, never the last place's under it. The
-        // user, 2026-11-26: back from a game the lobby's page flashed, laid out for the game's zoomed picture.)
+        // (The first at once: a place's first picture is shown with its menu, never the last place's under it: else
+        // back from a game the lobby's page would flash, laid out for the game's zoomed picture.)
         const auto due = std::max(static_cast<std::uint64_t>(elapsed * kDisplayHz), std::uint64_t{1});
         if (due > refreshes + 30) {
             refreshes = due;  // far behind (a breakpoint, a slow load): don't race to catch up
@@ -1071,15 +1126,22 @@ int main(int argc, char* argv[]) try {
             return EXIT_FAILURE;
         }
     }
+    boxes = dump_to.empty();
+    if (dump_to.empty()) {  // a game in a window: without the game's files, a box says where they go
+        if (const auto files = assets::GameFiles::open(dir); !files) {
+            stop(about_game_files(dir, files.error()));
+            return EXIT_FAILURE;
+        }
+    }
     if (!rules_given && dump_to.empty()) {  // a game in a window: the player chooses the rules (a dump plays Vanilla)
-        const std::optional<Rules> chosen = ask_rules();
+        const std::optional<Rules> chosen = ask_rules(remaster_notes(dir, sound.soundfont));
         if (!chosen) {
             return EXIT_SUCCESS;
         }
         rules = *chosen;
     }
     if (rules == Rules::kRemaster && dump_to.empty() && (sound_asked || look || !effects)) {
-        // (The user, 2026-11-25: what the menu sets and the profile keeps isn't a start-up option as well.)
+        // (What the menu sets and the profile keeps isn't a start-up option as well.)
         std::println(
             stderr,
             "vikings-remaster: under Remaster rules the sound, the screen's look and the visual effects are set in "
@@ -1092,13 +1154,13 @@ int main(int argc, char* argv[]) try {
                      "vikings-remaster: Vanilla rules play the Classic sound only (--rules remaster for the Modern)");
         return EXIT_FAILURE;
     }
-    // No Modern sound under Vanilla rules (the original's sound, the user); a dump renders only the version it is
+    // No Modern sound under Vanilla rules (the original's sound); a dump renders only the version it is
     // asked for.
     if (rules == Rules::kVanilla || !std::filesystem::exists(sound.soundfont) || (!dump_to.empty() && !sound.modern)) {
         sound.soundfont.clear();
     }
     sound.live = dump_to.empty();  // in a window the sound card asks for the sound; a dump makes it step by step
-    // Under Remaster rules a window's pictures are drawn by the GPU renderer (ADR-0006), which needs the window
+    // Under Remaster rules a window's pictures are drawn by the GPU renderer, which needs the window
     // first; Vanilla rules, and a dump, have the Classic one's.
     SDL_Window* window = nullptr;
     std::unique_ptr<GpuRenderer> gpu;
@@ -1165,13 +1227,25 @@ int main(int argc, char* argv[]) try {
         remastered.emplace();
         remastered->profile = profile;
         if (!profile.empty()) {
-            if (const auto used = (*session)->use_profile(profile); !used) {
-                std::println(stderr, "vikings-remaster: the profile: {}", used.error());
-            }
             std::vector<std::string> problems;
+            if (const auto writable = profile_writable(profile); !writable) {
+                problems.push_back(writable.error());
+            }
+            if (const auto used = (*session)->use_profile(profile); !used) {
+                problems.push_back(used.error());
+            }
             remastered->settings = load_settings(profile, problems);
+            std::string told;
             for (const std::string& problem : problems) {
                 std::println(stderr, "vikings-remaster: the profile: {}", problem);
+                told += std::format("  \u2022 {}\n", problem);
+            }
+            if (!problems.empty()) {  // (said once, at the start: the game goes on without what can't be kept)
+                const std::string why = std::format(
+                    "Something is wrong with the profile in\n\n  {}\n\n{}\nThe game goes on, but its "
+                    "settings, the minimap and the quicksave may not be kept.",
+                    profile.string(), told);
+                show_box(SDL_MESSAGEBOX_WARNING, why.c_str(), window);
             }
         }
         use_settings(**session, gpu.get(), remastered->settings);
@@ -1196,7 +1270,7 @@ int main(int argc, char* argv[]) try {
         SDL_SetWindowTitle(window, showcase->title().c_str());
     }
     // The places, from Offline on (front.hpp): under Remaster rules offline, in a window, the title's HOST GAME and
-    // JOIN GAME lead online, and back to the title when the game online ends (ADR-0012).
+    // JOIN GAME lead online, and back to the title when the game online ends.
     const bool may_go_online = remastered && gpu != nullptr && !showcase;
     OfflinePlace offline{**session, showcase ? &*showcase : nullptr, may_go_online};
     Places::Needs needs{

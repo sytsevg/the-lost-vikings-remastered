@@ -1,6 +1,6 @@
 # Objects: spawning, removing, the level's object list
 
-**Status:** observed (static disassembly of `VIKINGS.EXE`, 2026-11-17). The engine's: `src/lvr/world.*`. Checked against the original through the reference engine (retired 2026-11-23): its state was the original's in DOSBox, step for step, on every path tried ([`../formats/unknowns.md`](../formats/unknowns.md#5-what-has-not-been-compared-with-the-original) lists them), and the engine matches its runs (`replays/`).
+**Status:** observed (static disassembly of `VIKINGS.EXE`). The engine's: `src/lvr/world.*`. Checked against the original through the reference engine (since retired): its state was the original's in DOSBox, step for step, on every path tried ([`../formats/unknowns.md`](../formats/unknowns.md#5-what-has-not-been-compared-with-the-original) lists them), and the engine matches its runs (`replays/`).
 The camera is in [`camera.md`](camera.md), the whole level start in [`game-loop.md`](game-loop.md#the-level-start-00001080-1133). Field numbers and the per-object arrays are in
 [`script-vm.md`](script-vm.md#object-fields).
 

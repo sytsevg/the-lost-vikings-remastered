@@ -1,6 +1,6 @@
 # DATA.DAT
 
-> Status: container and compression **verified** against the reference release (2026-11-16) and locked down by
+> Status: container and compression **verified** against the reference release and locked down by
 > the `[real-data]` tests in `src/assets/tests/test_data_dat.cpp`.
 > Code: `src/assets/data_dat.*`. Tests: `src/assets/tests/test_data_dat.cpp`.
 
@@ -31,7 +31,7 @@ executables (`u16le` words):
 | 2 | sound effects: `0x8000` = no sound; bit 0 = effects off (Alt+S) | 0 |
 | 3 | driver index `d`: entry 455 + `d` ([`audio.md`](audio.md#sound-devices)) | 0 (PC speaker) |
 | 4 | device variant `v` (0–4): music, effects and instrument bank | 0 |
-| 5–8 | I/O port, IRQ, DMA, DRQ for the driver; `0xFFFF` = not given. Seen in DOSBox-X (2026-11-17): with the port `0xFFFF` none of the FM drivers 456, 457, 458, 459 and 460 starts (the game prints that the sound card could not be set up); with the port given (`0x388` AdLib, `0x220` Sound Blaster) they do, and IRQ/DMA can stay `0xFFFF` | all `0xFFFF` |
+| 5–8 | I/O port, IRQ, DMA, DRQ for the driver; `0xFFFF` = not given. Seen in DOSBox-X: with the port `0xFFFF` none of the FM drivers 456, 457, 458, 459 and 460 starts (the game prints that the sound card could not be set up); with the port given (`0x388` AdLib, `0x220` Sound Blaster) they do, and IRQ/DMA can stay `0xFFFF` | all `0xFFFF` |
 | 9 | **copy-protection fingerprint** of the machine `SETUP.EXE` ran on ([`game-flow.md`](../original/game-flow.md#start-up-00000000)) | `0x3DEB` |
 | 10 | magic `0x6969` | `0x6969` |
 | 11–15 | unused | 0 |

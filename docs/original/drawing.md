@@ -1,12 +1,12 @@
 # Drawing: the playfield, the sprite pieces, the text, the HUD
 
-**Status:** observed (static disassembly of `VIKINGS.EXE`, 2026-11-17), the drawing code in segment `0C83` and the
+**Status:** observed (static disassembly of `VIKINGS.EXE`), the drawing code in segment `0C83` and the
 HUD in `0000`. The engine's: `src/lvr/render.*` (the Classic picture, ADR-0006). A frame of level 1 as drawn
-matches the user's DOSBox screenshot in the tiles, Erik's sprite and place, the item, the laser, the
+matches a DOSBox screenshot in the tiles, Erik's sprite and place, the item, the laser, the
 speech box (position, tail, colours) and the HUD portraits. The scrolling hardware tricks (pel panning, the page
 flips, the dirty-rectangle restore) are not reproduced: the renderer draws the whole picture every frame, which
 gives the same result **except where the original leaves something behind**. Compared with the original's
-screenshots (`tools/lockstep.py --shot`, 2026-11-17; pictures in `gamedata/previews/screens/`, `galaxy/`,
+screenshots (`tools/lockstep.py --shot`; pictures in `gamedata/previews/screens/`, `galaxy/`,
 `gameover/`, `ending/`): the logos, the title, the menu, the password screen, level 1 with its HUD, the galaxy, the
 game-over scene, the starfield, the village ending and the ship the same pixel for pixel, after four fixes: the
 HUD's portraits and health dots were 1–2 pixels off (their blitters start at plane 1 and plane 3, below); an image
@@ -16,7 +16,7 @@ scene's lightning. Its two pieces switch between two frames at the same place wi
 erase count stays 0: nothing moved), and the original draws each frame over what the last one left in that page,
 so its bolt is both frames on top of each other (`gamedata/previews/gameover/lightning-740-original-vs-remake.png`,
 left the original). Reproducing that needs the original's three pages and its restore (`0C83:15D5`, the screen-cell
-cache in segment `ds:2E69`); not done (2026-11-17).
+cache in segment `ds:2E69`); not done.
 
 The original draws three times per tick ([`timing.md`](timing.md#game-loop)); the engine draws the state as it is at each of those points.
 
@@ -34,7 +34,7 @@ step is put in the first tint and every one of the 256 colours mixed by `0F03` (
 tint, subtracted, at least 0), then flipped. In between, the faded palette stays uploaded, so the level start's
 four draws are black. The engine darkens the palette by the step at each of those refreshes (`Play::fade`). The
 fade out draws nothing: the pages still hold the last pictures, from before the game-over pass removed everyone,
-so everyone stays on screen while it goes dark (seen in DOSBox, 2026-11-24). The engine draws those refreshes
+so everyone stays on screen while it goes dark (seen in DOSBox). The engine draws those refreshes
 from the world as it was before that pass (`Play::shown`).
 
 ## Order

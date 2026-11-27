@@ -28,13 +28,13 @@ struct SoundCue {
     // Where it happened, an entity's: its middle, in the level's pixels (the Modern sound places its effects by it).
     std::int16_t x = 0;
     std::int16_t y = 0;
-    // Online (ADR-0012): heard by that player alone (his inventory's clicks); -1: by everyone.
+    // Online: heard by that player alone (his inventory's clicks); -1: by everyone.
     int heard_by = -1;
 
     bool operator==(const SoundCue&) const = default;
 };
 
-// Online, rollback runs steps again (ADR-0012): what each asks of the sound is heard once. The ledger keeps what was
+// Online, rollback runs steps again: what each asks of the sound is heard once. The ledger keeps what was
 // played for every step that may still run again. A step's cues as it comes out of it, the first time or again:
 // those it hadn't asked for before are to be played now; those played for it before that it doesn't ask for any
 // more were undone (an effect of them still sounding is to be stopped). A cue is the same as one played before by

@@ -104,7 +104,7 @@ TEST_CASE("input: a keys file rebinds, adds and unbinds keys") {
 TEST_CASE("input: Remaster rules' default controls") {
     const Controls controls = remaster_controls();
     const Controls original = original_controls();
-    // A key an action; Escape no longer pauses: it opens the menu.
+    // A key an action; Escape doesn't pause: it opens the menu.
     const std::vector<std::vector<std::string>> game_keys{{"Left"},      {"Right"},      {"Up"},  {"Down"},
                                                           {"Space"},     {"D"},          {"E"},   {"S"},
                                                           {"Left Ctrl"}, {"Right Ctrl"}, {"Tab"}, {"P"}};

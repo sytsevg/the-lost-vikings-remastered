@@ -4,7 +4,7 @@
 // softened along the row (a Catmull-Rom curve, kept from ringing past its two nearest pixels), all in linear light;
 // then an aperture grille's mask in the window's pixels, a column magenta and the next green, the lit parts
 // brightened by it. Zoomed out the scanlines are the game's rows as at the original's view: not cut off past 400 rows
-// as in Hyllian's (the user: twice the view was brighter without them); where a row is less than kFewest of the
+// as in Hyllian's (twice the view would be brighter without them); where a row is less than kFewest of the
 // window's pixels high, a window's pixel shows the beam as it is over the whole of it, so the lines don't beat
 // against the window's (and it is as bright). The source is what was shown, with the picture's pixels `grid.z` of
 // its pixels wide from `grid.xy`, as xbr's.
@@ -56,9 +56,9 @@ const float kMaskGamma = 2.4;
 const float B = 0.0;
 const float C = 0.5;
 const mat4 kInvX = mat4((-B - 6.0 * C) / 6.0, (3.0 * B + 12.0 * C) / 6.0, (-3.0 * B - 6.0 * C) / 6.0, B / 6.0,
-                        (12.0 - 9.0 * B - 6.0 * C) / 6.0, (-18.0 + 12.0 * B + 6.0 * C) / 6.0, 0.0, (6.0 - 2.0 * B) / 6.0,
-                        -(12.0 - 9.0 * B - 6.0 * C) / 6.0, (18.0 - 15.0 * B - 12.0 * C) / 6.0, (3.0 * B + 6.0 * C) / 6.0,
-                        B / 6.0, (B + 6.0 * C) / 6.0, -C, 0.0, 0.0);
+                        (12.0 - 9.0 * B - 6.0 * C) / 6.0, (-18.0 + 12.0 * B + 6.0 * C) / 6.0, 0.0,
+                        (6.0 - 2.0 * B) / 6.0, -(12.0 - 9.0 * B - 6.0 * C) / 6.0, (18.0 - 15.0 * B - 12.0 * C) / 6.0,
+                        (3.0 * B + 6.0 * C) / 6.0, B / 6.0, (B + 6.0 * C) / 6.0, -C, 0.0, 0.0);
 
 // A pixel of the picture, by its place on the grid, in linear light: the source at its middle, within the screen.
 vec3 pixel_at(vec2 p) {

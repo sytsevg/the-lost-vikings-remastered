@@ -29,7 +29,7 @@ constexpr int cell_of(int pixel) noexcept {
 // What a cell is to the entities that touch it: a number 0-63. The engine's own code gives a few of them a
 // meaning (Terrain, from docs/original/terrain.md); what the others do is up to the kinds that test for them. They
 // get their names here as their behaviour is translated; the ones below are named from the code or from where the
-// levels have them (the level dump's collision maps; 0x0a-0x17 by the user, 2026-11-18). 0x0d is still unnamed.
+// levels have them (the level dump's collision maps; 0x0a-0x17 by eye). 0x0d is still unnamed.
 namespace tile {
 // What a cell of the map is to the entities (the original's numbers). An entity can act as one of these too
 // (Entity::acts_as): the others' terrain tests then find it like a cell; the numbers from 0x29 on are only that.

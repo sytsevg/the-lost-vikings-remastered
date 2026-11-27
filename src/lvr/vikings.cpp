@@ -411,7 +411,7 @@ void Viking::walk(World& world, bool left) {
     int top_speed = s.who == kind::kErik ? kErikTopSpeed : kTopSpeed;
     // Remaster rules: a gamepad's stick pushed part way walks him slower (and Erik pushed too little to run can't
     // charge), and his walk's animation slower too, but less: at the square root of his pace (a quarter of his speed,
-    // half of his steps), so his legs keep up with the floor (the user: at the same pace he slid ahead of them).
+    // half of his steps), so his legs keep up with the floor (at the same pace he would slide ahead of them).
     constexpr int kFull = kFullPace;
     const int pace = std::clamp(int{input(world).pace.across}, 1, kFull);
     if (world.rules == Rules::kRemaster) {
@@ -425,8 +425,8 @@ void Viking::walk(World& world, bool left) {
     const int full_top = top_speed;
     top_speed = paced_speed(world, top_speed);
     if (world.rules == Rules::kRemaster) {
-        // Pushed further while walking as fast as the pace he had: at the new one's speed at once (the user: it
-        // didn't snap in). From standing, or slower, he still speeds up as the original's run does.
+        // Pushed further while walking as fast as the pace he had: at the new one's speed at once. From standing, or
+        // slower, he still speeds up as the original's run does.
         const int walked_at = std::max(int{s.walked_at}, 1);
         const int had = (full_top * walked_at) / kFull;
         if (pace > walked_at && speed_x >= had && had > 0) {
@@ -765,7 +765,7 @@ void Viking::onto_ladder(World& world, bool up) {
 
 // Remaster rules: a climb's step moves him as its animation goes on, so it goes on as fast as a gamepad's stick
 // is pushed up or down (and his hands and feet keep up), from tick to tick as the stick moves. A step the way the
-// stick isn't pushed (now the other way, or let go) ends at full pace (the user: a slow step was sat out first).
+// stick isn't pushed (now the other way, or let go) ends at full pace (else a slow step is sat out first).
 void Viking::pace_climb(World& world) {
     if (world.rules != Rules::kRemaster) {
         return;

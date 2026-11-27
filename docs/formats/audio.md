@@ -1,6 +1,6 @@
 # Audio
 
-> Status: container and event structure **verified** (2026-11-16) for all 63 XMIDI entries (544 sequences) and the
+> Status: container and event structure **verified** for all 63 XMIDI entries (544 sequences) and the
 > three instrument banks, with a Python prototype over the reference release. How the drivers play them (timing,
 > voices, the OPL timbres) is in [`../original/sound-driver.md`](../original/sound-driver.md).
 > Code: `src/assets/audio.*` (XMIDI sequences, `TIMB`, `EVNT`, the timbre banks), `[real-data]` over all 63 XMIDI
@@ -48,7 +48,7 @@ Read from `SETUP.EXE` (the tables behind its menu) and `VIKINGS.EXE` (the loader
   (Sound Blaster FM), and 461 to 456 (AdLib).
 - 462 (Pro Audio Spectrum 16) needs Media Vision's MVSOUND.SYS: at offset `1429` it asks for it through `int 2Fh`
   (`AX=BC00h`, `BX=3F3Fh`, expects `BX^CX^DX = 'MV'`, then `BC03h` for version ≥ 10 and a function table it calls),
-  and fails without it. Seen in DOSBox-X with its PAS16 emulation (2026-11-17).
+  and fails without it. Seen in DOSBox-X with its PAS16 emulation.
 - General MIDI uses the MT-32 driver (an MPU-401 driver) with its own music versions.
 - All nine drivers declare a 120 Hz service rate ([`../original/timing.md`](../original/timing.md#audio)).
 

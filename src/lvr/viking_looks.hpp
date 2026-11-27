@@ -1,7 +1,7 @@
 #pragma once
 
 // The Vikings' animations and each one's own numbers: where the animations are in the spaceship world's programs
-// (the addresses go when the animations have names: docs/ROADMAP.md, M8), and the speeds of what each can do.
+// (the addresses until the animations have names), and the speeds of what each can do.
 // Read by the Vikings' files (through viking.hpp), and by the effects' table for his deaths (effects.cpp): the
 // numbers are apart from the behaviour.
 

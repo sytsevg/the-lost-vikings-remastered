@@ -16,7 +16,7 @@ namespace lvr {
 namespace {
 
 // How strongly the game-over scene's colours glow (its water: the spaceship's database, its colour cycles), of 255:
-// less than the spaceship's screens (the user, 2026-11-26).
+// less than the spaceship's screens.
 constexpr std::uint8_t kGameOverGlow = 128;
 
 // Which worlds a rule holds in: a bit for each database from the spaceship's. An animation named in one world is
@@ -33,8 +33,8 @@ constexpr bool holds_in(unsigned worlds, int database) noexcept {
 }
 
 // What an animation gives off while an entity plays it (from its start until another is started). What is there to
-// be seen (traps, fire and shots on their way, a Viking electrocuted or burning up); not a blow or a hit landing
-// (the user, 2026-11-25). A bomb's fuse and a blast, though (the user, 2026-11-26).
+// be seen (traps, fire and shots on their way, a Viking electrocuted or burning up); not a blow or a hit landing.
+// A bomb's fuse and a blast, though.
 enum class Glow : std::uint8_t { kNone, kFire, kElectric, kBarrier, kShot, kShotBurst, kShocked, kFuse, kBlast, kBeam };
 // (kShower: a great deal of sparks, all over him; kBlast: as it goes off, a burst, then embers now and then;
 // kTwirlAway, kTwirlIn: a teleport's, a twirl of sparks round him rising and widening as he goes, closing in on him as
@@ -91,8 +91,8 @@ constexpr std::array kRules{
     Rule{.animation = anim::kBlastSmall, .glow = Glow::kBlast, .emits = Emits::kBlast},
 };
 
-// The Vikings' deaths by electricity and by fire (the user, 2026-11-25), each Viking's own; the other deaths give
-// off nothing. And teleporting (the user, 2026-11-26), where there are teleporters: the spaceship's levels. Each where
+// The Vikings' deaths by electricity and by fire, each Viking's own; the other deaths give off nothing. And
+// teleporting, where there are teleporters: the spaceship's levels. Each where
 // it happens: a barrier's (or a bar's) everywhere but the prehistoric world and Egypt, whose Vikings are taken away
 // instead; the map's electricity's, named apart for the spaceship and for the factory and the wacky world; burning up,
 // everywhere but the spaceship.
@@ -227,8 +227,8 @@ void Effects::spark(float x, float y) {
     }
 }
 
-// Where a bomb's fuse burns, in the level: the tip of the fuse at its top right (the user, 2026-11-26: there, not
-// above its middle), on the other side for one put down facing left (its picture is turned round).
+// Where a bomb's fuse burns, in the level: the tip of the fuse at its top right, on the other side for one put down
+// facing left (its picture is turned round).
 std::array<float, 2> Effects::fuse_of(const Entity& bomb) {
     constexpr int kRight = 5;  // of its position (the bomb's pixels: level 1, put down from the item)
     constexpr int kUp = 9;
@@ -238,7 +238,7 @@ std::array<float, 2> Effects::fuse_of(const Entity& bomb) {
 
 // Three sparks a picture on a twirl round (x, from top to bottom in the level), a funnel wider higher up: going, from
 // anywhere on him, rising and widening; coming, from wide around him, closing in. They turn the same way round, a
-// turn in about 11 pictures (the user, 2026-11-26: narrower, and swirling more).
+// turn in about 11 pictures.
 void Effects::twirl(float x, float top, float bottom, bool in) {
     const auto chance = [this] { return std::uniform_real_distribution<float>{0.0F, 1.0F}(random_); };
     constexpr float kTurn = 0.55F;  // radians a picture

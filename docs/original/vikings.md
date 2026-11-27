@@ -3,7 +3,7 @@
 **Status:** observed (the Vikings' scripts in the level databases, read with `lv-export` in
 `gamedata/exported/scripts/449.txt`; addresses below are in database 449, the first world's; the other worlds'
 databases hold the same code at other offsets). The remake runs these scripts as they are (`lvr::ref::sim`), so it
-needs no code of its own for them; **compared with the game** by lockstep (`tools/lockstep.py`, 2026-11-17): every
+needs no code of its own for them; **compared with the game** by lockstep (`tools/lockstep.py`): every
 level entered and played with each key on each Viking, the same state as the original's step for step.
 
 The Vikings are ordinary objects: Erik is type `01` in object slot 0, Baleog type `00` in slot 1, Olaf type `02` in

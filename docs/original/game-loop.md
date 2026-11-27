@@ -1,6 +1,6 @@
 # The game loop: one tick, the level start, the dialogue player, demos
 
-**Status:** observed (static disassembly of `VIKINGS.EXE`, 2026-11-17). The engine's: `src/lvr/play.*` (a step) and `world.*` (a tick). **Compared with the game** through the reference engine (retired 2026-11-23; 2026-11-17, [`../dosbox.md`](../dosbox.md#lockstep-comparison)):
+**Status:** observed (static disassembly of `VIKINGS.EXE`). The engine's: `src/lvr/play.*` (a step) and `world.*` (a tick). **Compared with the game** through the reference engine (since retired; [`../dosbox.md`](../dosbox.md#lockstep-comparison)):
 tick by tick the same state as the original from the logo through the title, the menu, the village intro, level 1's
 opening and a walk, and the first two attract demos.
 
@@ -119,7 +119,7 @@ So the first tick reads nothing, then each pair's word is read for its count of 
 password box and opening conversation.
 
 ## Golden replays
-The first replays (2026-11-17) were paths of the reference engine that `tools/lockstep.py` had found the same as
+The first replays were paths of the reference engine that `tools/lockstep.py` had found the same as
 the original's, state for state: from the logo with no input through the title into attract demo 1, and for each
 of the 37 levels the path logo → menu → village intro skipped → the level asked for → 900 steps of input (its
 opening answered, walking both ways, F, D, E, S, Viking switches, Up/Down, the inventory; in six levels the input

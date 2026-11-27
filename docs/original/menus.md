@@ -1,6 +1,6 @@
 # The pause menu, the quit box and the inventory screen
 
-**Status:** observed (static disassembly of `VIKINGS.EXE`, 2026-11-17). The engine's: `src/lvr/play.*` (the pause menu, the quit box) and `inventory.*`. Checked against the original step for step through the reference engine (retired 2026-11-23), and by the DOSBox checks below.
+**Status:** observed (static disassembly of `VIKINGS.EXE`). The engine's: `src/lvr/play.*` (the pause menu, the quit box) and `inventory.*`. Checked against the original step for step through the reference engine (since retired), and by the DOSBox checks below.
 
 Both are loops of their own inside phase A of a tick ([`game-loop.md`](game-loop.md#one-tick)): the pause menu
 (`041C`) before the state requests are acted on (`0138`), the inventory (`1BA5`) right after. While one is open
@@ -131,7 +131,7 @@ Rare leftovers of the original's incremental drawing aren't reproduced (a Tab th
 blinking turns the picker off leaves that Viking's picker off until its chosen square changes).
 
 ## Checked in DOSBox
-`tools/spotcheck.py` (2026-11-17), the original in DOSBox-X:
+`tools/spotcheck.py`, the original in DOSBox-X:
 1. `pause`: **confirmed** with no tint on: the box black inside with white text, every playfield pixel darker by 8
    of 63 (or still 0), the HUD unchanged (`build/dosbox/spotcheck/pause.png`). The box with a tint already on (white
    inside) wasn't tried.
@@ -139,7 +139,7 @@ blinking turns the picker off leaves that Viking's picker off until its chosen s
 3. `fire-esc`: **confirmed**: an item in the chosen square, Fire and Esc in the same pass while choosing: the square
    is emptied, the item carried (`0441`, `0447` = 0), the screen closes; opened again, `0441` = 0 and no square holds
    the item: it is gone.
-4. `tools/lockstep.py` (2026-11-17), every pass a step (the stop at `04C3`), the exit a step of its own (the stop
+4. `tools/lockstep.py`, every pass a step (the stop at `04C3`), the exit a step of its own (the stop
    at `0E35`): **the same state as the original's**, step for step, for the main menu's third item (Up, Enter: both quit
    at step 186), F10 during an attract demo (quits at once), F10 in level 1 with NO, Alt+Q with YES (both quit, the
    tint still on), Alt+X with N held, the pause menu with Left/Right and Fire on NO, Esc then Y held (give up: the

@@ -42,7 +42,7 @@ struct Line {
     // Its cell was worked out from a point of the level, in the layer as large as it is. Without this, the cell
     // is one of the original's 40 x 22, which a larger layer has in its middle.
     bool by_point = false;
-    // Online (ADR-0012): a box at a point of the level stays there, in every player's view: its cells count from
+    // Online: a box at a point of the level stays there, in every player's view: its cells count from
     // this cell of the level (the corner of the view it was laid out in). Without it a line is at its place on
     // the screen.
     bool in_level = false;

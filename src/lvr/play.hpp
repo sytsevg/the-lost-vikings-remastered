@@ -61,7 +61,7 @@ inline constexpr std::array<std::uint8_t, 3> kMenuTint{8, 8, 8};
 std::expected<LoadedLevel, std::string> load_slot(const assets::GameFiles& files, int slot, int database_entry,
                                                   const assets::SnesRom* snes = nullptr);
 
-// The level's world before its first tick, for as many players (ADR-0012), each one's view on his Viking.
+// The level's world before its first tick, for as many players, each one's view on his Viking.
 // Under Remaster rules a level's world is made with the views the players' zoom asks for (`views`,
 // World::view_for).
 World prepare_world(const LoadedLevel& loaded, const Map* map_before = nullptr, Rules rules = Rules::kVanilla,
@@ -85,7 +85,7 @@ class Play {
         world.scene = slot;
         world.next_scene = loaded_->level.next_slot;
         // The intro is only ever reached as a new game, the title's NEW GAME asking for its recording: started there
-        // (a new game online, ADR-0012), it is played the same.
+        // (a new game online), it is played the same.
         state_.demo_wanted = slot == scene::kIntro;
         start_demo(slot);
         world.attract = state_.playback;  // (as a scene started after another has it)
@@ -106,7 +106,7 @@ class Play {
     // One step. `picture` is called each time the world is to be shown. Returns how many refreshes of the display
     // the step takes (a tick's three, three for a wait's pass; a change of scene: 145 more); a step can show fewer
     // pictures than that.
-    // The players' input: each one's keys and stick (ADR-0012); the first player's drive the menus and the texts.
+    // The players' input: each one's keys and stick; the first player's drive the menus and the texts.
     template <typename Picture>
     int step(StepInput input, const Picture& picture) {
         constexpr int kTick = 3;
@@ -240,7 +240,7 @@ class Play {
     // or P and the N key are "no", the Y key "yes". Giving up is the game over; quitting ends the game.
     enum class Menu : std::uint8_t { kNone, kPause, kQuitBox };
     // What the play keeps from step to step beside its world, as plain data: with the world it is all a step
-    // starts from (ADR-0012: what rollback goes back to). The pause menu or the quit box, the original's sound
+    // starts from (what rollback goes back to). The pause menu or the quit box, the original's sound
     // switches, a demo being played, and the view each player has chosen (Remaster rules' zoom: a scene starts
     // with it).
     struct PlayState {
@@ -282,7 +282,7 @@ class Play {
     void choose_view(int player, std::array<int, 2> zoom) { state_.views.at(static_cast<std::size_t>(player)) = zoom; }
     const PlayState& state() const noexcept { return state_; }
     // The play's state written out (the world, World::save, then its PlayState) into `buffer`, and its 64-bit FNV-1a:
-    // what two machines compare to find one out of step, and the sync test compares (ADR-0012).
+    // what two machines compare to find one out of step, and the sync test compares.
     std::uint64_t state_hash(std::vector<std::uint8_t>& buffer) const;
     // What is heard stops and the scene's music starts, as when the scene was loaded; the step counts as one that
     // loaded a scene.
@@ -290,7 +290,7 @@ class Play {
     // The pause menu or the quit box is open; a scene is played from a recording.
     bool in_menu() const noexcept { return state_.menu != Menu::kNone; }
     // The next step begins by changing the scene (the level is done, the game over, ...): online it runs only on
-    // every player's input (ADR-0012), so a level's end or start is never run again.
+    // every player's input, so a level's end or start is never run again.
     bool changing_scene() const noexcept { return leaving(); }
     bool playing_demo() const noexcept { return state_.playback; }
 

@@ -388,4 +388,21 @@ std::expected<void, std::string> save_settings(const std::filesystem::path& fold
     return write_file(folder, kSettingsFile, format_settings(settings));
 }
 
+std::expected<void, std::string> profile_writable(const std::filesystem::path& folder) {
+    std::error_code error;
+    std::filesystem::create_directories(folder, error);
+    if (error) {
+        return std::unexpected{std::format("can't make the folder {}: {}", folder.string(), error.message())};
+    }
+    if (!std::filesystem::is_directory(folder, error)) {
+        return std::unexpected{std::format("{} isn't a folder", folder.string())};
+    }
+    constexpr std::string_view kProbe = "writable";
+    if (auto written = write_file(folder, kProbe, kProbe); !written) {
+        return written;
+    }
+    std::filesystem::remove(folder / kProbe, error);
+    return {};
+}
+
 }  // namespace lvr

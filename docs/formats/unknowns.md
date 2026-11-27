@@ -16,7 +16,7 @@ engine doesn't read, some routines not read in detail whose effect is already ma
 next to the original** (section 5).
 
 ## 1. Entries never loaded by the game (3)
-**Every `DATA.DAT` load in `VIKINGS.EXE` is known** (2026-11-16): the two loaders (`0000:0982` decompresses an
+**Every `DATA.DAT` load in `VIKINGS.EXE` is known**: the two loaders (`0000:0982` decompresses an
 entry, `0000:0CD8` copies a stored full-screen image into video memory) are called only with fixed numbers (1–14,
 384, 454, 529, 531, 533, 443, 444), numbers computed from the sound configuration (drivers, banks, effects, music),
 the demo table, and the lists in the level and scene headers. So an entry in none of these is never loaded.
@@ -46,7 +46,7 @@ Decoded offsets are in [`level.md`](level.md#level-header). Left:
 | 0x1a, 0x1b | almost always 5, 12 | Not read by any code found. |
 | 0x1e–0x28 | `40 00 00 00 20 00 18 00 10 00 0c` in 45 headers | Only scenes differ. Not read by any code found. |
 | 0x2d | 1 (46), 2 (starfield) | Not read by any code found. |
-| 0x34–0x42 | `10 00 08 00 02 ff ff ff ff ff ff 00 85 00 01` in level 1 | **Known since 2026-11-18:** the SNES version's backdrop: its size, its chunks (blank in the DOS headers) and its scroll speeds ([`snes.md`](snes.md#level-headers)). The DOS game reads none of it. The byte at 0x38 (always 2) says the backdrop repeats. Left: why one DOS header has `0xfa` at 0x39. |
+| 0x34–0x42 | `10 00 08 00 02 ff ff ff ff ff ff 00 85 00 01` in level 1 | **Known:** the SNES version's backdrop: its size, its chunks (blank in the DOS headers) and its scroll speeds ([`snes.md`](snes.md#level-headers)). The DOS game reads none of it. The byte at 0x38 (always 2) says the backdrop repeats. Left: why one DOS header has `0xfa` at 0x39. |
 | flag `0x04` of 0x1c | the game-over scene only | Never tested by the code ([`game-flow.md`](../original/game-flow.md#header-flags-offset-0x1c-read-by-the-loader)). |
 | sprite sets: `slot`, `sheet` | | The loader skips both (`167A`). Our reading (sheet size, a numbering without overlaps) is in [`level.md`](level.md); it doesn't match 253, 286, 297, 333, 334, 337, 343, 345, 372, 428, 437, 447. |
 | packed sets: 3 bytes | always 4, 4, then 0 (the Vikings' six sets) or 1 | Not traced. Entry 368 (the game-over lightning, unpacked) sits in this list; the engine draws it from it ([`drawing.md`](../original/drawing.md)). |

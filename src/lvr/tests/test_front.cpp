@@ -1,4 +1,4 @@
-// Tests for src/lvr/front.* (the places, GLOSSARY.md; ADR-0012): machines with the real game on the simulated
+// Tests for src/lvr/front.* (the places, GLOSSARY.md): machines with the real game on the simulated
 // network, each played a refresh at a time as the window's loop plays its place, its menu without a window. A walk
 // through every move: hosting and joining into the lobby, a game, back to the lobby, leaving it and joining again,
 // another game, one joining it under way, and the host gone.
@@ -19,6 +19,7 @@
 
 #include "lvr/archive.hpp"
 #include "lvr/front.hpp"
+#include "lvr/gpu.hpp"
 #include "lvr/names.hpp"
 #include "net/simulated.hpp"
 
@@ -40,6 +41,7 @@ struct Machine {
     std::vector<Screen>* shown_all = nullptr;    // when given: every picture it shows, added to it
     std::vector<SoundCue>* heard_all = nullptr;  // when given: what it asks of the sound, added to it
     std::uint64_t turns = 0;                     // its refreshes so far (the places time themselves by them)
+    std::uint16_t keys = 0;                      // the keyboard word its steps are given
     bool paused = false;                         // it has no turns (its machine stopped)
 
     Place& place() { return places->current(); }
@@ -63,7 +65,8 @@ struct Machine {
         Ui& shown_menu = menu();
         Go go = place().refresh(shown_menu);
         if (go.to == Go::To::kStay && --due < 0) {
-            const Stepped stepped = place().step(Tick{}, shown_menu);
+            const Stepped stepped =
+                place().step(Tick{.keys = keys, .menu_keys = {}, .pace = {}, .escaped = false}, shown_menu);
             due = stepped.frames.size() > 1 ? 2 : 0;
             go = stepped.go;
             if (!stepped.frames.empty()) {
@@ -130,16 +133,16 @@ struct Room {
         {.delay_ms = 20, .jitter_ms = 10, .loss_percent = 10, .late_ms = 100, .behind_ms = 0}};
     std::vector<std::unique_ptr<Machine>> machines;
 
-    Machine& machine(const std::string& name) {
+    Machine& machine(const std::string& name, const Draw& draw_with = draw) {
         auto made = std::make_unique<Machine>();
-        auto opened = Session::open(LVR_ORIGINAL_DIR, scene::kTitle, {}, Rules::kRemaster);
+        auto opened = Session::open(LVR_ORIGINAL_DIR, scene::kTitle, {}, Rules::kRemaster, draw_with);
         REQUIRE(opened);
         made->title = std::move(*opened);
         made->offline = std::make_unique<OfflinePlace>(*made->title, nullptr, true);
         made->settings.name = name;
         made->settings.join_address = "host:47230";
         Places::Needs needs{
-            .online = {.dir = LVR_ORIGINAL_DIR, .sound = {}, .draw = draw, .logs = {}},
+            .online = {.dir = LVR_ORIGINAL_DIR, .sound = {}, .draw = draw_with, .logs = {}},
             .settings = &made->settings,
             .identity = {.build = "test", .game = 1, .state_version = kStateVersion, .name = {}},
             .host = [this](std::uint16_t) -> std::expected<std::unique_ptr<net::Transport>, std::string> {
@@ -254,6 +257,68 @@ TEST_CASE("online stills: the lobby, the names under the portraits, the waiting 
     save_still(guest, coop_picture(guest.place().overlay(), guest.place().session().font()), "waiting.png");
 }
 
+// The README's stills of co-op online (lvr_tests "[readme]", run by hand): three players in the host's lobby with
+// their round trips, and the game they start, as the GPU renderer shows the host's window, three times the original's
+// size, into gamedata/previews/readme/.
+TEST_CASE("readme stills: three players online", "[.readme]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    auto opened = GpuRenderer::open_headless();
+    REQUIRE(opened);
+    GpuRenderer& gpu = **opened;
+    const Draw on_gpu = [&gpu](Screen& screen, const View& view, const SceneGraphics& scene,
+                               const SharedGraphics& shared) { REQUIRE(gpu.keep(screen, view, scene, shared)); };
+    const std::filesystem::path folder = std::filesystem::path{LVR_ORIGINAL_DIR}.parent_path() / "previews" / "readme";
+    std::filesystem::create_directories(folder);
+    const auto save = [&](Machine& machine, const std::string& name) {
+        constexpr int kScale = 3;
+        auto pixels = gpu.shown(machine.last, kScale, machine.place().session().minimap(machine.last));
+        REQUIRE(pixels);
+        SDL_Surface* surface = SDL_CreateSurfaceFrom(kScreenWidth * kScale, kScreenHeight * kScale,
+                                                     SDL_PIXELFORMAT_RGBA32, pixels->data(), kScreenWidth * kScale * 4);
+        REQUIRE(surface != nullptr);
+        CHECK(SDL_SavePNG(surface, (folder / name).string().c_str()));
+        SDL_DestroySurface(surface);
+    };
+    Room room;
+    Machine& host = room.machine("BJORN", on_gpu);
+    Machine& second = room.machine("FREYA");
+    Machine& third = room.machine("LEIF");
+    REQUIRE(room.until([&] { return host.title->world().scene == scene::kTitle; }));
+    // From the title's main menu, as a player hosts: F brings it up (the picture dims, the menu comes), then HOST GAME.
+    host.keys = key::kF;
+    REQUIRE(room.until([&] { return host.title->world().title.screen_cleared; }));
+    host.keys = 0;
+    int menu_comes = 60;  // (a second: the menu brightens in)
+    (void)room.until([&menu_comes] { return --menu_comes < 0; });
+    host.ask(Menu::Asked::kHost);
+    second.ask(Menu::Asked::kJoin);
+    REQUIRE(room.until([&] { return second.at<LobbyPlace>() != nullptr; }));
+    third.ask(Menu::Asked::kJoin);
+    REQUIRE(room.until([&] { return third.at<LobbyPlace>() != nullptr && !third.last.pixels.empty(); }));
+    int left = 180;  // (three seconds of round trips measured)
+    (void)room.until([&left] { return --left < 0; });
+    gpu.set_overlay(menu_picture(*host.menu().menu(), host.place().session().font()));
+    save(host, "online-lobby.png");
+    gpu.set_overlay({});
+    // The host types level 7's password (as the game's files have it; not in the still).
+    const auto& password = host.title->world().passwords.at(6);
+    host.press(Menu::Key::kChoose);
+    host.type(std::string(password.begin(), password.end()));
+    REQUIRE(room.until([&] { return host.menu().menu()->start().starts_with("LEVEL 7"); }));
+    host.press(Menu::Key::kDown);
+    host.press(Menu::Key::kChoose);  // START GAME
+    REQUIRE(room.online_to(10));
+    host.place().session().set_effects(true);
+    // The level's password box waits for the host's key; then everyone plays on.
+    host.keys = key::kF;
+    REQUIRE(room.online_to(14));
+    host.keys = 0;
+    REQUIRE(room.online_to(70));
+    save(host, "online-game.png");
+}
+
 TEST_CASE(
     "real data: a game online rises from black as the original's level does, and goes dark to the lobby, the minimap "
     "with it",
@@ -285,7 +350,7 @@ TEST_CASE(
     host.shown_all = nullptr;
     host.heard_all = nullptr;
     guest.heard_all = nullptr;
-    // The countdown's three seconds, a tick each, the original's menus' (the user, 2026-11-26), on every machine.
+    // The countdown's three seconds, a tick each, the original's menus', on every machine.
     const auto ticks = [](const std::vector<SoundCue>& asked) {
         return std::ranges::count_if(asked, [](const SoundCue& cue) {
             return cue.kind == SoundCue::Kind::kEffect && cue.value == effect::kMenuMoves;
@@ -298,7 +363,7 @@ TEST_CASE(
     CHECK(std::ranges::all_of(lobby.back().palette, [](const assets::Rgb& colour) {
         return std::max({colour.r, colour.g, colour.b}) <= 26;  // (a tenth of the brightest)
     }));
-    // The level's start, from the lobby gone dark (the user, 2026-11-26): the original's start's tick and fade in, the
+    // The level's start, from the lobby gone dark: the original's start's tick and fade in, the
     // start's picture rising from black, all of it (the minimap goes by Screen::bright) in step; not two seconds of
     // black with the minimap on it, nor a rise of its own after them.
     const std::vector<Screen>& start = host.place().session().start_frames;
@@ -407,7 +472,7 @@ TEST_CASE(
     CHECK(guest.at<ConnectingPlace>() != nullptr);
     CHECK(join_line().turning.has_value());
     CHECK(join_line().dim);  // (greyed while it joins)
-    // Meanwhile nothing: neither back nor another line (the user, 2026-11-26: it stays until it joins or fails).
+    // Meanwhile nothing: neither back nor another line (it stays until it joins or fails).
     const std::size_t chosen = guest.menu().menu()->chosen();
     guest.press(Menu::Key::kDown);
     guest.press(Menu::Key::kBack);

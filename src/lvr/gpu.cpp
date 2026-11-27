@@ -1098,9 +1098,9 @@ std::expected<void, std::string> GpuRenderer::State::render(SDL_GPUCommandBuffer
                                                             SDL_GPUTexture* order_onto, const Picture& picture,
                                                             int scale, const Motion* motion, float between) {
     // Each quad's place in the picture's order, which is the depth (what is drawn after what gives off light hides its
-    // halo and its glow): a layer's quads in one place, so that a glow goes on over the next tile of its own layer (the
-    // user, 2026-11-26: the game-over scene's water, each tile cut off its neighbours' glow). The map behind the
-    // sprites, each sprite in its own, the map's foreground, the text; what is under the playfield, each its own.
+    // halo and its glow): a layer's quads in one place, so that a glow goes on over the next tile of its own layer
+    // (else each tile of the game-over scene's water cuts off its neighbours' glow). The map behind the sprites, each
+    // sprite in its own, the map's foreground, the text; what is under the playfield, each its own.
     quads = picture.quads;
     for (std::size_t i = 0; i < quads.size(); ++i) {
         std::size_t place = i + 1;
@@ -1388,8 +1388,8 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
         made_room = faded_in <= 0.0F ? std::max(made_room - (passed / kSlideRefreshes), 0.0F) : made_room;
     }
     // As the picture fades, the minimap and the rewind's bar lose as many of the original's levels as its colours do
-    // (screen.bright): already there when it comes in from black, they come in with it (the user, 2026-11-26: as
-    // they faded in by their own they seemed to have a fade of their own).
+    // (screen.bright): already there when it comes in from black, they come in with it (faded in by their own,
+    // they would seem to have a fade of their own).
     const float dark = 1.0F - std::clamp(screen.bright, 0.0F, 1.0F);
     const bool with_minimap = faded_in > 0.0F && dark < 1.0F && over_width != 0;
     const bool with_overlay = whole == 0 && upload_overlay(commands);
@@ -1414,10 +1414,10 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
     const bool grounded =
         screen.ground != nullptr && (screen.ground->id == ground_id || upload_ground(commands, *screen.ground));
 
-    // The original's screen as large as the window holds it, its shape kept (the user, 2026-11-26: not only as large
-    // as whole pixels allow, with black around it); but in whole pixels where they come near that (the user: they
-    // match). Shown at a size not a whole number of times its own, it is drawn the next whole number of times and
-    // shown a little smaller: a pixel of the window is the mean of what it covers.
+    // The original's screen as large as the window holds it, its shape kept (not only as large as whole
+    // pixels allow, with black around it); but in whole pixels where they come near that. Shown at a size not a whole
+    // number of times its own, it is drawn the next whole number of times and shown a little smaller: a pixel of the
+    // window is the mean of what it covers.
     constexpr float kWholeIfNear = 0.9F;  // of the size it would fill
     const float fills =
         std::max(1.0F, std::min(static_cast<float>(width) / kScreenWidth, static_cast<float>(height) / kScreenHeight));
@@ -1747,8 +1747,8 @@ std::expected<void, std::string> GpuRenderer::State::show(SDL_GPUCommandBuffer* 
     }
     if (with_overlay) {
         // The menu, over all of it, in the game's pixels as large as they are shown (smaller zoomed out, as the HUD
-        // is), but never smaller than at the zoom's middle step, 480 pixels across (the user: at twice the view it is
-        // too small); in the middle of the screen, on the picture's grid where its pixels are the picture's.
+        // is), but never smaller than at the zoom's middle step, 480 pixels across (at twice the view it is too
+        // small); in the middle of the screen, on the picture's grid where its pixels are the picture's.
         constexpr std::uint32_t kCorners = 6;
         struct Placed {  // gpu_show.vert
             std::array<float, 4> dest;

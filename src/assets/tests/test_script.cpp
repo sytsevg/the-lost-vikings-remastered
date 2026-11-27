@@ -256,7 +256,7 @@ TEST_CASE("script: disassemble lists decode failures at the end") {
 
 TEST_CASE("script: every script in the six databases decodes", "[real-data]") {
     const GameFiles& files = game_or_skip();
-    // Instruction counts from the first full decode (scripts/lvscript.py, 2026-11-17).
+    // Instruction counts from the first full decode.
     const std::map<std::uint16_t, std::size_t> expected_instructions{{449, 12038}, {450, 8935},  {451, 10077},
                                                                      {452, 10955}, {453, 10440}, {454, 9630}};
     std::vector<std::vector<std::uint8_t>> first_lists;

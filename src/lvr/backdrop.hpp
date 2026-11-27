@@ -1,6 +1,6 @@
 #pragma once
 
-// Parallax (Remaster rules, M8): the SNES version's backdrop behind a level's map, where the DOS game shows black
+// Parallax (Remaster rules): the SNES version's backdrop behind a level's map, where the DOS game shows black
 // (docs/formats/snes.md, "The backdrops" and "How the game moves the backdrop"). Which pixels of the map show it,
 // and where it is for a camera. The backdrop itself is the user's ROM image's (assets::load_level_backdrop); a scene
 // has one only under Remaster rules and with the image there (load_slot), and only the GPU renderer draws it.

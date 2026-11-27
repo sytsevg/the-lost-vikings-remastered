@@ -1,4 +1,4 @@
-// Tests for the world's players (co-op online, ADR-0012; src/lvr/world.*): each one's keys and Viking, and the
+// Tests for the world's players (co-op online; src/lvr/world.*): each one's keys and Viking, and the
 // active area as every player's view together. With one player all of it is the original's: the replays' goldens
 // hold that (./scripts/goldens.sh).
 #include <catch2/catch_test_macros.hpp>

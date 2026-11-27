@@ -4,7 +4,7 @@
 // reference engine before it was retired (replays/README.md).
 //
 //   lv-replay [--check] [options] REPLAY...  the engine against each replay's golden, and before every step two
-//                                           more checks of the play (ADR-0020, ADR-0012): the world written out
+//                                           more checks of the play: the world written out
 //                                           and read back (lvr/archive.hpp), and the last 8 steps run again from
 //                                           the snapshot before them (GGPO's sync test; a snapshot is a copy of
 //                                           the world, as the rewind's is), which must come to the same state.
@@ -18,7 +18,7 @@
 //                                           a new replay only (it pins what the engine does now)
 //   lv-replay --shot FILE.png REPLAY       write what the engine shows at the replay's last refresh (the picture
 //                                           tools/lockstep.py sets beside the original's in DOSBox)
-//   lv-replay --coop LOG                   a log of a game online that went out of step (NetGame::log) played again:
+//   lv-replay --coop LOG                   a log of a game online that went out of step (net::Match::log) played again:
 //                                           the first step whose state isn't the log's, or that all are
 //       --data DIR     the game's files (default gamedata/original)
 //       --out DIR      where a difference is written (default gamedata/previews/match): per replay
@@ -69,7 +69,7 @@ struct Options {
 
 using PlayerPtr = std::expected<std::unique_ptr<Player>, std::string>;
 
-// How many steps the sync test runs again before every step (ADR-0012).
+// How many steps the sync test runs again before every step.
 constexpr std::size_t kRollback = 8;
 
 // The GPU renderer, opened when first asked for; the process ends if there is none or it fails.

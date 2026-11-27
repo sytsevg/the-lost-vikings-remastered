@@ -106,14 +106,14 @@ refresh**, 119.43 Hz (2 × 59.71) rather than a nominal 120 Hz, locked to the di
 **6 XMIDI ticks** (see [`../formats/audio.md`](../formats/audio.md) and [ADR-0015](../decisions.md)).
 
 ## Checked in DOSBox
-`tools/spotcheck.py timing` (2026-11-17), the original in DOSBox-X with driver 460 ([`../dosbox.md`](../dosbox.md)):
+`tools/spotcheck.py timing`, the original in DOSBox-X with driver 460 ([`../dosbox.md`](../dosbox.md)):
 1. **PIT divisor: 9,546** (`0x254A`, 125 Hz) in level 1, with driver 460 running and sound on (`ds:0302` = 0). That
    is **not** what the static reading above expects (9,943 from the drivers' 120 Hz). The game's own 125 Hz dummy
    timer is registered only on the no-sound path (`0000:7679`), which this run didn't take. **Found:** AIL registers
    the driver's timer at the descriptor's service rate **+ 5** (`0BAD:0B71`: `si` = rate (`es:[di+0x14]`) + 5, then
    the set-frequency routine `09D6` at `0BB5`): 120 + 5 = 125 Hz. So the driver is serviced 125 times a second;
-   whether its sequencer counts XMIDI time from that or assumes 120: **measured**
-   (2026-11-17): neither; the music advances at **119.43 Hz, 2 XMIDI ticks per refresh** (59.71 × 2). A raw OPL
+   whether its sequencer counts XMIDI time from that or assumes 120: **measured**:
+   neither; the music advances at **119.43 Hz, 2 XMIDI ticks per refresh** (59.71 × 2). A raw OPL
    capture of tune 0 from the logo (40 s, `tools/spotcheck.py opl --slot 39 --frames 2400`) against entry 496's
    note ticks: the key-ons fit best at 8.373 ms per tick (119 of 224 onsets within 5 ms; at 8.000 ms, i.e. 125 Hz,
    35; at 8.333, 120 Hz, 28). So the driver is serviced twice per refresh as the game's retrace handler restarts
@@ -123,12 +123,12 @@ refresh**, 119.43 Hz (2 × 59.71) rather than a nominal 120 Hz, locked to the di
    inventory (`1C1F`) **1** ([`menus.md`](menus.md#checked-in-dosbox)).
 3. **Refresh rate: 59.71 Hz, not 59.94.** DOSBox-X computes the game's mode at 59.713 Hz (its VGA log: "VGA refresh
    rate is now, 59.713", mode 320 × 480 doubled). The vertical total register holds the number of lines **minus 2**,
-   so `0x20D` is 527 lines: 25,175,000 / (800 × 527) = 59.71 Hz, a tick 50.24 ms (19.90 Hz). Decided (2026-11-17):
+   so `0x20D` is 527 lines: 25,175,000 / (800 × 527) = 59.71 Hz, a tick 50.24 ms (19.90 Hz). Decided:
    the game runs at this rate, the original's exactly (ADR-0003, ADR-0006 updates).
 
 ## Slot loads
 A step that loads a slot also runs the fades ([`drawing.md`](drawing.md#palette)): 70 refreshes of fade out, the
 level start's tick (4 draws), 71 of fade in, then the rest of the tick (3): 148 refreshes in the engine. In DOSBox-X at 25,000 cycles the same steps took 149, 150 and 160 refreshes (the logo → Silicon
 & Synapse, → the title, → attract demo 1's level): the rest is the time the emulated 386 spends loading and
-decompressing the slot's data, which depends on the machine, so the engine doesn't add it (2026-11-17,
-`tools/lockstep.py`-style stops, full speed).
+decompressing the slot's data, which depends on the machine, so the engine doesn't add it
+(`tools/lockstep.py`-style stops, full speed).

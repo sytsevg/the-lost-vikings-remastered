@@ -17,13 +17,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libudev-dev libdbus-1-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# The GPU renderer (ADR-0006): a software Vulkan driver (lavapipe) so its pictures can be made and compared here
+# The GPU renderer: a software Vulkan driver (lavapipe) so its pictures can be made and compared here
 # without a graphics card or a window, and the compiler for its shaders.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libvulkan1 mesa-vulkan-drivers vulkan-tools glslc \
     && rm -rf /var/lib/apt/lists/*
 
-# DOSBox-X build dependencies (development tool only, ADR-0016; built by tools/dosbox/ into build/dosbox/).
+# DOSBox-X build dependencies (development tool only; built by tools/dosbox/ into build/dosbox/).
 # It brings its own SDL2; curses is for the debugger build, gcc because DOSBox-X is built and tested with it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         autoconf automake libtool gcc g++ libncurses-dev libpng-dev zlib1g-dev \
@@ -47,7 +47,7 @@ ENV CC=clang CXX=clang++ ASAN_SYMBOLIZER_PATH=/usr/local/bin/llvm-symbolizer
 # The Windows cross-build: llvm-mingw (the same LLVM, with libc++ and the mingw-w64 headers and libraries for
 # Windows, UCRT), pinned by its release and checksum, in /opt/llvm-mingw. It is not put on PATH: its bin/ has a
 # clang of its own; the toolchain file names its x86_64-w64-mingw32-clang++. Nothing of the Windows build runs
-# here (ADR-0021), so there is no Wine.
+# here, so there is no Wine.
 ARG LLVM_MINGW_RELEASE=20261117
 ARG LLVM_MINGW_SHA256=e7a15a49a2ea95e9f3d8a9d0cfabe5052a4b10fb4777cc54de5a8c27b64bb701
 RUN apt-get update && apt-get install -y --no-install-recommends xz-utils \

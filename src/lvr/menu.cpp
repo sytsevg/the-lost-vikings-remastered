@@ -15,7 +15,7 @@ namespace {
 
 using input::Action;
 
-// (No line to resume: Escape, B or Start does that, the user.)
+// (No line to resume: Escape, B or Start does that.)
 constexpr std::array<std::string_view, 6> kFirstLines{"OPTIONS",         "KEYBOARD",      "GAMEPAD",
                                                       "RETURN TO LOBBY", "GIVE UP LEVEL", "QUIT GAME"};
 // HOST GAME's lines and JOIN GAME's.
@@ -386,7 +386,7 @@ void Menu::set_has_pad(bool has_pad) noexcept {
 }
 
 Menu::Asked Menu::press(Key key) {
-    if (joining_) {  // JOIN under way: nothing until it is made or fails (the user, 2026-11-26)
+    if (joining_) {  // JOIN under way: nothing until it is made or fails
         return Asked::kNothing;
     }
     if (waiting_ == Waiting::kText) {  // (a gamepad's A or B ends it too)
@@ -651,7 +651,7 @@ constexpr std::uint8_t kSeeThrough = 235;  // 92%: the box (the text and the fra
 constexpr Colour kWhite{251, 251, 251, 255};
 constexpr Colour kGrey{170, 170, 170, 255};
 constexpr Colour kDimmed{96, 96, 96, 255};
-constexpr Colour kDark{4, 4, 4, kSeeThrough};           // black (the user: not the bar's blue-black)
+constexpr Colour kDark{4, 4, 4, kSeeThrough};           // black (not the bar's blue-black)
 constexpr Colour kChosenBand{40, 40, 40, kSeeThrough};  // behind the chosen line
 
 class Canvas {
@@ -771,7 +771,7 @@ std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<asset
     const int content =
         6 + kCharacter + 6 + (shown * kLine) + players_height + 6 + (static_cast<int>(note.size()) * kNoteLine) + 4;
     const int x = (kScreenWidth - width) / 2;
-    // The title's pages: under its logo, nothing of the title's own menu showing through (the user: a menu of its
+    // The title's pages: under its logo, nothing of the title's own menu showing through (a menu of its
     // own, not one laid over the game): as far down as that menu goes at least (its six rows to row 21, the pointer
     // beside them), the notes at the bottom.
     constexpr int kUnderLogo = 87;  // (the logo's last row is 86)

@@ -1,6 +1,6 @@
 # The camera
 
-**Status:** observed (static disassembly of `VIKINGS.EXE`, 2026-11-17). The engine's: `src/lvr/camera.*`. Checked against the original through the reference engine (retired 2026-11-23): its state was the original's in DOSBox, step for step, on every path tried ([`../formats/unknowns.md`](../formats/unknowns.md#5-what-has-not-been-compared-with-the-original) lists them), and the engine matches its runs (`replays/`).
+**Status:** observed (static disassembly of `VIKINGS.EXE`). The engine's: `src/lvr/camera.*`. Checked against the original through the reference engine (since retired): its state was the original's in DOSBox, step for step, on every path tried ([`../formats/unknowns.md`](../formats/unknowns.md#5-what-has-not-been-compared-with-the-original) lists them), and the engine matches its runs (`replays/`).
 
 The camera is the top-left pixel of the 320 × 176 playfield: `ds:0044` (x), `ds:0046` (y). `ds:257F`/`2581` are the
 same divided by 8 (the drawing code works in 8-pixel columns and rows).

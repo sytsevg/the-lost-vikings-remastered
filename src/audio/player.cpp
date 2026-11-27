@@ -31,10 +31,10 @@ constexpr std::array kRemade{
     // one is the sawtooth lead.
     Remade{.effect = 3, .program = 81, .volume = 110, .transpose = 0},
     // The fire jets' roar: the General MIDI arrangement has none (its stream is empty: in the Modern sound the jets
-    // were silent). The Classic one is a fast run of very low notes, looped while any jet burns, and very loud (the
-    // user). On General MIDI's sound effects (surf, a helicopter, breath) such short notes are hardly heard, as they
+    // were silent). The Classic one is a fast run of very low notes, looped while any jet burns, and very loud. On
+    // General MIDI's sound effects (surf, a helicopter, breath) such short notes are hardly heard, as they
     // swell in slowly; the melodic tom, struck, rumbles as low (about 490 crossings of zero a second against the
-    // Classic's 280). Too loud at 100 (the user, twice): at 45% of that, which TinySoundFont gives at 76 (its
+    // Classic's 280). Too loud at 100: at 45% of that, which TinySoundFont gives at 76 (its
     // loudness goes with the cube of the volume).
     Remade{.effect = 0x4c, .program = 117, .volume = 76, .transpose = 0},
 };

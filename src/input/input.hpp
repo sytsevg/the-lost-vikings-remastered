@@ -36,7 +36,7 @@ enum class Action : std::uint8_t {
     kZoomOut,
     kZoomIn,
     kMinimap,
-    kQuicksave,  // (the sound and the screen's look are the menu's alone: the user)
+    kQuicksave,  // (the sound and the screen's look are the menu's alone)
     kQuickload,
 };
 inline constexpr std::size_t kActionCount = 18;
@@ -124,7 +124,7 @@ PadActions read_pad(const Controls& controls, const PadReading& reading, bool an
 // for Backspace, 0x81 for Return, Space, [ and ]; 0 for every other key. `key` is SDL's key name.
 std::uint16_t typed_character(std::string_view key) noexcept;
 // Remaster rules' own (the handler gives it; the original's table has none): Escape, which takes the title's
-// password back to its menu (the user, 2026-11-26).
+// password back to its menu.
 inline constexpr std::uint16_t kTypedEscape = 0x82;
 
 }  // namespace lvr::input

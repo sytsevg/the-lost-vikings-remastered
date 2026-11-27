@@ -57,20 +57,20 @@ inline constexpr int kLoudest = 10;  // a volume's top: as loud as the game asks
 inline constexpr int kDefaultPort = 47230;
 
 struct Settings {
-    bool modern_sound = true;     // the Modern sound (if there is a SoundFont; the default, the user), or the Classic
+    bool modern_sound = true;     // the Modern sound (if there is a SoundFont; the default), or the Classic
     int music = kLoudest;         // how loud the music is, 0 to kLoudest
     int sound_fx = kLoudest;      // and the sound effects
     std::string screen = "none";  // the screen's look, by its name (GpuRenderer::name_of)
     int zoom = 0;                 // the zoom's step (Session::zoom_level)
     bool minimap = true;          // shown in a level
     bool visual_fx = true;        // the Modern visuals' effects (effects.hpp): light, glow and particles
-    // The window as it was last left (the user, 2026-11-26): its size (none: three times the original's screen),
+    // The window as it was last left: its size (none: three times the original's screen),
     // and whether it was maximized (its size then the one it had before).
     int window_width = 0;
     int window_height = 0;
     bool window_maximized = false;
     input::Controls controls = input::remaster_controls();
-    // Co-op online (ADR-0012): the player's name (none: PLAYER and his number), and what the menu's HOST GAME and
+    // Co-op online: the player's name (none: PLAYER and his number), and what the menu's HOST GAME and
     // JOIN GAME were last given: a port, a level's password; an address with its port.
     std::string name;
     int host_port = kDefaultPort;
@@ -90,5 +90,9 @@ Settings parse_settings(std::string_view text, std::vector<std::string>& problem
 // `settings.txt` in the profile's folder (the defaults if there is none); writing makes the folder if need be.
 Settings load_settings(const std::filesystem::path& folder, std::vector<std::string>& problems);
 std::expected<void, std::string> save_settings(const std::filesystem::path& folder, const Settings& settings);
+
+// Whether the game can keep its profile in `folder`: the folder made if need be, and a file written there and
+// removed again. The error says what failed, for the player to put right.
+std::expected<void, std::string> profile_writable(const std::filesystem::path& folder);
 
 }  // namespace lvr

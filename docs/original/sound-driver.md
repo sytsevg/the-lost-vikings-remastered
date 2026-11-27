@@ -1,6 +1,6 @@
 # The sound drivers: 460 (Sound Blaster Pro FM, OPL3) and 463 (MIDI)
 
-**Status:** observed (static disassembly of `DATA.DAT` entry 460, 2026-11-17: `objdump -D -b binary -m i8086`;
+**Status:** observed (static disassembly of `DATA.DAT` entry 460: `objdump -D -b binary -m i8086`;
 offsets below are within the entry) and **checked in DOSBox** (below). Implemented in `src/audio/sequencer.*` (the
 sequencer, which driver 463 shares: [below](#driver-463-the-midi-driver-modern)), `src/audio/opl3.*` (the voice layer and
 the chip, ymfm's YMF262; the driver's tables read from the entry by `assets::parse_opl_driver`),
@@ -119,7 +119,7 @@ update.
   waiting (`1B7C` returns for a slot without a channel), but its MIDI channel's voice count has gone up and stays
   one too high. The two owner bytes the driver then writes "for channel `0xFF`" land in its own detection routine
   (`cs:1448`, `144B` inside `140E`), which only runs at the start. Reached in the game by the password screen's
-  beeps over the title music; found 2026-11-18 by a recorded playthrough, where our
+  beeps over the title music; found by a recorded playthrough, where our
   code faulted instead. Not compared register for register with the original on that path.
 - **Release** (`1B11`): key on bit off, `B0` rewritten (key off), the OPL channel (and a 4-op partner) freed, the
   MIDI channel's voice count − 1, the slot freed.
@@ -167,7 +167,7 @@ chunks, SysEx: none of them change what the game sounds like.
 ## Driver 463: the MIDI driver (Modern)
 Entry 463 (by its own description the Roland MT-32 driver for an MPU MIDI interface; 10,625 bytes), the driver `SETUP.EXE` gives
 both the MT-32 and General MIDI (variant 4) choices ([`../formats/audio.md`](../formats/audio.md#sound-devices)).
-Read statically 2026-11-17: both drivers disassembled, aligned by instruction (Python's `difflib` over the
+Read statically: both drivers disassembled, aligned by instruction (Python's `difflib` over the
 mnemonics) and their operands compared with 460's addresses mapped to 463's.
 - **Its sequencer is 460's code**: 460 `2814`–`3656` and `36F6`–`3F86` (fns 150–194, the timer service, the
   sequencer's routines and tables) line up instruction for instruction with 463 `11D7`–`2026` and `20F0`–`2980`
@@ -193,7 +193,7 @@ mnemonics) and their operands compared with 460's addresses mapped to 463's.
   SoundFont (ADR-0015). Not checked in DOSBox: there is no reference for what a 1993 module sounded like.
 
 ## Checked in DOSBox
-On 2026-11-17, with a script since removed (it needed the reference engine's register dump): the original's OPL3
+With a script since removed (it needed the reference engine's register dump): the original's OPL3
 writes captured in DOSBox-X from before its sound start-up, ours from the same sound code on the same input; every key-on and
 key-off compared with its channel's registers (frequency, timbre, levels, connection, `0x104`).
 - **The music**: the logo's tune 0 for 20 s, **all 886 key-ons and key-offs the same**, register for register, times
@@ -206,7 +206,7 @@ key-off compared with its channel's registers (frequency, timbre, levels, connec
   a few refreshes earlier or later than in the original: notes in another order, on other OPL channels, a fade a few
   steps further. Nothing a player could tell apart; not a rule of the game.
 - The music's rate: 2 XMIDI ticks per refresh, [`timing.md`](timing.md#checked-in-dosbox).
-- **The title's demos** (2026-11-26, the user: the Classic music seemed to cut notes): from the game's start, ten
+- **The title's demos** (the Classic music seemed to cut notes): from the game's start, ten
   minutes with no key pressed (the logos, the title, its six demo levels, their tunes and effects together), the
   original's capture (`tools/spotcheck.py opl --slot 39 --frames 36000`, run in parts for the control link) and
   Vanilla rules' writes (`lvr_tests "[.opl]"`), paired by `tools/oplcompare.py`: 15,226 of the original's 16,228
@@ -214,7 +214,7 @@ key-off compared with its channel's registers (frequency, timbre, levels, connec
   or shorter. The ones without a partner are in the windows a scene change falls in (the offset moves there,
   `timing.md`); within a scene every note pairs. The cut notes were the Remaster's volume, then turned down in the
   driver ([`../decisions.md`](../decisions.md): the volumes are gains on the sound made).
-- **Notes the chip never started** (2026-11-26, the user: in the first 25 s, the logos' tune, a bass riff cut out,
+- **Notes the chip never started** (in the first 25 s, the logos' tune, a bass riff cut out,
   silent, and back at random, though the notes above were the same): the same writes as the original's, but a
   service call's reach the chip at one moment, and ymfm does two things only at its next sample. A `0x104` write
   gives a pair of channels its 4-operator use there (`assign_operators`), while a key-on goes at once to the
