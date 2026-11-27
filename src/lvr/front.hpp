@@ -108,10 +108,9 @@ class Place {
     Place& operator=(Place&&) = delete;
     virtual ~Place() = default;
 
-    // What it plays or shows: its sound is heard (if `heard`), its font draws the menu and the boxes, Remaster's own
-    // keys act on it (zoom, minimap, quicksave: where it takes them).
+    // What it plays or shows: its sound is heard, its font draws the menu and the boxes, Remaster's own keys act on it
+    // (zoom, minimap, quicksave: where it takes them).
     virtual Session& session() = 0;
-    virtual bool heard() const { return true; }
     // Whether the game holds while the menu is open (online it goes on under it).
     virtual bool holds() const { return true; }
     // The menu's choices here.
@@ -200,7 +199,6 @@ class ConnectingPlace final : public Place {
     ~ConnectingPlace() override;
 
     Session& session() override { return *offline_; }
-    bool heard() const override { return false; }
     Menu::Choices choices() override { return menu_choices(*offline_); }
     void begin(Ui& ui) override;
     Go refresh(Ui& ui) override;

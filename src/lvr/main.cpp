@@ -510,10 +510,10 @@ Go run(Window& in, Place& place) {
     // The sound card asks for its sound as it needs it (sound_wanted), a few milliseconds at a time.
     (void)SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "512");
     const SDL_AudioSpec spec{.format = SDL_AUDIO_S16, .channels = 2, .freq = static_cast<int>(Session::sample_rate())};
-    SDL_AudioStream* sound =  // (none while a guest connects)
-        place.heard() ? SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, sound_wanted, &session)
-                      : nullptr;
-    if (sound == nullptr && place.heard()) {
+    // (Every place is heard, a guest joining too: the title's music and sounds go on meanwhile, the user, 2026-11-26.)
+    SDL_AudioStream* sound =
+        SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, sound_wanted, &session);
+    if (sound == nullptr) {
         std::println(stderr, "no sound: {}", SDL_GetError());
     } else {
         SDL_ResumeAudioStreamDevice(sound);

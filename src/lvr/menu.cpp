@@ -386,6 +386,9 @@ void Menu::set_has_pad(bool has_pad) noexcept {
 }
 
 Menu::Asked Menu::press(Key key) {
+    if (joining_) {  // JOIN under way: nothing until it is made or fails (the user, 2026-11-26)
+        return Asked::kNothing;
+    }
     if (waiting_ == Waiting::kText) {  // (a gamepad's A or B ends it too)
         if (key == Key::kChoose || key == Key::kBack) {
             stop_waiting();

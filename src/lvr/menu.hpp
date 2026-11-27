@@ -73,6 +73,7 @@ class Menu {
     // What the menu says in its note until the next key (a game online that couldn't be joined, and why).
     void tell(std::string said) { said_ = std::move(said); }
     // JOIN GAME's JOIN under way (the connection being made): a mark turning beside it, at this phase; none: not.
+    // Meanwhile the menu takes no key: neither a line nor back.
     void set_joining(std::optional<int> phase) { joining_ = phase; }
     // Or what it came to (it couldn't be made: why), in the mark's place; empty: nothing.
     void set_join_said(std::string said) { join_said_ = std::move(said); }

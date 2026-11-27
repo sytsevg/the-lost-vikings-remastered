@@ -172,17 +172,22 @@ void ConnectingPlace::begin(Ui& ui) {
 }
 
 Place::Answer ConnectingPlace::asked(Menu::Asked asked, Menu& /*menu*/) {
-    if (asked == Menu::Asked::kResume) {  // BACK, or Escape: given up, the title as it was
+    // (While JOIN is under way the menu asks nothing: Menu::press. Once it has failed, the page is JOIN GAME's.)
+    if (asked == Menu::Asked::kResume) {  // BACK, or Escape: the title as it was
         return {.handled = false,
                 .go = Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0, .page = false}};
     }
-    return {.handled = true, .go = {}};  // (JOIN again, or a line typed into: it is under way already)
+    if (asked == Menu::Asked::kJoin && failed_said_at_) {  // JOIN again (the menu closes: what was typed kept)
+        return {
+            .handled = false,
+            .go = Go{.to = Go::To::kConnecting, .why = {}, .failed = false, .host = false, .level = 0, .page = false}};
+    }
+    return {.handled = true, .go = {}};  // (a line typed into)
 }
 
 Go ConnectingPlace::refresh(Ui& ui) {
     constexpr int kTurnEvery = 6;       // refreshes a phase of the turning mark
     constexpr int kLeastTurning = 120;  // a failure is said no sooner than two seconds in, the mark turning till then
-    constexpr int kSaidFor = 240;       // and what it was beside JOIN for four seconds; then the page as it was
     const std::string where = std::format("{}:{}", address_, port_);
     Menu* menu = ui.menu();
     if (!began_at_) {
@@ -190,14 +195,13 @@ Go ConnectingPlace::refresh(Ui& ui) {
     }
     refreshes_ = static_cast<int>(ui.refreshes() - *began_at_);
     if (failed_) {
+        // Why, beside JOIN, and the page JOIN GAME's again at once: back, the lines, JOIN once more (the user,
+        // 2026-11-26: control given back as soon as it fails).
         if (!failed_said_at_ && refreshes_ >= kLeastTurning && menu != nullptr) {
             failed_said_at_ = refreshes_;
             menu->set_joining(std::nullopt);
             menu->set_join_said(*failed_);
             ui.redraw();
-        }
-        if (failed_said_at_ && refreshes_ - *failed_said_at_ >= kSaidFor) {
-            return Go{.to = Go::To::kOffline, .why = {}, .failed = false, .host = false, .level = 0, .page = true};
         }
     }
     if (const int phase = refreshes_ / kTurnEvery % 4; menu != nullptr && !failed_said_at_ && phase != phase_) {

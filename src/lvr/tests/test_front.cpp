@@ -383,8 +383,10 @@ TEST_CASE(
     }
 }
 
-TEST_CASE("real data: a join that fails: the mark turns two seconds, why beside JOIN four, then JOIN GAME's page again",
-          "[real-data]") {
+TEST_CASE(
+    "real data: a join that fails: the mark turns two seconds, the menu taking no key meanwhile; then why beside JOIN, "
+    "the page JOIN GAME's again at once",
+    "[real-data]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
     }
@@ -405,9 +407,28 @@ TEST_CASE("real data: a join that fails: the mark turns two seconds, why beside 
     CHECK(guest.at<ConnectingPlace>() != nullptr);
     CHECK(join_line().turning.has_value());
     CHECK(join_line().dim);  // (greyed while it joins)
-    REQUIRE(after(3000));    // three seconds: why
+    // Meanwhile nothing: neither back nor another line (the user, 2026-11-26: it stays until it joins or fails).
+    const std::size_t chosen = guest.menu().menu()->chosen();
+    guest.press(Menu::Key::kDown);
+    guest.press(Menu::Key::kBack);
+    CHECK(guest.at<ConnectingPlace>() != nullptr);
+    CHECK(guest.menu().menu()->chosen() == chosen);
+    REQUIRE(after(3000));  // three seconds: why, and the page takes keys again at once
     CHECK(join_line().value == "NO GAME THERE");
-    REQUIRE(room.until([&] { return guest.at<OfflinePlace>() != nullptr; }));
-    CHECK(room.network.now() >= began + 6000);
-    CHECK(join_line().value.empty());  // JOIN GAME's page again, to try once more
+    CHECK_FALSE(join_line().turning.has_value());
+    CHECK(guest.at<ConnectingPlace>() != nullptr);
+    // JOIN once more: joining again.
+    const auto lines = guest.menu().menu()->lines();
+    const auto join_at =
+        static_cast<std::size_t>(std::ranges::find(lines, std::string{"JOIN"}, &Menu::Line::label) - lines.begin());
+    while (guest.menu().menu()->chosen() != join_at) {
+        guest.press(Menu::Key::kDown);
+    }
+    guest.press(Menu::Key::kChoose);
+    CHECK(guest.at<ConnectingPlace>() != nullptr);
+    CHECK(room.until([&] { return join_line().turning.has_value(); }));
+    // Failed again, back: the title as it was.
+    REQUIRE(room.until([&] { return join_line().value == "NO GAME THERE"; }));
+    guest.press(Menu::Key::kBack);
+    CHECK(guest.at<OfflinePlace>() != nullptr);
 }
