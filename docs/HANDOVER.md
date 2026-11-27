@@ -219,10 +219,12 @@ are in [`../GLOSSARY.md`](../GLOSSARY.md).
   step's input is `StepInput`: each player's keys and zoom, the character typed, the menu keys. `Play::state_hash`.
   The cue ledger (`CueLedger`, `sound.cpp`) plays a step's sounds once however often it runs.
 - **Rollback** (`src/net/rollback.*`, target `lvr_net`, plain C++): the game behind a small interface (`net::Game`:
-  save and load a slot, advance a step shown or not, hash, predict). The input queues and what each step was last
-  run with, the first step a prediction got wrong and the steps run again from it, the window (8 steps), the input
-  delay, time sync by frame advantage (`ahead()`: wait a refresh), arrivals and departures (`arrive`, `leave`,
-  `decided_until`), and the hashes of every 8th confirmed step compared (`out_of_step()`).
+  save and load a slot, advance a step shown or not, hash, predict, a state written out and taken). The input
+  queues and what each step was last run with, the first step a prediction got wrong and the steps run again from
+  it, the window (8 steps), the input delay, time sync by frame advantage (`ahead()`: wait a refresh), arrivals and
+  departures (`arrive`, `leave`, `decided_until`), the hashes of every 8th confirmed step compared, per player
+  (`out_of_step(player)`), and the host's state taken to go on from (`take_state`: the steps since run again, none
+  before it ever again).
 - **The transport** (`src/net/transport.*`, target `lvr_transport`, on SDL3_net with `cmake/sdl_net.patch`): host
   and join, a TCP connection and UDP to each client (introduced by a token over TCP), reliable and fast messages,
   the fast ones by UDP and TCP both, numbered (`net::Bundle`), the newest taken; pings for the round trip, answered
@@ -230,12 +232,14 @@ are in [`../GLOSSARY.md`](../GLOSSARY.md).
   (`simulated.*`) is the same seam for tests: seeded, the test's clock, losses, reordering, a reliable message held
   back as over TCP.
 - **The protocol** (`src/net`): the messages (`protocol.*`: Hello, Welcome, Refused, LobbyStatus, Start, Back,
-  Inputs, Status, Hash, Leave, Quit, Echo, Arrive, Presence, Decided, Joining, Bundle); `Connection` (who is who,
-  names, round trips, the game's number, what came a message at a time); `HostLobby` and `GuestLobby` (the lobby's
-  checks of protocol, state version, build and game files; the delay from the round trips); `Match` (one game
-  online, the host in the middle passing each player's inputs on, joining under way).
+  Inputs, Status, Hash, Leave, Quit, Echo, Arrive, Presence, Decided, Joining, Bundle, Resync); `Connection` (who is
+  who, names, round trips, the game's number, what came a message at a time); `HostLobby` and `GuestLobby` (the
+  lobby's checks of protocol, state version, build and game files; the delay from the round trips); `Match` (one game
+  online, the host in the middle passing each player's inputs on, joining under way, a guest out of step put right
+  from the host's state (`put_right`, `take_resync`; put right often: `unsteady`), held up too long: `held_up`).
 - **The game's side** (`src/lvr/coop.*`): a step's input as 16 bytes a player; `CoopGame`, the session as
-  `net::Game` (its snapshots, `Session::run` shown and `Session::run_again` not); `replay_log`, which plays a game
+  `net::Game` (its snapshots, `Session::run` shown and `Session::run_again` not, the host's state taken with
+  `Session::put_right`: the level kept); `replay_log`, which plays a game
   online's log again (`lv-replay --coop LOG`) and names the first step whose state isn't the log's.
 - **The places** (`src/lvr/front.*`): `OfflinePlace` (the game alone; the only place under Vanilla rules),
   `ConnectingPlace`, `LobbyPlace`, `OnlinePlace`, each behind `Place` (its session, the menu's choices, `begin`,
@@ -247,15 +251,18 @@ are in [`../GLOSSARY.md`](../GLOSSARY.md).
   (`Tick`).
 - **In the HUD and the menu:** each player's name under the portrait of the Viking he plays (`HudView::names`), the
   names of those watching him above it, grey (`HudView::watching`), a box at the top while the game waits for
-  someone's input; the menu's first page lists the players with their round trips (NETWORK and GAME).
+  someone's input, with the seconds left before he is let go, and under it OUT OF STEP WITH HOST for a guest put
+  right often (`CoopOverlay::warning`); the menu's first page lists the players with their round trips (NETWORK and GAME).
 - **Tests:** the protocol on a toy game (`src/net/tests/toy.hpp`, `table.hpp`, `test_lobby.cpp`, `test_match.cpp`,
   `test_rollback.cpp`: latency, jitter, lost and reordered packets; two and three machines; one going its own way
-  found out), the transport over 127.0.0.1 (`test_transport.cpp`), the real game in `test_coop.cpp` (two sessions
-  under rollback over a lossy network against one with every input; joining under way) and `test_front.cpp` (a
-  walk through every move). `lvr_tests "[scratch]"`, hidden, writes stills of the lobby, the names under the
-  portraits and the waiting box into `gamedata/previews/online/`.
-- **Logs:** out of step, each machine writes the game's log beside the program
-  (`logs/coop-BUILD-playerN.log`: the start, every confirmed step's inputs, its hashes).
+  found out and put right, twice, three times: unsteady; a guest stuck let go, a host stuck left; a state given, by
+  itself), the transport over 127.0.0.1 (`test_transport.cpp`), the real game in `test_coop.cpp` (two sessions under
+  rollback over a lossy network against one with every input; joining under way; a guest out of step put right, his
+  level kept; a state of another level) and `test_front.cpp` (a walk through every move; a machine stuck: the
+  countdown, let go, joining again, the host stuck). `lvr_tests "[scratch]"`, hidden, writes stills of the lobby, the
+  names under the portraits and the waiting box and the out-of-step box under it into `gamedata/previews/online/`.
+- **Logs:** out of step, each machine that finds it (the host, the guest) writes the game's log beside the program
+  (`logs/coop-BUILD-playerN.log`: the start, every confirmed step's inputs, its hashes), once a game, and plays on.
 
 ## Open
 

@@ -9,10 +9,12 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <limits>
 #include <map>
 #include <optional>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -69,6 +71,8 @@ class Game {
     virtual std::vector<std::uint8_t> state_bytes(std::size_t slot) = 0;
     virtual std::vector<std::uint8_t> state_bytes_now() = 0;
     virtual bool here(int player) = 0;
+    // A state written out so (the host's, for one out of step), taken as the game's now; why not, if it can't be.
+    virtual std::expected<void, std::string> take_state(std::span<const std::uint8_t> bytes) = 0;
 };
 
 struct Settings {
@@ -159,10 +163,18 @@ class Rollback {
     int advantage(int player) const;
 
     // Out of step. This machine's hash of the state after `step`, for every `hash_every`th step, once that step is
-    // confirmed; a remote player's for the same; and the first step whose hashes differed, if one did.
+    // confirmed; a remote player's for the same; and the first step whose hashes differed, if one did: with that
+    // player's, or with any (or the first this machine couldn't put right: its state wasn't kept any more).
     std::optional<std::uint64_t> hash_at(std::uint32_t step) const;
     void add_remote_hash(int player, std::uint32_t step, std::uint64_t hash);
-    std::optional<std::uint32_t> out_of_step() const noexcept { return out_of_step_; }
+    std::optional<std::uint32_t> out_of_step(int player) const;
+    std::optional<std::uint32_t> out_of_step() const;
+    // The player's hashes, and that they differed, let go: what he sends from now on is of a state put right.
+    void forget_hashes(int player);
+    // The game's state before `step` given (Game::take_state's bytes, every input before it known: the host's), to go
+    // on from: the steps from there to this machine's are run again with the inputs it has, unseen (if it isn't that
+    // far yet, it goes on from there), none before it is ever run again, and its hashes before it are let go.
+    std::expected<void, std::string> take_state(std::uint32_t step, std::span<const std::uint8_t> bytes);
 
   private:
     struct Known {
@@ -194,7 +206,10 @@ class Rollback {
     std::uint32_t run_again_ = 0;
     // By step: each player's hash of the state after it (this machine's among them).
     std::map<std::uint32_t, std::array<std::optional<std::uint64_t>, kMostPlayers>> hashes_;
-    std::optional<std::uint32_t> out_of_step_;
+    // By player: the first step whose hash differed from this machine's (this machine's own: one it couldn't put
+    // right).
+    std::array<std::optional<std::uint32_t>, kMostPlayers> differs_{};
+    std::uint32_t floor_ = 0;       // no step before it is run again (the first, or a state given)
     std::uint32_t decided_ = kAll;  // presence decided before this step (kAll: this machine decides it)
 };
 

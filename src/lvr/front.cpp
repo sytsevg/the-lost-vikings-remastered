@@ -450,18 +450,20 @@ OnlinePlace::OnlinePlace(std::unique_ptr<net::Connection> connection, net::Start
     names_to_session();
 }
 
-std::string OnlinePlace::logged(const std::string& error) {
-    if (!match_.out_of_step() || logged_ || logs_.empty()) {
-        return error;
+void OnlinePlace::log_out_of_step() {
+    const std::optional<std::uint32_t> out_of_step = match_.out_of_step();
+    if (!out_of_step || logged_ || logs_.empty()) {
+        return;
     }
-    logged_ = true;  // what went before, for lv-replay --coop
+    logged_ = true;  // what went before, for lv-replay --coop (once a game: the host's state puts it right)
     std::error_code ignored;
     std::filesystem::create_directories(logs_, ignored);
     const std::filesystem::path file =
         logs_ / std::format("coop-{}-player{}.log", connection_->identity().build, connection_->player() + 1);
     std::ofstream out{file};
     out << match_.log();
-    return out ? std::format("{} (the game's log: {})", error, file.string()) : error;
+    std::println(stderr, "vikings-remaster: out of step with another machine at step {}, put right from the host's{}",
+                 *out_of_step, out ? std::format(" (the game's log: {})", file.string()) : std::string{});
 }
 
 void OnlinePlace::names_to_session() {
@@ -500,8 +502,9 @@ Go OnlinePlace::refresh(Ui& ui) {
     Menu* menu = ui.menu();
     session_->set_dimmed(menu != nullptr);  // (the game goes on under the menu: darkened, as offline)
     auto polled = match_.poll();
+    log_out_of_step();
     if (!polled) {
-        const std::string why = logged(polled.error());
+        const std::string& why = polled.error();
         std::println(stderr, "vikings-remaster: {}", why);
         return Go{.to = Go::To::kOffline, .why = said(why), .failed = false, .host = false, .level = 0, .page = false};
     }
@@ -562,8 +565,10 @@ Stepped OnlinePlace::step(const Tick& tick, Ui& ui) {
     } else {
         ran = match_.step();
     }
-    if (auto flushed = match_.flush(); !flushed) {  // (this machine's input on its way at once)
-        const std::string why = logged(flushed.error());
+    auto flushed = match_.flush();  // (this machine's input on its way at once)
+    log_out_of_step();
+    if (!flushed) {
+        const std::string& why = flushed.error();
         std::println(stderr, "vikings-remaster: {}", why);
         stepped.go =
             Go{.to = Go::To::kOffline, .why = said(why), .failed = false, .host = false, .level = 0, .page = false};
@@ -610,14 +615,21 @@ Place::Answer OnlinePlace::asked(Menu::Asked asked, Menu& /*menu*/) {
 }
 
 CoopOverlay OnlinePlace::overlay() const {
-    constexpr int kWaitedRefreshes = 18;  // a third of a second before the box says so
+    constexpr std::uint32_t kHeldMs = 300;  // a third of a second before the box says so
     CoopOverlay overlay;
     if (leaving_) {
         return overlay;
     }
     const std::optional<int> whom = match_.waiting_for();
-    if (whom && match_.waited() >= kWaitedRefreshes && std::cmp_less(*whom, connection_->names().size())) {
-        overlay.waiting = "WAITING FOR " + connection_->names().at(static_cast<std::size_t>(*whom));
+    const std::optional<std::uint32_t> held = match_.held_ms();
+    if (whom && held && *held >= kHeldMs && std::cmp_less(*whom, connection_->names().size())) {
+        // With the seconds left before the one held up for is let go (the host's ten).
+        const std::uint32_t left = (net::Match::kHeldMs - std::min(*held, net::Match::kHeldMs) + 999) / 1000;
+        overlay.waiting =
+            std::format("WAITING FOR {}  {}", connection_->names().at(static_cast<std::size_t>(*whom)), left);
+    }
+    if (match_.unsteady()) {  // (the host's state taken again and again: a fault; he may stay, or leave from the menu)
+        overlay.warning = "OUT OF STEP WITH HOST";
     }
     return overlay;
 }

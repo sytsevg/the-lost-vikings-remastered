@@ -742,14 +742,18 @@ class Canvas {
 
 std::vector<std::uint8_t> coop_picture(const CoopOverlay& overlay, const std::vector<assets::IndexedImage>& font) {
     Canvas canvas;
-    if (!overlay.waiting.empty()) {
-        constexpr int kPadding = 6;
-        const int width = (static_cast<int>(overlay.waiting.size()) * kCharacter) + (2 * kPadding);
-        const int height = kCharacter + (2 * kPadding) - 2;
+    constexpr int kPadding = 6;
+    constexpr int kHeight = kCharacter + (2 * kPadding) - 2;
+    int top = 8;
+    for (const std::string* line : {&overlay.waiting, &overlay.warning}) {
+        if (line->empty()) {
+            continue;
+        }
+        const int width = (static_cast<int>(line->size()) * kCharacter) + (2 * kPadding);
         const int x = (kScreenWidth - width) / 2;
-        constexpr int kTop = 8;
-        canvas.framed(x, kTop, width, height, kDark, kWhite);
-        canvas.text(x + kPadding, kTop + kPadding - 1, overlay.waiting, kWhite, font);
+        canvas.framed(x, top, width, kHeight, kDark, kWhite);
+        canvas.text(x + kPadding, top + kPadding - 1, *line, kWhite, font);
+        top += kHeight + 4;
     }
     return canvas.done();
 }

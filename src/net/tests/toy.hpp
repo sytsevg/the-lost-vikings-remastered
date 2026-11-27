@@ -6,9 +6,11 @@
 
 #include <array>
 #include <cstdint>
+#include <expected>
 #include <map>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "net/rollback.hpp"
@@ -53,6 +55,15 @@ class Toy : public Game {
     }
     std::vector<std::uint8_t> state_bytes_now() override { return written(state, in); }
     bool here(int player) override { return in.at(static_cast<std::size_t>(player)); }
+    std::expected<void, std::string> take_state(std::span<const std::uint8_t> bytes) override {
+        if (bytes.size() != 8 + in.size()) {
+            return std::unexpected{std::string{"not a toy's state"}};
+        }
+        take(bytes);
+        ++taken;
+        return {};
+    }
+    int taken = 0;  // states taken as the game went on (the host's)
 
     // One joining under way: the state he was given.
     void take(std::span<const std::uint8_t> bytes) {

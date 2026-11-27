@@ -35,7 +35,7 @@ TEST_CASE("protocol: every message comes back as it was written") {
                .knows = {10, 11, 12},
                .network = {0, 3, kUnknown},
                .engine = {0, 20, 37}},
-        Hash{.game = 4, .player = 1, .step = 103, .hash = 0xfeedfacecafebeefULL},
+        Hash{.game = 4, .player = 1, .step = 103, .hash = 0xfeedfacecafebeefULL, .resyncs = 2},
         Leave{.player = 2, .from = 500},
         Quit{},
         Echo{.sent = 123456},
@@ -51,6 +51,7 @@ TEST_CASE("protocol: every message comes back as it was written") {
                 .presence = {{.player = 1, .at = 780, .there = true}, {.player = 2, .at = 777, .there = true}}},
         Decided{.game = 7, .until = 4321, .presence = {{.player = 2, .at = 4300, .there = false}}},
         Bundle{.parts = {encode(Echo{.sent = 1}), encode(Echoed{.sent = 2})}},
+        Resync{.game = 8, .player = 1, .step = 1200, .resyncs = 3, .state = std::vector<std::uint8_t>(5000, 0x5a)},
     };
     for (const Message& message : all) {
         const std::vector<std::uint8_t> bytes = encode(message);

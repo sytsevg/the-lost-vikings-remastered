@@ -85,6 +85,10 @@ class Session {
     // loaded from this machine's files). False with why, if they aren't such bytes of this version.
     static std::vector<std::uint8_t> state_bytes(const Play::Snapshot& snapshot);
     std::expected<void, std::string> take_state(std::span<const std::uint8_t> bytes);
+    // The same bytes taken as the game goes on (online: the host's state, this machine out of step): as rollback
+    // brings a state back, the level loaded kept and what is shown and heard going on; only bytes of another level
+    // than the one loaded load it and start afresh, as joining does.
+    std::expected<void, std::string> put_right(std::span<const std::uint8_t> bytes);
     // The scene the bytes are of (to open a session at it before taking them); none if they can't be read.
     static std::optional<int> scene_of(std::span<const std::uint8_t> bytes);
     // Back to a snapshot exactly (rollback: the views too).
@@ -237,6 +241,11 @@ class Session {
     std::vector<std::vector<SoundCue>> cues;
 
   private:
+    // A state's bytes as a snapshot, its level `now`'s if it is of that one (else loaded from the game's files).
+    std::expected<Play::Snapshot, std::string> snapshot_of(std::span<const std::uint8_t> bytes,
+                                                           const Play::Snapshot* now) const;
+    // The play become a snapshot of a state taken (not one of its own), started afresh.
+    void begin_at(const Play::Snapshot& snapshot);
     Session(assets::GameFiles files, std::unique_ptr<LoadedLevel> loaded, SharedGraphics shared, int slot, Rules rules,
             audio::SoundData sound, std::optional<audio::SoundData> modern, std::unique_ptr<audio::GmSynth> gm,
             const Online& online);

@@ -14,6 +14,13 @@ constexpr int kHashEvery = 8;  // the steps whose states are compared: 7, 15, 23
 constexpr std::uint32_t kJoinLead = 16;
 // The steps whose comings and goings go with the host's word on who is there (far more than ever late).
 constexpr std::uint32_t kRecent = 256;
+// One let go is told so, and dropped this long after (or as soon as he says he goes).
+constexpr std::uint32_t kPartingMs = 2000;
+
+// The first step from `step` on whose state is hashed (7, 15, 23, ...).
+std::uint32_t first_hashed(std::uint32_t step) {
+    return step + ((kHashEvery - 1 + kHashEvery - (step % kHashEvery)) % kHashEvery);
+}
 
 std::uint16_t as_sent(std::optional<int> ms) {
     return ms ? static_cast<std::uint16_t>(std::clamp(*ms, 0, int{kUnknown} - 1)) : kUnknown;
@@ -59,7 +66,8 @@ Match::Match(Connection& connection, Game& game, const Started& started)
     for (int player = c.seated(); c.hosting() && player < kMostPlayers; ++player) {
         c.unseat(player);  // (a place for each, free)
     }
-    hash_sent_ = first + ((kHashEvery - 1 + kHashEvery - (first % kHashEvery)) % kHashEvery);
+    hash_sent_ = first_hashed(first);
+    heard_host_ = c.now_ms();
     if (started.state.empty()) {  // from the lobby: the places nobody took, away from the start
         for (int player = started.players; player < kMostPlayers; ++player) {
             rollback_.leave(player, 0);
@@ -97,18 +105,40 @@ std::expected<Match::Polled, std::string> Match::poll() {
         if (incoming->kind != Incoming::Kind::kMessage) {
             continue;
         }
-        if (!c.hosting() && std::holds_alternative<Back>(incoming->message)) {
-            return Polled::kBack;  // (the game is over: what comes after is the lobby's)
+        if (!c.hosting()) {
+            heard_host_ = c.now_ms();
+            const Message& message = incoming->message;
+            if (std::holds_alternative<Back>(message)) {
+                return Polled::kBack;  // (the game is over: what comes after is the lobby's)
+            }
+            if (const auto* leave = std::get_if<Leave>(&message); leave && std::cmp_equal(leave->player, c.player())) {
+                return std::unexpected{"dropped by the host"};  // (it held the game up too long)
+            }
+            if (const auto* resync = std::get_if<Resync>(&message)) {
+                if (auto taken = take_resync(*resync); !taken) {
+                    return std::unexpected{taken.error()};
+                }
+                continue;
+            }
         }
         take(*incoming);
+    }
+    put_right();
+    if (std::optional<std::string> why = held_up()) {
+        return std::unexpected{std::move(*why)};
+    }
+    for (auto parting = parting_.begin(); parting != parting_.end();) {
+        if (c.now_ms() >= parting->second) {
+            c.drop_peer(parting->first);
+            parting = parting_.erase(parting);
+        } else {
+            ++parting;
+        }
     }
     // What is due goes at most once a refresh from a pass (the window may pass far more often); right after a step
     // it goes at once (flush).
     constexpr auto kRefreshMs = static_cast<std::uint32_t>(kStepMs / 3);
     if (sent_at_ && c.now_ms() - *sent_at_ < kRefreshMs) {
-        if (const std::optional<std::uint32_t> out = rollback_.out_of_step()) {
-            return std::unexpected{std::format("out of step with another machine at step {}", *out)};
-        }
         return Polled::kGoingOn;
     }
     if (auto flushed = flush(); !flushed) {
@@ -192,10 +222,96 @@ void Match::take_status(int sender, int peer, const Status& status) {
 }
 
 void Match::take_hash(int sender, const Hash& hash) {
+    // The host: a guest's of his state since the last the host sent him (one of the state before it is let go).
     const Connection& c = *connection_;
-    if (hash.game == c.game() && (!c.hosting() || (sender > 0 && std::cmp_equal(hash.player, sender)))) {
+    const bool his = c.hosting() ? sender > 0 && std::cmp_equal(hash.player, sender) &&
+                                       std::cmp_equal(hash.resyncs, resyncs_.at(static_cast<std::size_t>(sender)))
+                                 : hash.player == 0;
+    if (hash.game == c.game() && his) {
         rollback_.add_remote_hash(hash.player, hash.step, hash.hash);
     }
+}
+
+void Match::put_right() {
+    Connection& c = *connection_;
+    if (const std::optional<std::uint32_t> out = rollback_.out_of_step(); out && !out_of_step_) {
+        out_of_step_ = out;  // (the first this game: the log is written for it)
+    }
+    if (!c.hosting()) {
+        return;  // (the host's word puts it right)
+    }
+    for (int player = 1; player < kMostPlayers; ++player) {
+        if (!rollback_.out_of_step(player) || gone_.at(static_cast<std::size_t>(player)) || c.peer_of(player) < 0) {
+            continue;
+        }
+        // The state before the last step every input is known for: every machine has those inputs (as joining).
+        rollback_.catch_up();
+        const std::uint32_t from = std::min(rollback_.confirmed(), rollback_.step());
+        const int sent = ++resyncs_.at(static_cast<std::size_t>(player));
+        c.send(player,
+               Resync{.game = c.game(),
+                      .player = static_cast<std::uint8_t>(player),
+                      .step = from,
+                      .resyncs = static_cast<std::uint16_t>(sent),
+                      .state = rollback_.state_before(from)},
+               Channel::kReliable);
+        rollback_.forget_hashes(player);  // (what he says next is of the state sent)
+    }
+}
+
+std::expected<void, std::string> Match::take_resync(const Resync& resync) {
+    Connection& c = *connection_;
+    if (resync.game != c.game() || std::cmp_not_equal(resync.player, c.player())) {
+        return {};
+    }
+    if (auto taken = rollback_.take_state(resync.step, resync.state); !taken) {
+        return std::unexpected{std::format("the host's state can't be taken: {}", taken.error())};
+    }
+    resyncs_.at(static_cast<std::size_t>(c.player())) = resync.resyncs;
+    taken_at_.push_back(c.now_ms());
+    if (taken_at_.size() > static_cast<std::size_t>(kUnsteadyResyncs)) {
+        taken_at_.erase(taken_at_.begin());
+    }
+    // The hashes of steps from there on go again, of the state taken (those sent were of the one before).
+    std::erase_if(hashes_, [&resync](const auto& sent) { return sent.first >= resync.step; });
+    hash_sent_ = first_hashed(resync.step);
+    return {};
+}
+
+bool Match::unsteady() const {
+    return std::cmp_greater_equal(taken_at_.size(), kUnsteadyResyncs) &&
+           connection_->now_ms() - taken_at_.front() < kUnsteadyMs;
+}
+
+std::optional<std::string> Match::held_up() {
+    Connection& c = *connection_;
+    const std::optional<std::uint32_t> held = held_ms();
+    if (!held) {
+        return std::nullopt;
+    }
+    if (c.hosting()) {
+        if (*held >= kHeldMs) {
+            if (const std::optional<int> whom = waiting_for(); whom && *whom > 0) {
+                const int peer = c.peer_of(*whom);
+                const std::uint32_t from = rollback_.known(*whom);
+                leaves(*whom);  // (the others told, his Viking passed on)
+                if (peer >= 0) {
+                    c.send_to_peer(peer, Leave{.player = static_cast<std::uint8_t>(*whom), .from = from},
+                                   Channel::kReliable);
+                    parting_.emplace_back(peer, c.now_ms() + kPartingMs);
+                }
+            }
+            held_since_ = c.now_ms();  // (another who holds it up has his ten seconds from now)
+        }
+        return std::nullopt;
+    }
+    if (*held >= kHeldMs && c.now_ms() - heard_host_ >= kHeldMs) {
+        return "no answer from the host";
+    }
+    if (*held >= kGuestHeldMs) {
+        return "the game was held up too long";
+    }
+    return std::nullopt;
 }
 
 std::expected<void, std::string> Match::flush() {
@@ -245,15 +361,17 @@ std::expected<void, std::string> Match::flush() {
     }
     c.echo();
     while (const std::optional<std::uint64_t> hash = rollback_.hash_at(hash_sent_)) {
-        c.broadcast(Hash{.game = c.game(), .player = static_cast<std::uint8_t>(me), .step = hash_sent_, .hash = *hash},
+        c.broadcast(Hash{.game = c.game(),
+                         .player = static_cast<std::uint8_t>(me),
+                         .step = hash_sent_,
+                         .hash = *hash,
+                         .resyncs = static_cast<std::uint16_t>(resyncs_.at(static_cast<std::size_t>(me)))},
                     Channel::kReliable);
         hashes_.emplace_back(hash_sent_, *hash);
         hash_sent_ += kHashEvery;
     }
     c.flush();
-    if (const std::optional<std::uint32_t> out = rollback_.out_of_step()) {
-        return std::unexpected{std::format("out of step with another machine at step {}", *out)};
-    }
+    put_right();
     return {};
 }
 
@@ -295,6 +413,8 @@ void Match::welcome_under_way(int peer, const Hello& hello) {
     c.seat(place, peer);
     c.set_name(place, shown_name(hello.name, place));
     gone_.at(at) = false;
+    resyncs_.at(at) = 0;
+    rollback_.forget_hashes(place);  // (the one before in his place said them)
     acked_.at(at).fill(from);
     c.forget_round_trip(place);
     c.send(place,
@@ -338,20 +458,35 @@ bool Match::run_to_arrival() {
 }
 
 bool Match::step() {
+    // Held up while no step runs but for this machine's own input (that one is the front end's to give).
+    const auto hold = [this] {
+        if (!held_since_) {
+            held_since_ = connection_->now_ms();
+        }
+    };
     if (rollback_.ahead()) {
         rollback_.catch_up();  // a refresh to let the others catch up
+        hold();
         return false;
     }
     if (!rollback_.advance()) {
         ++waited_;
+        if (rollback_.local_known() > rollback_.step()) {
+            hold();
+        }
         return false;
     }
     waited_ = 0;
+    held_since_.reset();
     return true;
 }
 
+std::optional<std::uint32_t> Match::held_ms() const {
+    return held_since_ ? std::optional{connection_->now_ms() - *held_since_} : std::nullopt;
+}
+
 std::optional<int> Match::waiting_for() const {
-    if (waited_ == 0) {
+    if (waited_ == 0 && !held_since_) {
         return std::nullopt;
     }
     std::optional<int> slowest;

@@ -16,6 +16,7 @@ Rollback::Rollback(Game& game, const Settings& settings)
     : game_{&game},
       settings_{settings},
       step_{settings.first_step},
+      floor_{settings.first_step},
       decided_{settings.decides_presence ? kAll : settings.first_step} {
     settings_.players = std::clamp(settings_.players, 1, kMostPlayers);
     settings_.local = std::clamp(settings_.local, 0, settings_.players - 1);
@@ -114,7 +115,7 @@ void Rollback::add_remote(int player, std::uint32_t step, const Input& input) {
     }
     known.inputs.at(step) = input;
     move_contiguous(known);
-    if (step < step_ && step < known.used.size() && known.used.at(step) != input) {
+    if (step < step_ && step >= floor_ && step < known.used.size() && known.used.at(step) != input) {
         first_wrong_ = std::min(first_wrong_.value_or(step), step);
     }
 }
@@ -128,7 +129,7 @@ void Rollback::changes(Known& known, std::uint32_t at, bool there) {
     }
     move_contiguous(known);
     // Steps run with him away (or there) that are otherwise now: again.
-    for (std::uint32_t step = at; step < step_ && step < known.used.size(); ++step) {
+    for (std::uint32_t step = std::max(at, floor_); step < step_ && step < known.used.size(); ++step) {
         if ((known.used.at(step) == gone_input()) == there) {
             first_wrong_ = std::min(first_wrong_.value_or(step), step);
             break;
@@ -237,7 +238,8 @@ void Rollback::run(std::uint32_t step, bool shown) {
 
 void Rollback::catch_up() {
     if (first_wrong_ && *first_wrong_ + slots() < step_) {  // its state isn't kept any more: it can't be put right
-        out_of_step_ = std::min(out_of_step_.value_or(*first_wrong_), *first_wrong_);
+        std::optional<std::uint32_t>& lost = differs_.at(static_cast<std::size_t>(settings_.local));
+        lost = std::min(lost.value_or(*first_wrong_), *first_wrong_);
         first_wrong_.reset();
         return;
     }
@@ -351,17 +353,68 @@ void Rollback::add_remote_hash(int player, std::uint32_t step, std::uint64_t has
 
 void Rollback::compare_hashes() {
     const std::uint32_t all = std::min(confirmed(), first_wrong_.value_or(kAll));  // (what is final here)
+    const auto local = static_cast<std::size_t>(settings_.local);
     for (const auto& [step, by_player] : hashes_) {
         if (step >= all) {
             break;
         }
-        const std::optional<std::uint64_t>& own = by_player.at(static_cast<std::size_t>(settings_.local));
-        for (const std::optional<std::uint64_t>& theirs : by_player) {
-            if (own && theirs && *own != *theirs && (!out_of_step_ || step < *out_of_step_)) {
-                out_of_step_ = step;
+        const std::optional<std::uint64_t>& own = by_player.at(local);
+        for (std::size_t player = 0; player < by_player.size(); ++player) {
+            const std::optional<std::uint64_t>& theirs = by_player.at(player);
+            std::optional<std::uint32_t>& differs = differs_.at(player);
+            if (player != local && own && theirs && *own != *theirs && (!differs || step < *differs)) {
+                differs = step;
             }
         }
     }
+}
+
+std::optional<std::uint32_t> Rollback::out_of_step(int player) const {
+    return player >= 0 && player < kMostPlayers ? differs_.at(static_cast<std::size_t>(player)) : std::nullopt;
+}
+
+std::optional<std::uint32_t> Rollback::out_of_step() const {
+    std::optional<std::uint32_t> first;
+    for (const std::optional<std::uint32_t>& differs : differs_) {
+        if (differs && (!first || *differs < *first)) {
+            first = differs;
+        }
+    }
+    return first;
+}
+
+void Rollback::forget_hashes(int player) {
+    if (player < 0 || player >= kMostPlayers || player == settings_.local) {
+        return;
+    }
+    for (auto& [step, by_player] : hashes_) {
+        by_player.at(static_cast<std::size_t>(player)).reset();
+    }
+    differs_.at(static_cast<std::size_t>(player)).reset();
+}
+
+std::expected<void, std::string> Rollback::take_state(std::uint32_t step, std::span<const std::uint8_t> bytes) {
+    if (auto taken = game_->take_state(bytes); !taken) {
+        return taken;
+    }
+    floor_ = step;
+    first_wrong_.reset();
+    // This machine's hashes were of the state it had: those before the step go, those after it are made again as the
+    // steps run again (or on, as they come). The others' stay, to compare with them.
+    std::erase_if(hashes_, [step](const auto& kept) { return kept.first < step; });
+    for (auto& [at, by_player] : hashes_) {
+        by_player.at(static_cast<std::size_t>(settings_.local)).reset();
+    }
+    differs_.fill(std::nullopt);
+    if (step_ <= step) {
+        step_ = step;  // (not that far yet: on from the state given)
+        return {};
+    }
+    const std::uint32_t now = step_;
+    for (std::uint32_t at = step; at < now; ++at) {
+        run(at, false);
+    }
+    return {};
 }
 
 }  // namespace lvr::net

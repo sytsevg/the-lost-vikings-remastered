@@ -1,10 +1,13 @@
 // Tests for src/lvr/coop.* (co-op online): the game itself under rollback, a step's input as bytes, and a
 // game online on the real game: a host and a guest play level 1 over a network that delays and loses what is sent,
-// and one who joins under way comes to the same game.
+// one who joins under way comes to the same game, and a guest out of step is put right from the host's state (his
+// level kept).
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
+#include <span>
 #include <vector>
 
 #include "lvr/coop.hpp"
@@ -71,6 +74,14 @@ struct RealGame : Opened, CoopGame {
     static net::Input input(RealGame& game, int player, std::uint32_t given) {
         return pack(game.session->take_input(held(player, given), {}, {}), player);
     }
+    // This machine goes wrong at that step, each time it runs it: Baleog a few pixels on (out of step).
+    std::optional<std::uint32_t> spoil_at;
+    void advance(std::span<const net::Input> inputs, std::uint32_t step, bool shown) override {
+        CoopGame::advance(inputs, step, shown);
+        if (const Entity* baleog = session->world().at(1); spoil_at == step && baleog != nullptr) {
+            REQUIRE(session->put_viking(1, baleog->x + 8, baleog->y, baleog->health));
+        }
+    }
 };
 
 }  // namespace
@@ -107,6 +118,32 @@ TEST_CASE("real data: one who joins level 1 under way comes to the very game the
     CHECK(host.game->session->world().at(1)->x != (*fresh)->world().at(1)->x);
     CHECK(host.connection->names().at(2) == "LATE");
     CHECK(guest.connection->names().at(2) == "LATE");
+}
+
+TEST_CASE("real data: a guest out of step in level 1 takes the host's state and plays on, the same game as his",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    net::test::Table<RealGame> table{
+        {.delay_ms = 20, .jitter_ms = 10, .loss_percent = 10, .late_ms = 100, .behind_ms = 0}};
+    auto& host = table.host();
+    auto& guest = table.join("guest");
+    REQUIRE(table.until([&] { return guest.lobby->welcomed(); }));
+    host.hosting->start();
+    REQUIRE(table.until([&] { return host.match != nullptr && guest.match != nullptr; }));
+    guest.game->spoil_at = 150;
+    const LoadedLevel* level = guest.game->session->snapshot().loaded;
+    REQUIRE(table.until([&] { return guest.match->resyncs(1) == 1; }));
+    CHECK(guest.game->session->snapshot().loaded == level);  // (the level kept: only the world put right)
+    CHECK(host.match->out_of_step() == 151U);
+    const std::uint32_t put_right = host.at_step();
+    REQUIRE(table.run_to(put_right + 100));
+    table.wait(60);
+    CHECK(host.error.empty());
+    CHECK(guest.error.empty());
+    CHECK(table.same_game(put_right + 16));
+    CHECK(guest.game->session->world().at(1)->x == host.game->session->world().at(1)->x);
 }
 
 TEST_CASE("coop: a step's input as bytes and back; what is pressed once isn't predicted again") {
@@ -164,4 +201,28 @@ TEST_CASE("real data: online, the intro is the first player's to play, as the re
     CHECK(world.followed_by(world.players[1]) == world.players[0].viking);
     CHECK(world.players[1].camera.x == world.players[0].camera.x);
     CHECK(world.players[1].camera.y == world.players[0].camera.y);
+}
+
+TEST_CASE("real data: the host's state of another level than the one loaded: that level loaded, the game his state",
+          "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    auto here = Session::open(LVR_ORIGINAL_DIR, 0, {}, Rules::kRemaster);
+    auto there = Session::open(LVR_ORIGINAL_DIR, 1, {}, Rules::kRemaster);
+    REQUIRE(here);
+    REQUIRE(there);
+    for (int step = 0; step < 10; ++step) {
+        (void)(*there)->step(0);
+    }
+    const LoadedLevel* level = (*here)->snapshot().loaded;
+    REQUIRE((*here)->put_right(Session::state_bytes((*there)->snapshot())));
+    CHECK((*here)->snapshot().loaded != level);
+    CHECK((*here)->world().scene == (*there)->world().scene);
+    // (Its scene's music heard from its first step on, as a quickload does: cues the step takes out.)
+    for (int step = 0; step < 10; ++step) {
+        (void)(*here)->step(kRight);
+        (void)(*there)->step(kRight);
+    }
+    CHECK((*here)->state_hash() == (*there)->state_hash());
 }

@@ -215,3 +215,66 @@ TEST_CASE("rollback: an input said to be for a step far beyond any machine's is 
     rollback.add_remote(1, 0, held(1, 0));
     CHECK(rollback.known(1) == 1);
 }
+
+TEST_CASE(
+    "rollback: a state given to go on from (the host's): the steps since run again unseen, none before it ever again; "
+    "one not that far yet goes on from it") {
+    // What every input known comes to: run to step 20, its state there given, then on to 30.
+    Toy right;
+    Rollback straight{right, Settings{.players = 2, .local = 0, .delay = 0}};
+    const auto run_straight = [&](std::uint32_t to) {
+        for (std::uint32_t step = straight.step(); step < to; ++step) {
+            REQUIRE(straight.add_local(held(0, step)));
+            straight.add_remote(1, step, held(1, step));
+            REQUIRE(straight.advance());
+        }
+    };
+    run_straight(20);
+    const std::vector<std::uint8_t> given = straight.state_before(20);
+    run_straight(30);
+
+    // Player 1's machine, gone wrong at step 5, without player 0's inputs for steps 10 to 19 yet (predicted).
+    Toy game;
+    game.spoil_at = 5;
+    Rollback rollback{game, Settings{.players = 2, .local = 1, .delay = 0, .window = 32}};
+    for (std::uint32_t step = 0; step < 30; ++step) {
+        REQUIRE(rollback.add_local(held(1, step)));
+        if (step < 10 || step >= 20) {
+            rollback.add_remote(0, step, held(0, step));
+        }
+        REQUIRE(rollback.advance());
+    }
+    REQUIRE(game.state != right.state);
+    const std::uint32_t before = rollback.steps_run_again();
+    REQUIRE(rollback.take_state(20, given));
+    CHECK(rollback.step() == 30);
+    CHECK(rollback.steps_run_again() == before + 10);
+    CHECK(game.state == right.state);
+    CHECK(game.shown.size() == 30);  // (the steps run again unseen)
+    // Player 0's inputs before the state come, otherwise than predicted: nothing before step 20 is run again.
+    for (std::uint32_t step = 10; step < 20; ++step) {
+        rollback.add_remote(0, step, held(0, step));
+    }
+    rollback.catch_up();
+    CHECK(game.state == right.state);
+    CHECK_FALSE(rollback.out_of_step());
+
+    // One not that far yet (his input delay ahead of him: two steps): on from the state given, at its step.
+    Toy behind_game;
+    Rollback behind{behind_game, Settings{.players = 2, .local = 1, .delay = 2, .window = 32}};
+    for (std::uint32_t step = 0; step < 18; ++step) {
+        REQUIRE(behind.add_local(held(1, step + 2)));  // (for step + 2)
+        behind.add_remote(0, step, held(0, step));
+        REQUIRE(behind.advance());
+    }
+    REQUIRE(behind.take_state(20, given));
+    CHECK(behind.step() == 20);
+    REQUIRE(behind.add_local(held(1, 20)));
+    behind.add_remote(0, 20, held(0, 20));
+    REQUIRE(behind.advance());
+    Toy expected;  // the state given, and step 20 run on it
+    REQUIRE(expected.take_state(given));
+    const std::vector<Input> inputs{held(0, 20), held(1, 20)};
+    expected.advance(inputs, 20, true);
+    CHECK(behind_game.state == expected.state);
+}

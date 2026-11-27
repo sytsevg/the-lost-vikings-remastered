@@ -124,6 +124,13 @@ void fields(Io& io, auto& message) {
         io(message.player);
         io(message.step);
         io(message.hash);
+        io(message.resyncs);
+    } else if constexpr (std::is_same_v<M, Resync>) {
+        io(message.game);
+        io(message.player);
+        io(message.step);
+        io(message.resyncs);
+        io(message.state);
     } else if constexpr (std::is_same_v<M, Leave>) {
         io(message.player);
         io(message.from);

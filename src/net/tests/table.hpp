@@ -58,6 +58,7 @@ struct Machine {
     std::string error;        // what ended the game (or the lobby) for it
     bool back = false;        // told to go back to the lobby
     bool gone = false;        // it left
+    bool stuck = false;       // its game does nothing (the program hung), its machine still there
 
     int player() const { return connection->player(); }
     std::uint32_t at_step() const { return match != nullptr ? match->at_step() : 0; }
@@ -125,7 +126,7 @@ class Table {
     // A refresh: each machine there has its turn, and the clock moves on.
     void pass() {
         for (Machine<G>& machine : machines) {
-            if (!machine.gone) {
+            if (!machine.gone && !machine.stuck) {
                 turn(machine);
             }
         }
@@ -175,8 +176,9 @@ class Table {
         }
         return text.str();
     }
-    // Whether the machines there have the same game: each two compared at the steps both hashed (at least three).
-    bool same_game() const {
+    // Whether the machines there have the same game: each two compared at the steps from `from` on both hashed (at
+    // least three).
+    bool same_game(std::uint32_t from = 0) const {
         for (const Machine<G>& one : machines) {
             for (const Machine<G>& other : machines) {
                 if (one.gone || other.gone || &one == &other) {
@@ -186,7 +188,7 @@ class Table {
                 const auto theirs = other.hashes();
                 int compared = 0;
                 for (const auto& [step, hash] : mine) {
-                    if (const auto found = theirs.find(step); found != theirs.end()) {
+                    if (const auto found = theirs.find(step); step >= from && found != theirs.end()) {
                         if (found->second != hash) {
                             return false;
                         }

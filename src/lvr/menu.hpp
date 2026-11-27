@@ -188,7 +188,9 @@ std::vector<std::uint8_t> menu_picture(const Menu& menu, const std::vector<asset
 // for a player's input, a box at the screen's top saying for whom.
 struct CoopOverlay {
     std::string waiting;  // none: empty
+    std::string warning;  // under it (or in its place): this machine's game put right from the host's again and again
     bool operator==(const CoopOverlay&) const = default;
+    bool empty() const noexcept { return waiting.empty() && warning.empty(); }
 };
 std::vector<std::uint8_t> coop_picture(const CoopOverlay& overlay, const std::vector<assets::IndexedImage>& font);
 

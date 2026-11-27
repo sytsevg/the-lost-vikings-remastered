@@ -383,7 +383,8 @@ std::optional<int> Session::scene_of(std::span<const std::uint8_t> bytes) {
                                                                                       : std::nullopt;
 }
 
-std::expected<void, std::string> Session::take_state(std::span<const std::uint8_t> bytes) {
+std::expected<Play::Snapshot, std::string> Session::snapshot_of(std::span<const std::uint8_t> bytes,
+                                                                const Play::Snapshot* now) const {
     Reader from{bytes, Widths::kVariable};
     std::uint32_t version = 0;
     int scene = 0;
@@ -394,13 +395,19 @@ std::expected<void, std::string> Session::take_state(std::span<const std::uint8_
     if (!from.ok() || version != kStateVersion || scene < 0 || scene >= kSceneSlots) {
         return std::unexpected{std::string{"the game's state is of another version of the game"}};
     }
-    auto loaded = load_slot(files_, scene, database_entry, play_.snes);
-    if (!loaded) {
-        return std::unexpected{loaded.error()};
-    }
     Play::Snapshot snapshot;
-    snapshot.owner = std::make_shared<LoadedLevel>(std::move(*loaded));
-    snapshot.loaded = snapshot.owner.get();
+    if (now != nullptr && now->loaded != nullptr && now->world.scene == scene &&
+        now->loaded->database_entry == database_entry) {
+        snapshot.owner = now->owner;  // (the level as it is loaded)
+        snapshot.loaded = now->loaded;
+    } else {
+        auto loaded = load_slot(files_, scene, database_entry, play_.snes);
+        if (!loaded) {
+            return std::unexpected{loaded.error()};
+        }
+        snapshot.owner = std::make_shared<LoadedLevel>(std::move(*loaded));
+        snapshot.loaded = snapshot.owner.get();
+    }
     snapshot.world = prepare_world(*snapshot.loaded, nullptr, play_.world.rules);
     bool read = false;
     from.measured([&](Reader& part) { read = snapshot.world.load(part) && part.done(); });
@@ -408,6 +415,10 @@ std::expected<void, std::string> Session::take_state(std::span<const std::uint8_
     if (!read || !from.done()) {
         return std::unexpected{std::string{"the game's state can't be read"}};
     }
+    return snapshot;
+}
+
+void Session::begin_at(const Play::Snapshot& snapshot) {
     if (play_.restore(snapshot)) {
         play_.scene_sound();
     }
@@ -418,6 +429,28 @@ std::expected<void, std::string> Session::take_state(std::span<const std::uint8_
     scrolled_.reset();
     grows_from_.reset();
     shrinking_ = false;
+}
+
+std::expected<void, std::string> Session::take_state(std::span<const std::uint8_t> bytes) {
+    auto snapshot = snapshot_of(bytes, nullptr);
+    if (!snapshot) {
+        return std::unexpected{snapshot.error()};
+    }
+    begin_at(*snapshot);
+    return {};
+}
+
+std::expected<void, std::string> Session::put_right(std::span<const std::uint8_t> bytes) {
+    const Play::Snapshot now = play_.snapshot();
+    auto snapshot = snapshot_of(bytes, &now);
+    if (!snapshot) {
+        return std::unexpected{snapshot.error()};
+    }
+    if (snapshot->loaded == now.loaded) {
+        (void)play_.restore(*snapshot);  // (as rollback's load: the same level, what is shown and heard goes on)
+    } else {
+        begin_at(*snapshot);
+    }
     return {};
 }
 

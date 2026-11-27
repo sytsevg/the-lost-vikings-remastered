@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -42,6 +43,9 @@ class CoopGame : public net::Game {
     std::vector<std::uint8_t> state_bytes(std::size_t slot) override { return Session::state_bytes(saved_.at(slot)); }
     std::vector<std::uint8_t> state_bytes_now() override { return Session::state_bytes(session_->snapshot()); }
     bool here(int player) override { return session_->world().players.at(static_cast<std::size_t>(player)).here; }
+    std::expected<void, std::string> take_state(std::span<const std::uint8_t> bytes) override {
+        return session_->put_right(bytes);
+    }
 
     // The pictures of the steps shown since this was last asked, a refresh each.
     std::vector<Screen> take_pictures() { return std::exchange(pictures_, {}); }

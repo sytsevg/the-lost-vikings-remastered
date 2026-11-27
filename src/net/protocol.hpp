@@ -8,11 +8,13 @@
 // another build, other game files). LobbyStatus (host to all, now and then) says who is there, their round trips and
 // what the game starts with; Start (host to all) starts the game for everyone at step 0, and Back (host to all) ends it
 // for everyone, back in the lobby with the same connections (to start another). Each game has a number, which the
-// messages of a game carry (Inputs, Status, Hash): what is late from the one before is told apart. Then, every refresh:
-// Inputs (each player's not yet acknowledged, one message a player), Status (where the sender is, his frame advantage,
-// and how far he knows each player's inputs: the acknowledgements), and now and then Hash. Leave (host to all): a
-// player is gone from that step on; Quit (client to host): he goes. A Hello while the game is under way is answered by
-// Joining (a free place, the game's state, the step he comes at), and the others are told by Arrive.
+// messages of a game carry (Inputs, Status, Hash, Resync): what is late from the one before is told apart. Then, every
+// refresh: Inputs (each player's not yet acknowledged, one message a player), Status (where the sender is, his frame
+// advantage, and how far he knows each player's inputs: the acknowledgements), and now and then Hash; a guest's hash
+// that isn't the host's is answered by Resync (host to him: the host's state to go on from). Leave (host to all): a
+// player is gone from that step on (the one who went, or was let go, too); Quit (client to host): he goes. A Hello
+// while the game is under way is answered by Joining (a free place, the game's state, the step he comes at), and the
+// others are told by Arrive.
 
 #include <array>
 #include <cstdint>
@@ -27,7 +29,7 @@
 namespace lvr::net {
 
 inline constexpr std::uint32_t kMagic = 0x39'52'56'4c;  // "LVR9"
-inline constexpr std::uint16_t kProtocol = 2;
+inline constexpr std::uint16_t kProtocol = 3;
 inline constexpr std::size_t kMostName = 8;  // a player's name, in the game's font: what fits under a Viking
 
 struct Hello {
@@ -93,6 +95,7 @@ struct Hash {
     std::uint8_t player = 0;
     std::uint32_t step = 0;
     std::uint64_t hash = 0;
+    std::uint16_t resyncs = 0;  // the sender's: how many Resyncs he has taken (one of a state before them: none)
     bool operator==(const Hash&) const = default;
 };
 struct Leave {
@@ -150,6 +153,17 @@ struct Joining {
     bool operator==(const Joining&) const = default;
 };
 
+// Host to a guest whose state's hash wasn't the host's: the host's state before a step every input is known for, to
+// go on from (as Joining's), and how many he has been sent so far, this one counted (what his hashes say after it).
+struct Resync {
+    std::uint16_t game = 0;
+    std::uint8_t player = 0;  // whom it is for
+    std::uint32_t step = 0;   // of the state
+    std::uint16_t resyncs = 0;
+    std::vector<std::uint8_t> state;
+    bool operator==(const Resync&) const = default;
+};
+
 // All one machine says fast to another in one pass, as one message (the transport takes only the newest).
 struct Bundle {
     std::vector<std::vector<std::uint8_t>> parts;  // each message, encoded
@@ -157,7 +171,7 @@ struct Bundle {
 };
 
 using Message = std::variant<Hello, Refused, Welcome, LobbyStatus, Start, Inputs, Status, Hash, Leave, Quit, Echo,
-                             Echoed, Arrive, Joining, Back, Decided, Bundle>;
+                             Echoed, Arrive, Joining, Back, Decided, Bundle, Resync>;
 
 std::vector<std::uint8_t> encode(const Message& message);
 // A message's messages: a bundle's, decoded (what can't be is left out); else the message itself.

@@ -944,8 +944,8 @@ Go run(Window& in, Place& place) {
                 CoopOverlay now = place.overlay();
                 if (now != coop_shown) {
                     coop_shown = std::move(now);
-                    gpu->set_overlay(coop_shown.waiting.empty() ? std::vector<std::uint8_t>{}
-                                                                : coop_picture(coop_shown, session.font()));
+                    gpu->set_overlay(coop_shown.empty() ? std::vector<std::uint8_t>{}
+                                                        : coop_picture(coop_shown, session.font()));
                 }
             } else if (menu) {
                 coop_shown = {};  // (drawn again when the menu closes)

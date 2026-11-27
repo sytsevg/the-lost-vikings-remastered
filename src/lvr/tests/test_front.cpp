@@ -226,7 +226,7 @@ void save_still(const Machine& machine, const std::vector<std::uint8_t>& over, c
 }  // namespace
 
 // Run by hand when the online parts' look changes (lvr_tests "[scratch]"): stills of the lobby's page, the names under
-// the Vikings' portraits, and the box saying whom the game waits for.
+// the Vikings' portraits, the box saying whom the game waits for, and the one under it for a game put right often.
 TEST_CASE("online stills: the lobby, the names under the portraits, the waiting box", "[.scratch]") {
     if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
         SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
@@ -255,6 +255,10 @@ TEST_CASE("online stills: the lobby, the names under the portraits, the waiting 
     host.paused = true;
     REQUIRE(room.until([&] { return !guest.place().overlay().waiting.empty(); }));
     save_still(guest, coop_picture(guest.place().overlay(), guest.place().session().font()), "waiting.png");
+    // And under it, the box a guest put right again and again is shown.
+    CoopOverlay unsteady = guest.place().overlay();
+    unsteady.warning = "OUT OF STEP WITH HOST";
+    save_still(guest, coop_picture(unsteady, guest.place().session().font()), "unsteady.png");
 }
 
 // The README's stills of co-op online (lvr_tests "[readme]", run by hand): three players in the host's lobby with
@@ -496,4 +500,45 @@ TEST_CASE(
     REQUIRE(room.until([&] { return join_line().value == "NO GAME THERE"; }));
     guest.press(Menu::Key::kBack);
     CHECK(guest.at<OfflinePlace>() != nullptr);
+}
+
+TEST_CASE(
+    "real data: online, a guest's machine stuck: the host's box counts his ten seconds down, then he is let go and the "
+    "game goes on; back at his title saying so, he joins again; then the host's stuck: the guest goes, no answer",
+    "[real-data]") {
+    if (!std::filesystem::exists(LVR_ORIGINAL_DIR)) {
+        SKIP("no " LVR_ORIGINAL_DIR " (put your own copy of the game there)");
+    }
+    Room room;
+    Machine& host = room.machine("host", draw_nothing);
+    Machine& guest = room.machine("guest", draw_nothing);
+    REQUIRE(room.until([&] { return host.title->world().scene == scene::kTitle; }));
+    host.ask(Menu::Asked::kHost);
+    guest.ask(Menu::Asked::kJoin);
+    REQUIRE(room.until([&] { return guest.at<LobbyPlace>() != nullptr; }));
+    host.ask(Menu::Asked::kStart);
+    REQUIRE(room.online_to(40));
+
+    guest.paused = true;
+    const auto waiting = [&] { return host.place().overlay().waiting; };
+    REQUIRE(room.until([&] { return !waiting().empty(); }));
+    CHECK(waiting() == "WAITING FOR GUEST  10");
+    REQUIRE(room.until([&] { return waiting() == "WAITING FOR GUEST  1"; }));
+    REQUIRE(room.until([&] { return waiting().empty(); }));
+    const std::uint32_t freed = host.at<OnlinePlace>()->at_step();
+    REQUIRE(room.until([&] { return host.at<OnlinePlace>()->at_step() > freed + 20; }));
+
+    guest.paused = false;
+    REQUIRE(room.until([&] { return guest.at<OfflinePlace>() != nullptr; }));
+    REQUIRE(guest.menu().menu() != nullptr);
+    CHECK(guest.menu().menu()->note().front() == "DROPPED BY THE HOST");
+    guest.ask(Menu::Asked::kJoin);
+    REQUIRE(room.until([&] { return guest.at<OnlinePlace>() != nullptr; }));
+    REQUIRE(room.online_to(host.at<OnlinePlace>()->at_step() + 40));
+    CHECK(Room::same_game(host, guest));
+
+    host.paused = true;
+    REQUIRE(room.until([&] { return guest.at<OfflinePlace>() != nullptr; }));
+    REQUIRE(guest.menu().menu() != nullptr);
+    CHECK(guest.menu().menu()->note().front() == "NO ANSWER FROM THE HOST");
 }

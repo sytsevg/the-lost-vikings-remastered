@@ -402,9 +402,23 @@ Only under Remaster rules (ADR-0005); Vanilla rules stay exactly the original's,
   test, part of `lv-replay --check` (`scripts/goldens.sh`): every replay, before each step the last 8 run again
   from the snapshot before them, against its golden. A step that changes the scene runs on confirmed inputs only,
   so a fade or a level's loading is never undone.
-- **Out of step:** the state of every 8th confirmed step is hashed and the hashes exchanged; on a difference the
-  first step that differs is logged, and each machine writes its state and its log of inputs (in `logs/` beside the
-  program) to be played offline (`lv-replay --coop LOG`).
+- **Out of step, put right by the host:** the state of every 8th confirmed step is hashed and each machine's hashes
+  go to the host, who compares them with his own (a guest has only the host's). The host leads: a guest whose hash
+  differs is sent the host's state before a step every input is known for (`net::Resync`, the bytes a mid-game join
+  gets), takes it as rollback brings a state back (his level kept, what is shown and heard going on; only a state of
+  another level loads it), runs the steps since again unseen with the inputs he has, and plays on; nobody else is
+  touched. His hashes carry how many states he has taken, so the host doesn't take one of a state before. Put right
+  3 times within 30 seconds, his game jumps too often: a box under the top one says OUT OF STEP WITH HOST while
+  that lasts (a mismatch is a fault of the game, never the network's: late inputs are rollback's, a link held up the
+  box above); he stays or leaves from the menu. The first step that differs is logged, and each machine
+  that finds it writes its log of inputs and hashes (in `logs/` beside the program, once a game) to be played
+  offline (`lv-replay --coop LOG`).
+- **Held up, 10 seconds at most:** when a step can't run because someone's inputs haven't come (the window used
+  up), the game waits on every screen, the box at the top naming whom it waits for and the seconds left. After 10
+  seconds without a step the host lets that player go (his Viking passed on, as when one leaves; he is told, and is
+  back at his title with why; he can join again) and the game goes on; a guest goes when the host's game hasn't said
+  anything for those 10 seconds (it is stuck), and in any case after 15 (the host didn't let the one go). A machine
+  that only runs slowly holds nobody up: time sync slows the others now and then, never stops them.
 - **Transport:** SDL3_net. TCP for the handshake (the protocol's and the state's versions, the build's ID: a hash
   of the game's sources, worked out at every build; the game files' release, the names, the start). The game's own
   messages go by UDP and TCP both, the same bytes, and the first copy to come wins: every Inputs packet carries
@@ -450,7 +464,7 @@ Only under Remaster rules (ADR-0005); Vanilla rules stay exactly the original's,
   everyone told, and is CANCEL START meanwhile; anyone can leave. In the game, the host's menu has RETURN TO LOBBY:
   everyone back in the lobby with the same connections, for another level or a new game. Each game has a number
   its messages carry, so what is late of the one before isn't taken into the next. When a game online ends for
-  this machine (left, or the host gone), the game offline is back at its title; why, if it wasn't the player's
+  this machine (left, let go, or the host gone), the game offline is back at its title; why, if it wasn't the player's
   wish, is said on the page he went from.
 - **Joining a game under way, and coming back.** An online world has a place for each of the three players there
   can be, those nobody has taken absent (`Player::here`). One who says hello while the game goes on is given a free

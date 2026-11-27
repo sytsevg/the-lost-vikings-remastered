@@ -299,8 +299,9 @@ class OnlinePlace final : public Place {
   private:
     OnlinePlace(std::unique_ptr<net::Connection> connection, net::Started started, std::unique_ptr<Session> session,
                 std::filesystem::path logs);
-    // An error of the game's pass: out of step, its log written (once) and said where.
-    std::string logged(const std::string& error);
+    // Out of step with another machine (the host's state puts it right): the game's log written, once a game, and
+    // said where.
+    void log_out_of_step();
     void names_to_session();
     // The menu's page of the players: each one there, his round trips to the host.
     std::vector<Menu::PlayerLine> player_lines() const;
