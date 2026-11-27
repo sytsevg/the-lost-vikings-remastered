@@ -7,6 +7,7 @@ the project is and what is open: [`HANDOVER.md`](HANDOVER.md).
 
 | Part | What it is | Depends on |
 |---|---|---|
+| `src/log/` (`lvr::log`) | The log (ADR-0023): lines said anywhere, written by a thread of its own into a file a run in `logs/` beside the program, and on stderr; ten files of 10 MB at most. Plain C++. | nothing |
 | `src/assets/` (`lvr::assets`) | Reads the original's files: the `DATA.DAT` container and its compression, palettes and pictures, sprites, level headers and maps, the texts and tables in `VIKINGS.EXE`, the object databases and their scripts (decoded and listed, not run), XMIDI, the optional SNES image. Plain C++. | nothing |
 | `src/lvr/` (`lvr::engine`) | The engine: a level or scene as a world of entities, run a tick at a time and drawn. Every kind of entity. Plain C++. | assets |
 | `src/audio/` (`lvr::audio`) | The XMIDI sequencer, the OPL3 driver's behaviour on ymfm (Classic), General MIDI on TinySoundFont (Modern). | assets |

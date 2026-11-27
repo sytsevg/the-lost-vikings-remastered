@@ -185,8 +185,8 @@ directly, so links go to his website.
 
 ### ADR-0010: Layout
 - `src/` holds a folder per area, flat inside: `assets` (reading the original's files), `audio`, `image`, `input`,
-  `lvr` (the engine and the game), `net` (co-op online), `replay` (replays and goldens), `exporter`. One file pair
-  per subject, not per type. Every target is defined in `src/CMakeLists.txt`.
+  `log` (the log, ADR-0023), `lvr` (the engine and the game), `net` (co-op online), `replay` (replays and goldens),
+  `exporter`. One file pair per subject, not per type. Every target is defined in `src/CMakeLists.txt`.
 - `<dir>/tests/test_<name>.cpp` tests `<dir>/<name>.*`; each test file stands alone. Tests that need the user's
   game files are tagged `[real-data]` and skip without them.
 - Only `image`, the transport, the GPU renderer, the programs' `main.cpp` files and `lv-export` use SDL.
@@ -232,6 +232,33 @@ directly, so links go to his website.
   the SoundFont (the Classic sound only). SDL's boxes can't colour text, so the notes are plain text under a ⚠.
 - A profile that can't be written, or a `settings.txt` that can't be read, is said in a box at the start; the game
   goes on without what it can't keep.
+
+### ADR-0023: A log beside the program
+- What the game does and what goes wrong is said as lines of a log (`src/log/`, `lvr::log`): plain C++, so every
+  part may use it, `net` too. A line is made where it is said and handed to the log's own thread, which writes it:
+  saying one never waits for the disk or a terminal. The log is for what happens now and then, not for every step.
+- The game in a window starts it: a file of its own a run in `logs/` beside the program
+  (`vikings-remaster-2026-11-27-210315.log`), and on stderr as well. Each line has the local time to the
+  millisecond, its level (info, warn, error) and the function that said it, its class's name before it
+  (`std::source_location`, the namespaces left out), and the levels as wide as each other so that what follows lines
+  up: `[2026-11-27 21:03:15.042] [info]  [Places::host]: hosting on port 47230`. A file past 10 MB is followed by
+  a new one, and the newest ten of the log's files are kept (a co-op game's log in the same folder is left alone).
+  Not started (a dump, a tool's run, the tests), a warning or an error goes to stderr, the rest nowhere.
+- Up to 10,000 lines wait to be written; past that they are dropped and counted. A run that ends, by any return or
+  error, writes every line it said; one that crashes may lose the last few.
+- What may come again and again is throttled (`log::Throttle`, on the caller's own clock), and the next line let
+  through says how many were held back.
+- Where lines come from: the game's events from the step that is shown (`Session::run`), never from the simulation
+  (`Play`, `World`), which rollback, the replays and the goldens' checks run again unseen; each move between places
+  from `Places::go`; co-op from inside `net`, with the game's number and the step (the clock every machine shares);
+  the timings from the window's loop and the start-up, where the clock is (the engine reads none, ADR-0003).
+- Co-op says only what is worth looking into, as it happens: the input delay chosen and the round trips it was
+  chosen by; UDP silent and the fast messages over TCP, and UDP back (throttled); the game held up for a player
+  (once the box shows it), for how long, and the player let go after 10 s; a connection dropped after 10 s of
+  silence; out of step at a step, and each resync. What goes on all the time is only counted, and said when the
+  game ends: inputs sent again, rollbacks and the deepest, the round trips' least, mean and most.
+- Not fmtlog or spdlog: each brings fmt, a second way of formatting beside `std::format`, and fmtlog has no rotation
+  and isn't tested with Clang on Windows. The game says too little for their speed to matter.
 
 ## The Remaster rules and co-op
 

@@ -103,8 +103,9 @@ $B --rules remaster --dump 60 menu.png --menu c --sound modern       # and contr
 The game reads your own copy of the original files from `gamedata/original/` (or `--data DIR`), and the
 SoundFont from `gamedata/`: the `gamedata` beside its program if there is one, or else the one in the folder it is
 started in (the repository's, for a build in `build/<preset>/bin/`). What it writes goes beside its program:
-`profiles/` (Remaster rules; `--profile DIR` for another) and `logs/` (a co-op game that went out of step), each
-made when it is first written to.
+`profiles/` (Remaster rules; `--profile DIR` for another) and `logs/`: the log, a file a run
+(`vikings-remaster-…log`, the newest ten kept), and a co-op game's log if it went out of step. Each is made when it
+is first written to.
 
 ```sh
 ./build/release/bin/vikings-remaster    # a box asks which rules; --data DIR for the game's files elsewhere

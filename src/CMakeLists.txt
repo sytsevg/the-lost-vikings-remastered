@@ -1,10 +1,18 @@
 # Every target under src/ (docs/decisions.md, ADR-0010).
-#   Pure C++ (no SDL):                         lvr::assets (its only file access: reading the original game files),
-#                                              lvr::audio, lvr::input
+#   Pure C++ (no SDL):                         lvr::log, lvr::assets (its only file access: reading the original game
+#                                              files), lvr::audio, lvr::input
 #   SDL3-based (only with LVR_BUILD_APPS):     lvr::image, lv-export, lv-replay, vikings-remaster
 #   The engine (src/lvr/, ADR-0017):           lvr::engine (pure C++)
 #   Tests (LVR_BUILD_TESTS):                   lvr_tests, from <dir>/tests/
 #   Fuzzers (LVR_BUILD_FUZZERS):               fuzz_*, from assets/fuzz/
+
+# --- log: what the game says it did, into a file of its own a run beside the program, written by a thread of its own
+# (ADR-0023); plain C++, for everything ---
+add_library(lvr_log STATIC
+    log/log.cpp)
+add_library(lvr::log ALIAS lvr_log)
+target_include_directories(lvr_log PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+lvr_target_defaults(lvr_log)
 
 # --- assets: the decoders of the game's files, used by everything: the formats (fuzzed,
 # assets/fuzz/), the catalogue of what DATA.DAT holds, and levels, scenes, images, sprites, object databases and
@@ -254,6 +262,7 @@ if(LVR_BUILD_TESTS)
         audio/tests/test_sequencer.cpp
         exporter/tests/test_level_dump.cpp
         input/tests/test_input.cpp
+        log/tests/test_log.cpp
         net/tests/test_lobby.cpp
         net/tests/test_match.cpp
         net/tests/test_protocol.cpp
@@ -284,7 +293,7 @@ if(LVR_BUILD_TESTS)
         lvr/tests/test_sprites.cpp
         lvr/tests/test_terrain.cpp
         lvr/tests/test_world.cpp)
-    target_link_libraries(lvr_tests PRIVATE lvr::assets lvr::audio lvr::input lvr::net lvr::engine
+    target_link_libraries(lvr_tests PRIVATE lvr::assets lvr::audio lvr::input lvr::log lvr::net lvr::engine
                                             lvr::level_dump lvr::replay lvr::session
                                             Catch2::Catch2WithMain)
     # Tests tagged [real-data] use the user's own game files when present and are skipped otherwise.
