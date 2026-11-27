@@ -825,7 +825,9 @@ Go run(Window& in, Place& place) {
         // Every refresh that is due shows the next picture; a step runs when the last one is used up.
         const double elapsed =
             static_cast<double>(SDL_GetPerformanceCounter() - start) / static_cast<double>(frequency);
-        const auto due = static_cast<std::uint64_t>(elapsed * kDisplayHz);
+        // (The first at once: a place's first picture is shown with its menu, never the last place's under it. The
+        // user, 2026-11-26: back from a game the lobby's page flashed, laid out for the game's zoomed picture.)
+        const auto due = std::max(static_cast<std::uint64_t>(elapsed * kDisplayHz), std::uint64_t{1});
         if (due > refreshes + 30) {
             refreshes = due;  // far behind (a breakpoint, a slow load): don't race to catch up
         }
