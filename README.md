@@ -80,7 +80,8 @@ Download the archive for your system from the [releases](https://github.com/syts
 unpack it, put your own `DATA.DAT` and `VIKINGS.EXE` in `gamedata/original/`, and start `vikings-remaster`. Optionally
 add the SNES ROM (`*.sfc`, US release) there too, for the backdrops. The SoundFont
 ([GeneralUser GS](https://www.schristiancollins.com/generaluser.php)) is included. Settings, the minimap and the
-quicksave are kept in `profiles/` next to the program.
+quicksave are kept in `profiles/` next to the program, and a log of each run in `logs/` (attach it to a bug report: it
+holds no paths or addresses).
 
 ### Requirements
 

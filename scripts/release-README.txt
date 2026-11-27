@@ -21,8 +21,9 @@ Starting
 The Modern sound's SoundFont, gamedata/GeneralUser-GS.sf2, is included (GeneralUser GS by S. Christian Collins,
 https://www.schristiancollins.com; its licence is beside it). Without it Remaster plays the original's sound.
 
-The game keeps your settings, the minimap and the quicksave in profiles/ beside the program, and the logs of a
-co-op game that went wrong in logs/. Nothing is written anywhere else.
+The game keeps your settings, the minimap and the quicksave in profiles/ beside the program. In logs/ it writes a
+log of each run (the newest ten are kept), and the logs of a co-op game that went wrong: attach them to a bug
+report. A log holds no paths or addresses, only the names given in the game. Nothing is written anywhere else.
 
 
 What it needs
