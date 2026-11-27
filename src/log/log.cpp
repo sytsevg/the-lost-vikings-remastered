@@ -76,6 +76,9 @@ class Writer {
     bool started() const noexcept { return started_.load(std::memory_order_relaxed); }
     // The line handed to the thread (`text` taken), or false: the log isn't started (`text` left as it was).
     bool hand_over(Level level, std::string& text, const std::source_location& where);
+    void hide(std::string seen, std::string shown);
+    // `text` with what is hidden in it replaced.
+    std::string hidden(std::string text);
 
   private:
     void run();
@@ -90,6 +93,7 @@ class Writer {
     std::condition_variable wake_;
     // Under the lock: the lines handed over, how many were dropped, whether lines are taken, and the word to stop.
     std::vector<Said> waiting_;
+    std::vector<std::pair<std::string, std::string>> hidden_;  // (the longest first)
     std::uint64_t dropped_ = 0;
     bool open_ = false;
     bool stopping_ = false;
@@ -131,6 +135,7 @@ std::expected<void, std::string> Writer::start(const std::filesystem::path& fold
         return begun;
     }
     waiting_.clear();
+    hidden_.clear();
     dropped_ = 0;
     stopping_ = false;
     try {
@@ -180,6 +185,30 @@ bool Writer::hand_over(Level level, std::string& text, const std::source_locatio
     return true;
 }
 
+void Writer::hide(std::string seen, std::string shown) {
+    if (seen.empty()) {
+        return;
+    }
+    const std::scoped_lock held{lock_};
+    if (const auto known = std::ranges::find(hidden_, seen, &std::pair<std::string, std::string>::first);
+        known != hidden_.end()) {
+        known->second = std::move(shown);  // (hidden already: once, as it is to be shown now)
+        return;
+    }
+    hidden_.emplace_back(std::move(seen), std::move(shown));
+    std::ranges::stable_sort(hidden_, std::greater{}, [](const auto& one) { return one.first.size(); });
+}
+
+std::string Writer::hidden(std::string text) {
+    const std::scoped_lock held{lock_};
+    for (const auto& [seen, shown] : hidden_) {
+        for (std::size_t at = text.find(seen); at != std::string::npos; at = text.find(seen, at + shown.size())) {
+            text.replace(at, seen.size(), shown);
+        }
+    }
+    return text;
+}
+
 void Writer::run() {
     std::vector<Said> lines;
     for (;;) {
@@ -212,7 +241,7 @@ void Writer::run() {
 }
 
 void Writer::write(const Said& said) {
-    const std::string line = line_of(said);
+    const std::string line = hidden(line_of(said));
     if (echo_) {
         (void)std::fputs(line.c_str(), stderr);
     }
@@ -309,9 +338,14 @@ bool wanted(Level level) {
 
 void say(Level level, std::string text, const std::source_location& where) {
     if (!writer().hand_over(level, text, where) && level != Level::kInfo) {
-        (void)std::fputs(std::format("{} [{}]: {}\n", word(level), origin_of(where.function_name()), text).c_str(),
-                         stderr);
+        (void)std::fputs(
+            writer().hidden(std::format("{} [{}]: {}\n", word(level), origin_of(where.function_name()), text)).c_str(),
+            stderr);
     }
+}
+
+void hide(std::string seen, std::string shown) {
+    writer().hide(std::move(seen), std::move(shown));
 }
 
 std::string origin_of(std::string_view function) {

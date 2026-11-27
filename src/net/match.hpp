@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "log/log.hpp"
 #include "net/connection.hpp"
 #include "net/lobby.hpp"
 #include "net/rollback.hpp"
@@ -32,6 +33,8 @@ class Match {
     // nothing meanwhile (it is stuck), and in any case after the longer wait (the host didn't let the one go).
     static constexpr std::uint32_t kHeldMs = 10000;
     static constexpr std::uint32_t kGuestHeldMs = 15000;
+    // Held up this long, it is seen: the box says whom the game waits for, and the log says it (once it goes on).
+    static constexpr std::uint32_t kNoticedMs = 300;
     // A guest put right from the host's state this often (each a jump): unsteady, and told so.
     static constexpr int kUnsteadyResyncs = 3;
     static constexpr std::uint32_t kUnsteadyMs = 30000;
@@ -77,6 +80,9 @@ class Match {
     // The game's start, every player's input for every confirmed step, and this machine's hashes: what lv-replay
     // --coop plays again (one who joined under way has the steps from the state he was given only).
     std::string log() const;
+    // What the game was like, for the log when it ends: its last step, the states the host sent (a guest: took), the
+    // times it was held up and the longest, the rollbacks and the deepest. (The round trips are the transport's.)
+    std::string summary() const;
 
   private:
     void take(const Incoming& incoming);
@@ -93,6 +99,10 @@ class Match {
     std::expected<void, std::string> take_resync(const Resync& resync);
     // Held up: the host lets the one it waits for go; a guest says why he goes, if he does.
     std::optional<std::string> held_up();
+    // The game, and the step it is at, as every line of its log begins.
+    std::string game_and_step() const;
+    // A player as the log names him: his number, and his name (never his machine's address).
+    std::string who(int player) const;
 
     Connection* connection_;
     Started started_;
@@ -111,6 +121,13 @@ class Match {
     std::uint32_t heard_host_ = 0;                        // a guest: when the host's game last said something
     std::vector<std::uint32_t> taken_at_;                 // a guest: when he took the host's states, the last few
     std::vector<std::pair<int, std::uint32_t>> parting_;  // the host: machines let go, and when they are dropped
+    // For the log: the times the game was held up long enough to be seen, the longest, and for whom it waits now;
+    // what is said again and again, at most every few seconds.
+    int holds_ = 0;
+    std::uint32_t longest_hold_ = 0;
+    std::optional<int> held_for_;
+    log::Throttle holds_said_{5000};
+    log::Throttle resyncs_said_{2000};
 };
 
 }  // namespace lvr::net

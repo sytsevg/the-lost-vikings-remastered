@@ -51,6 +51,7 @@ add_library(lvr_net STATIC
     net/simulated.cpp)
 add_library(lvr::net ALIAS lvr_net)
 target_include_directories(lvr_net PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(lvr_net PUBLIC lvr::log)
 lvr_target_defaults(lvr_net)
 
 # ymfm (third party, BSD-3): its sources as they are, warnings off.
@@ -141,7 +142,7 @@ add_library(lvr_session STATIC
     lvr/session.cpp)
 add_library(lvr::session ALIAS lvr_session)
 target_include_directories(lvr_session PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(lvr_session PUBLIC lvr::assets lvr::engine lvr::audio lvr::input lvr::net)
+target_link_libraries(lvr_session PUBLIC lvr::assets lvr::engine lvr::audio lvr::input lvr::log lvr::net)
 lvr_target_defaults(lvr_session)
 
 # --- The pixel-match harness: replays, what an engine shows per refresh, the comparison ---
@@ -176,7 +177,7 @@ if(LVR_BUILD_APPS)
         net/transport.cpp)
     add_library(lvr::transport ALIAS lvr_transport)
     target_include_directories(lvr_transport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-    target_link_libraries(lvr_transport PRIVATE SDL3::SDL3 SDL3_net::SDL3_net)
+    target_link_libraries(lvr_transport PRIVATE SDL3::SDL3 SDL3_net::SDL3_net lvr::log)
     lvr_target_defaults(lvr_transport)
 
     # --- lv-export: dev tool, writes the game data out as PNG + JSON for inspection (not shipped) ---
@@ -232,7 +233,9 @@ if(LVR_BUILD_APPS)
     add_executable(vikings-remaster lvr/main.cpp)
     add_dependencies(vikings-remaster lvr_build_id)
     target_include_directories(vikings-remaster PRIVATE ${CMAKE_BINARY_DIR}/generated)
-    target_link_libraries(vikings-remaster PRIVATE lvr::session lvr::front lvr::input lvr::image lvr::gpu SDL3::SDL3)
+    target_link_libraries(vikings-remaster PRIVATE lvr::session lvr::front lvr::input lvr::image lvr::gpu lvr::log
+                                                   SDL3::SDL3)
+    target_compile_definitions(vikings-remaster PRIVATE LVR_VERSION="${PROJECT_VERSION}")
     lvr_target_defaults(vikings-remaster)
     if(WIN32)  # a program of Windows' desktop (no console window), with its manifest (lvr/windows.manifest)
         set_target_properties(vikings-remaster PROPERTIES WIN32_EXECUTABLE ON)

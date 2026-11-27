@@ -24,8 +24,8 @@ struct Minimap {
 
 // What the world's view shows now is seen from here on. `seen` has a flag for every pixel of the minimap, row by
 // row (so the edge of what was seen moves as finely as the minimap is drawn); it is made the map's size if it
-// isn't.
-void reveal(std::vector<bool>& seen, const World& world, int player = 0);
+// isn't. Whether that changed anything (a pixel seen for the first time, or `seen` made anew).
+bool reveal(std::vector<bool>& seen, const World& world, int player = 0);
 
 // The whole map, each pixel with whether it was seen.
 Minimap draw_minimap(const World& world, const std::vector<bool>& seen);

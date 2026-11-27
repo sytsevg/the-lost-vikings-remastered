@@ -7,11 +7,16 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <format>
 #include <mutex>
 #include <random>
+#include <source_location>
+#include <string_view>
 #include <thread>
 #include <utility>
+
+#include "log/log.hpp"
 
 namespace lvr::net {
 
@@ -26,9 +31,10 @@ constexpr std::uint8_t kPong = 4;
 constexpr std::uint8_t kHello = 5;    // guest to host, over UDP: here is my UDP (until welcomed)
 constexpr std::uint8_t kWelcome = 6;  // host to guest, over UDP: it got through
 
-constexpr std::uint64_t kPingEvery = 500;   // milliseconds
-constexpr std::uint64_t kHelloEvery = 200;  // the guest's UDP introducing itself, until it is welcomed
-constexpr std::uint64_t kQuietUdp = 2000;   // nothing over UDP for this long: the fast messages go over TCP
+constexpr std::uint64_t kPingEvery = 500;        // milliseconds
+constexpr std::uint64_t kHelloEvery = 200;       // the guest's UDP introducing itself, until it is welcomed
+constexpr std::uint64_t kQuietUdp = 2000;        // nothing over UDP for this long: the fast messages go over TCP
+constexpr std::uint64_t kMeasuredEvery = 10000;  // how a peer's connection goes, in the log this often
 // Nothing at all from a peer for this long (its pings come twice a second): gone, though its socket wasn't closed
 // (a cable pulled, the machine asleep, the program hung).
 constexpr std::uint64_t kSilent = 10000;                    // (SdlTransport::set_patience: shorter, for a test)
@@ -106,7 +112,71 @@ struct SdlTransport::Inner {
         std::uint64_t hello_last = 0;
         std::optional<int> round_trip;
         bool gone = false;
+        log::Throttle udp_said{10000};  // (UDP that comes and goes is said once in a while, with how often)
+        // Since `measured_since`, for the log: the round trips, which way what is sent both ways came first, and
+        // the bytes each way (frames and datagrams as written and read).
+        std::uint64_t measured_since = 0;
+        std::vector<int> round_trips;
+        int first_by_udp = 0;
+        int first_by_tcp = 0;
+        std::uint64_t bytes_out = 0;
+        std::uint64_t bytes_in = 0;
     };
+
+    // How a peer's connection went since it was last said: the round trips' p50, p90 and p99 (of a ping every half
+    // second), which way the fast messages and the pings' answers came first, and the bytes a second; then anew.
+    static void say_measured(Peer& peer, std::uint64_t now) {
+        const double seconds = static_cast<double>(now - peer.measured_since) / 1000.0;
+        std::string trips = "no round trip measured";
+        if (std::vector<int>& measured = peer.round_trips; !measured.empty()) {
+            std::ranges::sort(measured);
+            const auto at = [&measured](double share) {  // (the nearest rank)
+                const auto rank = static_cast<std::size_t>(std::ceil(share * static_cast<double>(measured.size())));
+                return measured.at(std::max<std::size_t>(rank, 1) - 1);
+            };
+            trips = std::format("round trip p50 {} ms, p90 {} ms, p99 {} ms ({} measured)", at(0.5), at(0.9), at(0.99),
+                                measured.size());
+        }
+        const int first = peer.first_by_udp + peer.first_by_tcp;
+        const int by_udp = first == 0 ? 0 : peer.first_by_udp * 100 / first;
+        log::info("peer {}: {}; {}; {:.1f} KB/s out, {:.1f} KB/s in", peer.number, trips,
+                  first == 0 ? std::string{"nothing sent both ways"}
+                             : std::format("first by UDP {}%, by TCP {}%", by_udp, 100 - by_udp),
+                  static_cast<double>(peer.bytes_out) / 1024.0 / seconds,
+                  static_cast<double>(peer.bytes_in) / 1024.0 / seconds);
+        peer.measured_since = now;
+        peer.round_trips.clear();
+        peer.first_by_udp = 0;
+        peer.first_by_tcp = 0;
+        peer.bytes_out = 0;
+        peer.bytes_in = 0;
+    }
+
+    // A peer's connection ends (once): why, in the log.
+    static void lose(Peer& peer, std::string_view why, log::Level level = log::Level::kInfo,
+                     const std::source_location& where = std::source_location::current()) {
+        if (!peer.gone) {
+            log::say(level, std::format("peer {}: {}", peer.number, why), where);
+            peer.gone = true;
+        }
+    }
+
+    // Whether the fast messages go by UDP to a peer: said when that changes.
+    static void udp_through(Peer& peer, bool ok, std::uint64_t now) {
+        if (peer.udp_ok == ok) {
+            return;
+        }
+        peer.udp_ok = ok;
+        if (const auto held_back = peer.udp_said.pass(static_cast<std::uint32_t>(now))) {
+            const std::string more = *held_back == 0 ? "" : std::format(" ({} changes held back)", *held_back);
+            if (ok) {
+                log::info("peer {}: UDP gets through{}", peer.number, more);
+            } else {
+                log::warn("peer {}: nothing over UDP for {} s: the fast messages go over TCP{}", peer.number,
+                          kQuietUdp / 1000, more);
+            }
+        }
+    }
 
     // The network's own thread (pump): it reads every millisecond, answers pings at once, and keeps what came for
     // poll. Every socket is used under `lock`, by it or by the game's thread (send, poll).
@@ -171,7 +241,9 @@ struct SdlTransport::Inner {
         frame.insert(frame.end(), payload.begin(), payload.end());
         if (peer.stream == nullptr ||
             !NET_WriteToStreamSocket(peer.stream, frame.data(), static_cast<int>(frame.size()))) {
-            peer.gone = true;
+            lose(peer, std::format("the connection can't be written to: {}", SDL_GetError()));
+        } else {
+            peer.bytes_out += frame.size();
         }
     }
 
@@ -184,8 +256,10 @@ struct SdlTransport::Inner {
         put32(datagram, peer.token);
         datagram.push_back(kind);
         datagram.insert(datagram.end(), payload.begin(), payload.end());
-        (void)NET_SendDatagram(datagrams, peer.udp_address, peer.udp_port, datagram.data(),
-                               static_cast<int>(datagram.size()));
+        if (NET_SendDatagram(datagrams, peer.udp_address, peer.udp_port, datagram.data(),
+                             static_cast<int>(datagram.size()))) {
+            peer.bytes_out += datagram.size();
+        }
     }
 
     // A ping or a fast message, by UDP while it gets through, else over TCP.
@@ -198,8 +272,10 @@ struct SdlTransport::Inner {
         write_tcp(peer, kind, payload);
     }
 
-    // A frame's kind and payload, from either connection.
-    void take(Peer& peer, std::uint8_t kind, std::span<const std::uint8_t> payload, std::vector<Event>& events) {
+    // A frame's kind and payload, from either connection (by UDP or by TCP).
+    void take(Peer& peer, std::uint8_t kind, std::span<const std::uint8_t> payload, std::vector<Event>& events,
+              bool by_udp) {
+        int& first_by = by_udp ? peer.first_by_udp : peer.first_by_tcp;  // (what came both ways: its first copy)
         peer.heard_last = SDL_GetTicks();
         switch (kind) {
             case kMessage:
@@ -210,6 +286,7 @@ struct SdlTransport::Inner {
             case kFast:  // (each holds the newest of what it says: one overtaken by a newer one has nothing to add)
                 if (payload.size() >= 4 && get32(payload) > peer.fast_taken) {
                     peer.fast_taken = get32(payload);
+                    ++first_by;
                     events.push_back({.kind = Event::Kind::kMessage,
                                       .peer = peer.number,
                                       .bytes = std::vector<std::uint8_t>(payload.begin() + 4, payload.end())});
@@ -227,6 +304,8 @@ struct SdlTransport::Inner {
                 if (const std::uint32_t sent = get32(payload); sent != peer.pong_last) {
                     peer.pong_last = sent;
                     peer.round_trip = static_cast<int>(static_cast<std::uint32_t>(SDL_GetTicks()) - sent);
+                    peer.round_trips.push_back(*peer.round_trip);
+                    ++first_by;
                 }
                 return;
             default:
@@ -239,26 +318,28 @@ struct SdlTransport::Inner {
         while (!peer.gone) {
             const int got = NET_ReadFromStreamSocket(peer.stream, buffer.data(), static_cast<int>(buffer.size()));
             if (got < 0) {
-                peer.gone = true;
+                lose(peer, "the connection closed");
                 break;
             }
             if (got == 0) {
                 break;
             }
+            peer.bytes_in += static_cast<std::uint64_t>(got);
             peer.read.insert(peer.read.end(), buffer.begin(), buffer.begin() + got);
         }
         std::size_t at = 0;
         while (peer.read.size() - at >= kHeader) {
             const std::uint32_t length = get32(std::span{peer.read}.subspan(at));
             if (length == 0 || length > kMostFrame) {
-                peer.gone = true;
+                lose(peer, std::format("a frame of {} bytes can't be one: the connection dropped", length),
+                     log::Level::kWarn);
                 break;
             }
             if (peer.read.size() - at < 4 + std::size_t{length}) {
                 break;
             }
             const std::uint8_t kind = peer.read[at + 4];
-            take(peer, kind, std::span{peer.read}.subspan(at + kHeader, length - 1), events);
+            take(peer, kind, std::span{peer.read}.subspan(at + kHeader, length - 1), events, false);
             at += 4 + std::size_t{length};
         }
         peer.read.erase(peer.read.begin(), peer.read.begin() + static_cast<std::ptrdiff_t>(at));
@@ -280,6 +361,7 @@ struct SdlTransport::Inner {
                 put32(token, peer.token);
                 write_tcp(peer, kToken, token);
                 events.push_back({.kind = Event::Kind::kJoined, .peer = peer.number, .bytes = {}});
+                log::info("peer {}: a machine connected", peer.number);
                 peers.push_back(peer);
                 stream = nullptr;
             }
@@ -295,11 +377,17 @@ struct SdlTransport::Inner {
                 continue;
             }
             if (now > peer.heard_last + patience) {  // (heard_last can be later than `now`: what came this pass)
-                peer.gone = true;                    // (left below, as one whose connection broke)
+                lose(peer, std::format("nothing heard for {} s: the connection dropped", patience / 1000),
+                     log::Level::kWarn);  // (left below, as one whose connection broke)
                 continue;
             }
             if (peer.udp_ok && now - peer.udp_last > kQuietUdp) {
-                peer.udp_ok = false;  // the fast messages over TCP until UDP comes through again
+                udp_through(peer, false, now);  // the fast messages over TCP until UDP comes through again
+            }
+            if (peer.measured_since == 0) {
+                peer.measured_since = now;
+            } else if (now - peer.measured_since >= kMeasuredEvery) {
+                say_measured(peer, now);
             }
             if (!hosting && !peer.udp_ok && peer.token != 0 && now - peer.hello_last >= kHelloEvery) {
                 write_udp(peer, kHello, {});
@@ -342,18 +430,19 @@ struct SdlTransport::Inner {
                 const std::uint8_t kind = bytes[4];
                 const auto peer = std::ranges::find_if(peers, [token](const Peer& one) { return one.token == token; });
                 if (peer != peers.end() && !peer->gone) {
+                    peer->bytes_in += bytes.size();
                     if (hosting && kind == kHello) {  // his UDP: where to send to
                         if (peer->udp_address != nullptr) {
                             NET_UnrefAddress(peer->udp_address);
                         }
                         peer->udp_address = NET_RefAddress(datagram->addr);
                         peer->udp_port = datagram->port;
-                        peer->udp_ok = true;
+                        udp_through(*peer, true, now);
                         write_udp(*peer, kWelcome, {});
                     } else if (!hosting && kind == kWelcome) {
-                        peer->udp_ok = true;
+                        udp_through(*peer, true, now);
                     } else {
-                        take(*peer, kind, bytes.subspan(kHeader), events);
+                        take(*peer, kind, bytes.subspan(kHeader), events, true);
                     }
                     peer->udp_last = now;
                 }
@@ -458,7 +547,7 @@ void SdlTransport::drain(int wait_ms) {
 void SdlTransport::drop(int peer) {
     const std::scoped_lock held{inner_->lock};
     if (Inner::Peer* gone = inner_->find(peer)) {
-        gone->gone = true;
+        Inner::lose(*gone, "let go");
     }
 }
 

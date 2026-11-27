@@ -1,10 +1,13 @@
 #include "lvr/session.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <format>
-#include <print>
+#include <string>
+#include <string_view>
 #include <utility>
 
+#include "log/log.hpp"
 #include "lvr/names.hpp"
 
 namespace lvr {
@@ -14,6 +17,39 @@ namespace {
 // The original's level start takes this many refreshes: the fade out (70), the start's tick (3 and one more draw),
 // the fade in (71).
 constexpr std::size_t kStartRefreshes = 145;
+
+// A scene as the log names it: the original's number, and what it is.
+std::string about_scene(int scene) {
+    if (scene >= 0 && scene <= scene::kLastLevel) {
+        return std::format("scene {} (level {})", scene, scene + 1);
+    }
+    const auto named = [scene](std::string_view what) { return std::format("scene {} ({})", scene, what); };
+    switch (scene) {
+        case scene::kGameOver:
+            return named("game over");
+        case scene::kTitle:
+        case scene::kTitleCopy:
+            return named("the title");
+        case scene::kLogo:
+            return named("Interplay's logo");
+        case scene::kSecondLogo:
+            return named("Silicon & Synapse's logo");
+        case scene::kGalaxy:
+            return named("the galaxy");
+        case scene::kIntro:
+            return named("the intro");
+        case scene::kVillageDemo:
+            return named("the village's demo");
+        case scene::kStarfield:
+            return named("the starfield");
+        case scene::kEnding:
+            return named("the ending");
+        case scene::kShip:
+            return named("the ship");
+        default:
+            return std::format("scene {}", scene);
+    }
+}
 
 }  // namespace
 
@@ -33,7 +69,7 @@ std::expected<std::unique_ptr<Session>, std::string> Session::open(const std::fi
         if (auto rom = assets::SnesRom::open(dir)) {
             snes = std::move(*rom);
         } else {
-            std::println(stderr, "no SNES backdrops: {}", rom.error());
+            log::warn("no SNES backdrops: {}", rom.error());
         }
     }
     auto loaded = load_slot(*files, slot, database::kSpaceship, snes ? &*snes : nullptr);
@@ -48,7 +84,7 @@ std::expected<std::unique_ptr<Session>, std::string> Session::open(const std::fi
         auto data = audio::load_sound_data(files->archive(), audio::Version::kModern);
         auto synth = audio::GmSynth::open(sound.soundfont, audio::Opl3::kSampleRate);
         if (!data || !synth) {
-            std::println(stderr, "no Modern sound: {}", !data ? data.error() : synth.error());
+            log::warn("no Modern sound: {}", !data ? data.error() : synth.error());
         } else {
             modern = std::move(*data);
             gm = std::move(*synth);
@@ -484,11 +520,18 @@ std::expected<void, std::string> Session::read_quicksave() {
     return {};
 }
 
-std::expected<void, std::string> Session::save_profile() const {
-    if (profile_.empty()) {
+std::expected<void, std::string> Session::save_profile() {
+    if (profile_.empty() || !unsaved_) {
         return {};
     }
-    return save_seen(profile_, seen_);
+    auto saved = save_seen(profile_, seen_);
+    if (saved) {
+        unsaved_ = false;
+        log::info("the profile saved (what the minimap has seen)");
+    } else {
+        log::warn("the profile: {}", saved.error());
+    }
+    return saved;
 }
 
 // After a step: what the view shows now is seen, and the minimap is drawn again.
@@ -503,7 +546,8 @@ void Session::update_minimap() {
     SeenLevel& seen = seen_[world.level];
     seen.width = world.map.width * kMinimapCell;
     seen.height = world.map.height * kMinimapCell;
-    reveal(seen.seen, world, player_);  // (what was kept for a map of another size is dropped there)
+    // (What was kept for a map of another size is dropped there.)
+    unsaved_ = reveal(seen.seen, world, player_) || unsaved_;
     minimap_ = std::make_shared<const Minimap>(draw_minimap(world, seen.seen));
     minimap_scene_ = play_.scenes_started;
 }
@@ -865,12 +909,17 @@ std::vector<Screen> Session::step(std::uint16_t keyboard, Play::MenuKeys keys, P
     pace = remaster ? Pace{.across = within(pace.across), .up_down = within(pace.up_down)} : Pace{};
     if (std::exchange(save_wanted_, false) && remaster && play_.world.title.cheat && level_played()) {
         quick_ = play_.snapshot();
-        (void)write_quicksave();  // (a profile that can't be written is said when the game is closed)
+        if (const auto written = write_quicksave(); !written) {
+            log::warn("the quicksave: {}", written.error());
+        } else {
+            log::info("quicksave taken in {}", about_scene(play_.world.scene));
+        }
     }
     if (std::exchange(load_wanted_, false) && remaster && play_.world.title.cheat && quick_ && !play_.in_menu()) {
         if (play_.restore(*quick_)) {
             play_.scene_sound();
         }
+        log::info("quicksave loaded: {}", about_scene(play_.world.scene));
         zoom_back();
         play_.world.title.cheat = true;
         rewind_.clear();  // what led up to here is no longer what came before
@@ -954,8 +1003,14 @@ std::vector<Screen> Session::run(const StepInput& input, std::optional<std::uint
     const bool remaster = play_.world.rules == Rules::kRemaster;
     cues.clear();
     moving_ = true;
+    const auto began = std::chrono::steady_clock::now();
     const int refreshes = play_.step(input, [&] { frames.push_back({.screen = picture(), .cues = take_cues()}); });
     moving_ = false;
+    if (play_.scene_loaded) {  // (said as it is shown: never in a step run again unseen, run_again)
+        log::info("{} began: its step took {:.0f} ms, {} pictures", about_scene(play_.world.scene),
+                  std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count(),
+                  frames.size());
+    }
     // A step that shows fewer pictures than its refreshes (a wait for a key: a text box, a password) shows the last
     // one again for the rest. While the zoom changes the view that held its change up: one stage a step, each shown
     // three times (else slow and not smooth). Then the rest are pictures too, the view going on.

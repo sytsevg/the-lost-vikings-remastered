@@ -3,6 +3,7 @@
 #include <format>
 #include <print>
 
+#include "log/log.hpp"
 #include "lvr/names.hpp"
 
 namespace lvr {
@@ -50,7 +51,7 @@ std::uint16_t Showcase::before_step(Session& session, std::uint16_t keys) {
     } else if (++held_for_ == 2 && scenario.death) {
         const Death& death = *scenario.death;
         if (!session.put_viking(death.viking, death.x, death.y, 1)) {
-            std::println(stderr, "showcase {}: the Viking in slot {} is not there to put", index_ + 1, death.viking);
+            log::warn("showcase {}: the Viking in slot {} is not there to put", index_ + 1, death.viking);
         }
     }
     return keys;

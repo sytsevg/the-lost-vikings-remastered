@@ -149,6 +149,9 @@ class Rollback {
     std::vector<std::pair<std::uint32_t, Input>> known_from(int player, std::uint32_t from) const;
     // How many steps were run again, all told.
     std::uint32_t steps_run_again() const noexcept { return run_again_; }
+    // How many times steps were run again for an input that came after its step was run, and the most at once.
+    std::uint32_t rollbacks() const noexcept { return rollbacks_; }
+    std::uint32_t deepest_rollback() const noexcept { return deepest_; }
     // The game's state before `step` (the next to run, or one of the window's before it), written out: what one
     // joining under way is given. Corrections still to run are run first.
     std::vector<std::uint8_t> state_before(std::uint32_t step);
@@ -204,6 +207,8 @@ class Rollback {
     std::uint32_t step_ = 0;
     std::optional<std::uint32_t> first_wrong_;
     std::uint32_t run_again_ = 0;
+    std::uint32_t rollbacks_ = 0;
+    std::uint32_t deepest_ = 0;
     // By step: each player's hash of the state after it (this machine's among them).
     std::map<std::uint32_t, std::array<std::optional<std::uint64_t>, kMostPlayers>> hashes_;
     // By player: the first step whose hash differed from this machine's (this machine's own: one it couldn't put

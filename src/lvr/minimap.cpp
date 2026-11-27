@@ -95,13 +95,15 @@ int small(int position) noexcept {
 
 }  // namespace
 
-void reveal(std::vector<bool>& seen, const World& world, int player) {
+bool reveal(std::vector<bool>& seen, const World& world, int player) {
     const Map& map = world.map;
     const int width = map.width * kMinimapCell;
     const int height = map.height * kMinimapCell;
     const std::size_t pixels = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    bool changed = false;
     if (seen.size() != pixels) {
         seen.assign(pixels, false);
+        changed = true;
     }
     const Camera& camera = world.players.at(static_cast<std::size_t>(player)).camera;
     const int left = std::max(0, small(std::max(camera.x, 0)));
@@ -110,9 +112,13 @@ void reveal(std::vector<bool>& seen, const World& world, int player) {
     const int bottom = std::min(height - 1, small(camera.y + camera.view_height - 1));
     for (int y = top; y <= bottom; ++y) {
         for (int x = left; x <= right; ++x) {
-            seen[(static_cast<std::size_t>(y) * static_cast<std::size_t>(width)) + static_cast<std::size_t>(x)] = true;
+            auto pixel =
+                seen[(static_cast<std::size_t>(y) * static_cast<std::size_t>(width)) + static_cast<std::size_t>(x)];
+            changed = changed || !pixel;
+            pixel = true;
         }
     }
+    return changed;
 }
 
 Minimap draw_minimap(const World& world, const std::vector<bool>& seen) {

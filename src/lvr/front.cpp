@@ -3,9 +3,9 @@
 #include <algorithm>
 #include <format>
 #include <fstream>
-#include <print>
 #include <utility>
 
+#include "log/log.hpp"
 #include "lvr/gpu.hpp"
 #include "lvr/names.hpp"
 
@@ -118,7 +118,7 @@ Stepped OfflinePlace::step(const Tick& tick, Ui& ui) {
     stepped.cues = std::move(session_->cues);
     if (session_->quit()) {  // quit, or a scene that can't be loaded
         if (!session_->error().empty()) {
-            std::println(stderr, "vikings-remaster: {}", session_->error());
+            log::error("{}", session_->error());
         }
         stepped.go = Go{.to = Go::To::kDone,
                         .why = {},
@@ -157,6 +157,7 @@ Place::Answer OfflinePlace::asked(Menu::Asked asked, Menu& menu) {
 ConnectingPlace::ConnectingPlace(Session& offline, Join join, net::Identity identity, const std::string& address)
     : offline_{&offline}, join_{std::move(join)}, identity_{std::move(identity)} {
     std::tie(address_, port_) = split_address(address);
+    log::hide(address_, "the host");  // (no address in the log: it may be shown to anyone)
 }
 
 ConnectingPlace::~ConnectingPlace() {
@@ -213,7 +214,7 @@ Go ConnectingPlace::refresh(Ui& ui) {
         return {};
     }
     const auto fail = [&](std::string_view why, std::string_view shown) {
-        std::println(stderr, "vikings-remaster: {}", why);
+        log::warn("joining {}: {}", where, why);
         failed_ = said(shown);
         connection_.reset();  // (the host told this one goes: a place in his lobby given back)
         lobby_.reset();
@@ -254,11 +255,11 @@ Go ConnectingPlace::refresh(Ui& ui) {
     }
     if (*polled) {  // the game is under way: into it
         started_ = **polled;
-        std::println("vikings-remaster: joined {}", where);
+        log::info("joined {}: a game under way, from step {}", where, started_->first_step);
         return Go{.to = Go::To::kOnline, .why = {}, .failed = false, .host = false, .level = 0, .page = false};
     }
     if (lobby_->welcomed()) {
-        std::println("vikings-remaster: joined {}", where);
+        log::info("joined {}: in the lobby as player {}", where, connection_->player() + 1);
         return Go{.to = Go::To::kLobby, .why = {}, .failed = false, .host = false, .level = 0, .page = false};
     }
     constexpr std::uint32_t kPatienceMs = 10000;
@@ -334,7 +335,7 @@ Go LobbyPlace::refresh(Ui& ui) {
     }
     auto polled = host_ != nullptr ? host_->poll() : guest_->poll();
     if (!polled) {
-        std::println(stderr, "vikings-remaster: {}", polled.error());
+        log::warn("the lobby: {}", polled.error());
         return Go{.to = Go::To::kOffline,
                   .why = said(polled.error()),
                   .failed = false,
@@ -432,8 +433,8 @@ std::expected<std::unique_ptr<OnlinePlace>, std::string> OnlinePlace::open(std::
             darken(frames[i], std::min(share, 1.0F));
         }
     }
-    std::println("vikings-remaster: the game starts: player {}, {} step(s) of input delay", started.player + 1,
-                 started.delay);
+    log::info("game {}: starts for player {} at step {}, {} step(s) of input delay", connection->game(),
+              started.player + 1, started.first_step, started.delay);
     return std::unique_ptr<OnlinePlace>{
         new OnlinePlace{std::move(connection), std::move(started), std::move(*opened), needs.logs}};
 }
@@ -462,8 +463,8 @@ void OnlinePlace::log_out_of_step() {
         logs_ / std::format("coop-{}-player{}.log", connection_->identity().build, connection_->player() + 1);
     std::ofstream out{file};
     out << match_.log();
-    std::println(stderr, "vikings-remaster: out of step with another machine at step {}, put right from the host's{}",
-                 *out_of_step, out ? std::format(" (the game's log: {})", file.string()) : std::string{});
+    log::warn("game {} step {}: out of step with another machine, put right from the host's{}", connection_->game(),
+              *out_of_step, out ? std::format(" (the game's log: {})", file.string()) : std::string{});
 }
 
 void OnlinePlace::names_to_session() {
@@ -505,7 +506,7 @@ Go OnlinePlace::refresh(Ui& ui) {
     log_out_of_step();
     if (!polled) {
         const std::string& why = polled.error();
-        std::println(stderr, "vikings-remaster: {}", why);
+        log::warn("game {}: {}", connection_->game(), why);
         return Go{.to = Go::To::kOffline, .why = said(why), .failed = false, .host = false, .level = 0, .page = false};
     }
     names_to_session();
@@ -569,7 +570,7 @@ Stepped OnlinePlace::step(const Tick& tick, Ui& ui) {
     log_out_of_step();
     if (!flushed) {
         const std::string& why = flushed.error();
-        std::println(stderr, "vikings-remaster: {}", why);
+        log::warn("game {}: {}", connection_->game(), why);
         stepped.go =
             Go{.to = Go::To::kOffline, .why = said(why), .failed = false, .host = false, .level = 0, .page = false};
     }
@@ -586,7 +587,7 @@ Stepped OnlinePlace::step(const Tick& tick, Ui& ui) {
     if (session_->quit()) {  // the game ended (the host quit, or a scene can't be loaded): for everyone
         std::string why;
         if (!session_->error().empty()) {
-            std::println(stderr, "vikings-remaster: {}", session_->error());
+            log::error("game {}: {}", connection_->game(), session_->error());
             why = said(session_->error());
         } else if (!connection_->hosting()) {
             why = said("the host ended the game");
@@ -615,14 +616,13 @@ Place::Answer OnlinePlace::asked(Menu::Asked asked, Menu& /*menu*/) {
 }
 
 CoopOverlay OnlinePlace::overlay() const {
-    constexpr std::uint32_t kHeldMs = 300;  // a third of a second before the box says so
     CoopOverlay overlay;
     if (leaving_) {
         return overlay;
     }
     const std::optional<int> whom = match_.waiting_for();
     const std::optional<std::uint32_t> held = match_.held_ms();
-    if (whom && held && *held >= kHeldMs && std::cmp_less(*whom, connection_->names().size())) {
+    if (whom && held && *held >= net::Match::kNoticedMs && std::cmp_less(*whom, connection_->names().size())) {
         // With the seconds left before the one held up for is let go (the host's ten).
         const std::uint32_t left = (net::Match::kHeldMs - std::min(*held, net::Match::kHeldMs) + 999) / 1000;
         overlay.waiting =
@@ -635,6 +635,7 @@ CoopOverlay OnlinePlace::overlay() const {
 }
 
 void OnlinePlace::leave(const Go& go) {
+    log::info("game {}: {}", connection_->game(), match_.summary());
     if (go.to != Go::To::kLobby) {
         match_.quit();  // (a guest tells the host he goes)
     }
@@ -659,6 +660,30 @@ void Places::go(const Go& go) {
     if (go.to == Go::To::kStay) {
         return;
     }
+    const auto name = [](Go::To to) {
+        switch (to) {
+            case Go::To::kOffline:
+                return "Offline";
+            case Go::To::kConnecting:
+                return "Connecting";
+            case Go::To::kLobby:
+                return "Lobby";
+            case Go::To::kOnline:
+                return "Online";
+            case Go::To::kDone:
+                return "the end";
+            case Go::To::kStay:
+                break;
+        }
+        return "";
+    };
+    const Go::To here = current_ == offline_            ? Go::To::kOffline
+                        : current_ == connecting_.get() ? Go::To::kConnecting
+                        : current_ == lobby_.get()      ? Go::To::kLobby
+                                                        : Go::To::kOnline;
+    log::info("{} -> {}{}{}{}", name(here), name(go.to),
+              go.to == Go::To::kLobby && here == Go::To::kOffline ? " (hosting)" : "", go.failed ? ", failed" : "",
+              go.why.empty() ? std::string{} : std::format(": {}", go.why));
     current_->leave(go);
     failed_ = failed_ || go.failed;
     switch (go.to) {
@@ -727,11 +752,11 @@ void Places::host(int level) {
     const int port = needs_.settings->host_port;
     auto hosted = needs_.host(static_cast<std::uint16_t>(port));
     if (!hosted) {
-        std::println(stderr, "vikings-remaster: {}", hosted.error());
+        log::error("can't host on port {}: {}", port, hosted.error());
         offline(true, std::format("CAN'T HOST ON PORT {}", port));
         return;
     }
-    std::println("vikings-remaster: hosting on port {}", port);
+    log::info("hosting on port {}", port);
     auto connection = std::make_unique<net::Connection>(std::move(*hosted), identity());
     net::Connection& made = *connection;
     auto lobby = std::make_unique<net::HostLobby>(made, level < 0 ? scene::kIntro : level, false);
@@ -741,7 +766,7 @@ void Places::host(int level) {
 void Places::online(std::unique_ptr<net::Connection> connection, const net::Started& started) {
     auto opened = OnlinePlace::open(std::move(connection), started, needs_.online);
     if (!opened) {
-        std::println(stderr, "vikings-remaster: {}", opened.error());
+        log::error("the game online can't start: {}", opened.error());
         offline(hosting_, said(opened.error()));
         return;
     }

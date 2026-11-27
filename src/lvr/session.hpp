@@ -167,10 +167,11 @@ class Session {
     // The one to lay over a picture: the picture's own (Screen::minimap), unless it is switched off.
     const Minimap* minimap(const Screen& shown) const noexcept { return minimap_on_ ? shown.minimap.get() : nullptr; }
     // The player's profile is kept in `folder` from here on (Remaster rules; Vanilla keeps none): what is there is
-    // read now, and written by save_profile() and whenever a scene is loaded. An error says what couldn't be read;
-    // the profile is used all the same, and the file that couldn't be read is written over at the next save.
+    // read now, and written by save_profile() and whenever a scene is loaded, if the minimap has seen something new
+    // since it was last written (only a level's view does). An error says what couldn't be read; the profile is used
+    // all the same, and the file that couldn't be read is written over at the next save.
     std::expected<void, std::string> use_profile(const std::filesystem::path& folder);
-    std::expected<void, std::string> save_profile() const;
+    std::expected<void, std::string> save_profile();
     // The quicksave as the profile's file: written when one is made, read when the profile is taken into use.
     std::expected<void, std::string> write_quicksave() const;
     std::expected<void, std::string> read_quicksave();
@@ -391,8 +392,9 @@ class Session {
     std::uint8_t player_ = 0;
     std::uint16_t typed_ = 0;  // the character typed since the last step
     std::vector<std::int16_t>
-        heard_;        // live: the sound of the last ten seconds as it was heard, for hearing it backwards
-    SeenLevels seen_;  // by level: what a view has shown of it (the minimap's pixels)
+        heard_;             // live: the sound of the last ten seconds as it was heard, for hearing it backwards
+    SeenLevels seen_;       // by level: what a view has shown of it (the minimap's pixels)
+    bool unsaved_ = false;  // seen_ has more than the profile's file
     std::filesystem::path profile_;               // where the player's profile is kept; empty: nowhere
     std::shared_ptr<const Minimap> minimap_;      // (none where there is none)
     std::optional<std::uint32_t> minimap_scene_;  // the scene it was drawn for (Play::scenes_started)

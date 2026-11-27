@@ -56,6 +56,11 @@ class Started {
 // file can't be made, or the log is started already); the log then goes on as if it never was.
 std::expected<Started, std::string> start(const std::filesystem::path& folder, const Keeping& keeping = {});
 
+// What a line is never to say as it is, so that a log can be shown to anyone: the player's home folder, the game's
+// own folder, the address a guest joins. Every line, on stderr too, says `shown` in its place (the longest first).
+// Hidden again, it is kept once (said as `shown` now). Forgotten when the log is started again.
+void hide(std::string seen, std::string shown);
+
 // Whether a line of this level goes anywhere now: every level once started, else warnings and errors only.
 bool wanted(Level level);
 

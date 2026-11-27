@@ -119,6 +119,37 @@ TEST_CASE("log: each line names the function that said it, after its class") {
     CHECK(lines[2].ends_with("] [warn]  [free_speech]: from a function of no class"));
 }
 
+TEST_CASE("log: what is hidden is never written as it is, the longest first; forgotten when started again") {
+    const std::filesystem::path folder = folder_for("hidden");
+    {
+        auto started = log::start(folder, quiet());
+        REQUIRE(started);
+        log::hide("/home/someone", "~");
+        log::hide("/home/someone/games/vikings/", "");  // (the game's own folder, inside the home folder)
+        log::hide("10.0.0.2", "a host");
+        log::hide("10.0.0.2", "the host");  // (once: as said last)
+        log::warn("can't write /home/someone/games/vikings/profiles/settings.txt.new");
+        log::info("no Modern sound: /home/someone/music/gm.sf2: not found");
+        log::info("joining 10.0.0.2:47230: no game there (10.0.0.2 port 47230)");
+    }
+    const std::vector<std::filesystem::path> files = files_of(folder, "test");
+    REQUIRE(files.size() == 1);
+    const std::vector<std::string> lines = lines_of(files[0]);
+    REQUIRE(lines.size() == 3);
+    CHECK(lines[0].ends_with("]: can't write profiles/settings.txt.new"));
+    CHECK(lines[1].ends_with("]: no Modern sound: ~/music/gm.sf2: not found"));
+    CHECK(lines[2].ends_with("]: joining the host:47230: no game there (the host port 47230)"));
+    const std::filesystem::path again = folder_for("hidden-again");
+    {
+        auto started = log::start(again, quiet());
+        REQUIRE(started);
+        log::info("joining 10.0.0.2");
+    }
+    const std::vector<std::filesystem::path> later = files_of(again, "test");
+    REQUIRE(later.size() == 1);
+    CHECK(lines_of(later[0]).at(0).ends_with("]: joining 10.0.0.2"));
+}
+
 TEST_CASE("log: a function's name as the compiler gives it, as the log names it") {
     CHECK(log::origin_of("void lvr::Places::go(const Go &)") == "Places::go");
     CHECK(log::origin_of("std::expected<int, std::string> lvr::net::Match::poll()") == "Match::poll");

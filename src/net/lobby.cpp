@@ -4,6 +4,8 @@
 #include <format>
 #include <utility>
 
+#include "log/log.hpp"
+
 namespace lvr::net {
 
 namespace {
@@ -106,6 +108,8 @@ std::expected<std::optional<Started>, std::string> HostLobby::poll() {
                       .names = started.names},
                 Channel::kReliable);
     c.flush();
+    log::info("game {}: starts for {} player(s), {} step(s) of input delay for the longest round trip, {} ms", c.game(),
+              started.players, started.delay, longest);
     return started;
 }
 
@@ -150,6 +154,7 @@ void HostLobby::welcome(int peer, const Hello& hello) {
         refused = "the game is full";
     }
     if (refused) {
+        log::info("a hello turned away: {}", *refused);
         c.send_to_peer(peer, Refused{.why = *refused}, Channel::kReliable);
         c.drop_peer(peer);
         return;
@@ -157,6 +162,7 @@ void HostLobby::welcome(int peer, const Hello& hello) {
     const int player = static_cast<int>(c.names().size());
     c.seat(player, peer);
     c.set_name(player, shown_name(hello.name, player));
+    log::info("player {} ({}) has a place in the lobby", player + 1, c.names().at(static_cast<std::size_t>(player)));
     c.send(player, Welcome{.player = static_cast<std::uint8_t>(player)}, Channel::kReliable);
     send_status();
 }

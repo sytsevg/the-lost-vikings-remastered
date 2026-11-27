@@ -244,6 +244,8 @@ void Rollback::catch_up() {
         return;
     }
     if (first_wrong_ && *first_wrong_ < step_) {
+        ++rollbacks_;
+        deepest_ = std::max(deepest_, step_ - *first_wrong_);
         game_->load(*first_wrong_ % slots());
         for (std::uint32_t step = *first_wrong_; step < step_; ++step) {
             run(step, false);

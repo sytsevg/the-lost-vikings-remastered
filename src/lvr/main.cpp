@@ -46,6 +46,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -57,6 +58,7 @@
 #include <fstream>
 #include <optional>
 #include <print>
+#include <source_location>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -72,6 +74,7 @@
 #include "assets/snes.hpp"
 #include "image/png.hpp"
 #include "input/input.hpp"
+#include "log/log.hpp"
 #include "lvr/build_id.hpp"
 #include "lvr/front.hpp"
 #include "lvr/gpu.hpp"
@@ -92,6 +95,9 @@ constexpr const char* kWindowTitle = "The Lost Vikings";
 // --slow-frames: a step longer than this is reported (it holds up the window's next picture), and a picture's
 // showing longer than the other (which includes the wait for the screen's refresh: up to a 60 Hz one's).
 constexpr double kSlowStepMilliseconds = 8;
+// A step or a show this slow is a stutter the player sees: logged without --slow-frames too (a step that loads a
+// scene is its own line, Session::run's).
+constexpr double kStutterMilliseconds = 50;
 constexpr double kSlowShowMilliseconds = 20;
 // The most pictures shown a second where showing doesn't wait for the screen's refresh
 // (GpuRenderer::waits_for_refresh): smooth movement shows each where it is at that moment.
@@ -209,10 +215,20 @@ std::optional<Rules> ask_rules(const std::vector<std::string>& notes) {
     return std::nullopt;  // Quit, or the box closed
 }
 
-// Why the game stops: on stderr, and in a box.
-void stop(const std::string& why) {
-    std::println(stderr, "vikings-remaster: {}", why);
+// Why the game stops: in the log (as said where it went wrong), and in a box.
+void stop(const std::string& why, const std::source_location& where = std::source_location::current()) {
+    log::say(log::Level::kError, why, where);
     show_why(why.c_str());
+}
+
+// What a throttled line adds for those held back since the last.
+std::string more_like_it(std::uint32_t held_back) {
+    return held_back == 0 ? std::string{} : std::format(" ({} more like it held back)", held_back);
+}
+
+// Milliseconds since `began`: how long a part of the start took.
+double ms_since(std::chrono::steady_clock::time_point began) {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
 }
 
 // The folder of the game's own program (empty if SDL can't say): what the game writes goes there, `profiles` and
@@ -307,7 +323,7 @@ bool save_shown(GpuRenderer& gpu, const Screen& screen, const Minimap* minimap, 
     constexpr int kScale = 3;
     auto pixels = gpu.shown(screen, kScale, minimap, between);
     if (!pixels) {
-        std::println(stderr, "vikings-remaster: {}", pixels.error());
+        log::error("{}", pixels.error());
         return false;
     }
     SDL_Surface* surface = SDL_CreateSurfaceFrom(kWidth * kScale, kHeight * kScale, SDL_PIXELFORMAT_RGBA32,
@@ -315,7 +331,7 @@ bool save_shown(GpuRenderer& gpu, const Screen& screen, const Minimap* minimap, 
     const bool saved = surface != nullptr && SDL_SavePNG(surface, out.string().c_str());
     SDL_DestroySurface(surface);
     if (!saved) {
-        std::println(stderr, "vikings-remaster: {}: {}", out.string(), SDL_GetError());
+        log::error("{}: {}", out.string(), SDL_GetError());
     }
     return saved;
 }
@@ -352,10 +368,10 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
     std::vector<Screen> frames;
     for (int step = 0; step < steps && !session.quit(); ++step) {
         if (step == options.zoom_at && options.zoom != 0 && !session.zoom(options.zoom)) {
-            std::println(stderr, "--zoom: step {} is not in a level being played (Remaster rules): no zoom", step);
+            log::warn("--zoom: step {} is not in a level being played (Remaster rules): no zoom", step);
         }
         if (step == options.whole_at && !session.view_whole_level()) {
-            std::println(stderr, "--whole: step {} is not in a level being played (Remaster rules)", step);
+            log::warn("--whole: step {} is not in a level being played (Remaster rules)", step);
         }
         // The keys as a keyboard gives them: the held one pressed and then repeating, a tapped one pressed before
         // its step and let go after it.
@@ -385,7 +401,7 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
         session.samples.clear();
     }
     if (!session.error().empty()) {
-        std::println(stderr, "vikings-remaster: {}", session.error());
+        log::error("{}", session.error());
         return EXIT_FAILURE;
     }
     std::println("scene {} after {} refreshes", session.scene(), refreshes);
@@ -399,7 +415,7 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
         const bool saved = surface != nullptr && SDL_SavePNG(surface, out.string().c_str());
         SDL_DestroySurface(surface);
         if (!saved) {
-            std::println(stderr, "vikings-remaster: {}: {}", out.string(), whole ? SDL_GetError() : whole.error());
+            log::error("{}: {}", out.string(), whole ? SDL_GetError() : whole.error());
             return EXIT_FAILURE;
         }
     } else if (gpu != nullptr) {
@@ -447,12 +463,12 @@ int dump(Session& session, int steps, const std::filesystem::path& out, const st
     } else {
         const assets::IndexedImage image{.width = kScreenWidth, .height = kScreenHeight, .pixels = last.pixels};
         if (auto saved = image::save_indexed_png(out, image, last.palette); !saved) {
-            std::println(stderr, "vikings-remaster: {}", saved.error());
+            log::error("{}", saved.error());
             return EXIT_FAILURE;
         }
     }
     if (!wav.empty() && !write_wav(wav, sound, Session::sample_rate())) {
-        std::println(stderr, "vikings-remaster: can't write {}", wav.string());
+        log::error("can't write {}", wav.string());
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
@@ -543,6 +559,8 @@ Go run(Window& in, Place& place) {
     Remastered* remastered = in.remastered;
     Showcase* showcase = in.showcase;
     const bool report_slow = in.report_slow;
+    log::Throttle slow_steps{1000};  // (a slow machine says so once a second, not every step)
+    log::Throttle slow_shows{1000};
     input::Controls controls = remastered != nullptr ? remastered->settings.controls : input::original_controls();
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
         stop(std::format("SDL_Init failed: {}", SDL_GetError()));
@@ -569,7 +587,7 @@ Go run(Window& in, Place& place) {
     SDL_AudioStream* sound =
         SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, sound_wanted, &session);
     if (sound == nullptr) {
-        std::println(stderr, "no sound: {}", SDL_GetError());
+        log::warn("no sound: {}", SDL_GetError());
     } else {
         SDL_ResumeAudioStreamDevice(sound);
     }
@@ -633,7 +651,9 @@ Go run(Window& in, Place& place) {
         remastered->settings = settings_now(session, gpu, menu->settings());
         if (!remastered->profile.empty()) {
             if (const auto saved = save_settings(remastered->profile, remastered->settings); !saved) {
-                std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
+                log::warn("the profile: {}", saved.error());
+            } else {
+                log::info("the settings saved");
             }
         }
         menu.reset();
@@ -907,14 +927,15 @@ Go run(Window& in, Place& place) {
                 frames = std::move(stepped.frames);
                 cues = std::move(stepped.cues);
                 next_frame = 0;
-                if (report_slow) {
-                    const double took = static_cast<double>(SDL_GetPerformanceCounter() - step_began) * 1000.0 /
+                if (const double took = static_cast<double>(SDL_GetPerformanceCounter() - step_began) * 1000.0 /
                                         static_cast<double>(frequency);
-                    if (took > kSlowStepMilliseconds) {
-                        std::println(
-                            stderr, "slow: a step took {:.1f} ms ({} pictures{}{})", took, frames.size(),
-                            session.scene_loaded() ? ", a scene loaded" : "",
-                            gpu != nullptr && gpu->pages_set_up() != pages_before ? ", an atlas page set up" : "");
+                    report_slow ? took > kSlowStepMilliseconds
+                                : took > kStutterMilliseconds && !session.scene_loaded()) {
+                    if (const auto held_back = slow_steps.pass(static_cast<std::uint32_t>(SDL_GetTicks()))) {
+                        log::info("slow: a step took {:.1f} ms ({} pictures{}{}){}", took, frames.size(),
+                                  session.scene_loaded() ? ", a scene loaded" : "",
+                                  gpu != nullptr && gpu->pages_set_up() != pages_before ? ", an atlas page set up" : "",
+                                  more_like_it(*held_back));
                     }
                 }
                 if (stepped.go.to != Go::To::kStay) {
@@ -953,21 +974,20 @@ Go run(Window& in, Place& place) {
             const Minimap* minimap = session.minimap(last_shown);  // (a scene's fades darken it with the picture)
             const std::uint64_t show_began = SDL_GetPerformanceCounter();
             const auto done = gpu->show(last_shown, minimap, between);
-            if (report_slow) {
-                const double took = static_cast<double>(SDL_GetPerformanceCounter() - show_began) * 1000.0 /
+            if (const double took = static_cast<double>(SDL_GetPerformanceCounter() - show_began) * 1000.0 /
                                     static_cast<double>(frequency);
-                if (took > kSlowShowMilliseconds) {
+                took > (report_slow ? kSlowShowMilliseconds : kStutterMilliseconds)) {
+                if (const auto held_back = slow_shows.pass(static_cast<std::uint32_t>(SDL_GetTicks()))) {
                     const GpuRenderer::ShowTimes& times = gpu->show_times();
-                    std::println(
-                        stderr,
+                    log::info(
                         "slow: showing a picture took {:.1f} ms: {:.1f} waiting for the window, {:.1f} "
                         "recording, {:.1f} handing over; drawn {}x into {}x{} for a window of {}x{}, {} "
-                        "sample(s) a side{}{}; since the picture before: {} kept, {} sending {} KB to the atlas",
+                        "sample(s) a side{}{}; since the picture before: {} kept, {} sending {} KB to the atlas{}",
                         took, times.waiting, times.recording, times.handing_over, times.drawn_scale, times.width,
                         times.height, times.window_width, times.window_height, times.samples,
                         times.remade ? ", its texture made anew" : "",
                         times.redrawn ? "" : ", not drawn anew (as the show before)", times.kept, times.uploads,
-                        times.uploaded_bytes / 1024);
+                        times.uploaded_bytes / 1024, more_like_it(*held_back));
                 }
             }
             if (!done) {
@@ -1024,11 +1044,21 @@ std::optional<int> parse_number(std::string_view text) {
     }
 }
 
-}  // namespace
-}  // namespace lvr
+// What stopped the game: in the log (and so on stderr), or on stderr as it is if the log can't say it; in a box.
+void fatal(const char* what) noexcept {
+    try {
+        log::error("fatal: {}", what);
+    } catch (...) {
+        (void)std::fputs("vikings-remaster: fatal: ", stderr);
+        (void)std::fputs(what, stderr);
+        (void)std::fputs("\n", stderr);
+    }
+    show_why(what);
+}
 
-int main(int argc, char* argv[]) try {
-    using namespace lvr;
+// The game, from its arguments; its log started in `logging` (a game in a window), so that what main says of a
+// fatal error is written too.
+int play(int argc, char* argv[], std::optional<log::Started>& logging) {
     quiet_without_console();
     const std::filesystem::path program = program_folder();
     const std::filesystem::path gamedata = gamedata_folder(program);
@@ -1127,6 +1157,29 @@ int main(int argc, char* argv[]) try {
         }
     }
     boxes = dump_to.empty();
+    if (dump_to.empty() && !program.empty()) {  // a game in a window: its log beside it (ADR-0023)
+        if (auto started = log::start(program / "logs"); started) {
+            logging.emplace(std::move(*started));
+        } else {
+            log::warn("no log: {}", started.error());
+        }
+        // No path in full, as a log may be shown to anyone: what is beside the game from its folder, the rest of the
+        // player's home folder (and with it his user name) from ~.
+        log::hide(program.string(), "");
+        if (const char* home = SDL_GetUserFolder(SDL_FOLDER_HOME); home != nullptr) {
+            std::string folder = home;
+            while (folder.size() > 1 && (folder.back() == '/' || folder.back() == '\\')) {
+                folder.pop_back();
+            }
+            log::hide(folder, "~");
+        }
+        std::string given;
+        for (const std::string_view arg : args) {
+            given += std::format(" {}", arg);
+        }
+        log::info("vikings-remaster {}, build {}, on {}{}", LVR_VERSION, kBuild, SDL_GetPlatform(),
+                  given.empty() ? std::string{} : std::format(", started with{}", given));
+    }
     if (dump_to.empty()) {  // a game in a window: without the game's files, a box says where they go
         if (const auto files = assets::GameFiles::open(dir); !files) {
             stop(about_game_files(dir, files.error()));
@@ -1140,18 +1193,17 @@ int main(int argc, char* argv[]) try {
         }
         rules = *chosen;
     }
+    log::info("{} rules", rules == Rules::kRemaster ? "Remaster" : "Vanilla");
     if (rules == Rules::kRemaster && dump_to.empty() && (sound_asked || look || !effects)) {
         // (What the menu sets and the profile keeps isn't a start-up option as well.)
-        std::println(
-            stderr,
-            "vikings-remaster: under Remaster rules the sound, the screen's look and the visual effects are set in "
+        log::error(
+            "under Remaster rules the sound, the screen's look and the visual effects are set in "
             "the menu (Escape in a level) and kept in the profile; --sound, --shader and --no-effects are "
             "for --dump");
         return EXIT_FAILURE;
     }
     if (rules == Rules::kVanilla && sound_asked && sound.modern) {
-        std::println(stderr,
-                     "vikings-remaster: Vanilla rules play the Classic sound only (--rules remaster for the Modern)");
+        log::error("Vanilla rules play the Classic sound only (--rules remaster for the Modern)");
         return EXIT_FAILURE;
     }
     // No Modern sound under Vanilla rules (the original's sound); a dump renders only the version it is
@@ -1166,6 +1218,7 @@ int main(int argc, char* argv[]) try {
     std::unique_ptr<GpuRenderer> gpu;
     Draw draw_with = draw;
     if (rules == Rules::kRemaster) {
+        const auto began = std::chrono::steady_clock::now();
         std::expected<std::unique_ptr<GpuRenderer>, std::string> opened = std::unexpected{std::string{}};
         if (!dump_to.empty()) {
             opened = GpuRenderer::open_headless();
@@ -1183,6 +1236,7 @@ int main(int argc, char* argv[]) try {
             return EXIT_FAILURE;
         }
         gpu = std::move(*opened);
+        log::info("the GPU renderer draws on {}: its window ready in {:.0f} ms", gpu->device_name(), ms_since(began));
         draw_with = [renderer = gpu.get()](Screen& screen, const View& view, const SceneGraphics& scene,
                                            const SharedGraphics& shared) {
             if (const auto kept = renderer->keep(screen, view, scene, shared); !kept) {
@@ -1191,25 +1245,25 @@ int main(int argc, char* argv[]) try {
             }
         };
     }
-    if (gpu != nullptr && report_slow) {
-        std::println(stderr, "the GPU renderer draws on {}", gpu->device_name());
-    }
     if (look && rules != Rules::kRemaster) {
-        std::println(stderr, "vikings-remaster: --shader is for Remaster rules (--rules remaster)");
+        log::error("--shader is for Remaster rules (--rules remaster)");
         return EXIT_FAILURE;
     }
     if (showcase) {  // it starts in its first scenario's level, under Remaster rules
         slot = showcase->current().slot;
         if (rules != Rules::kRemaster) {
-            std::println(stderr, "vikings-remaster: --showcase is for Remaster rules (--rules remaster)");
+            log::error("--showcase is for Remaster rules (--rules remaster)");
             return EXIT_FAILURE;
         }
     }
+    const auto opening = std::chrono::steady_clock::now();
     auto session = Session::open(dir, slot, sound, rules, draw_with);
     if (!session) {
         stop(session.error());
         return EXIT_FAILURE;
     }
+    log::info("the game's files read and its first scene loaded in {:.0f} ms ({})", ms_since(opening),
+              sound.soundfont.empty() ? "no SoundFont: the Classic sound only" : "with the SoundFont");
     if (cheat) {
         (*session)->cheat();
     }
@@ -1226,6 +1280,7 @@ int main(int argc, char* argv[]) try {
         }
         remastered.emplace();
         remastered->profile = profile;
+        log::info("the profile: {}", profile.empty() ? std::string{"none (nothing is kept)"} : profile.string());
         if (!profile.empty()) {
             std::vector<std::string> problems;
             if (const auto writable = profile_writable(profile); !writable) {
@@ -1237,7 +1292,7 @@ int main(int argc, char* argv[]) try {
             remastered->settings = load_settings(profile, problems);
             std::string told;
             for (const std::string& problem : problems) {
-                std::println(stderr, "vikings-remaster: the profile: {}", problem);
+                log::warn("the profile: {}", problem);
                 told += std::format("  \u2022 {}\n", problem);
             }
             if (!problems.empty()) {  // (said once, at the start: the game goes on without what can't be kept)
@@ -1316,15 +1371,15 @@ int main(int argc, char* argv[]) try {
         }
         status = places.failed() ? EXIT_FAILURE : EXIT_SUCCESS;
     }
-    if (const auto saved = (*session)->save_profile(); !saved) {
-        std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
-    }
+    (void)(*session)->save_profile();  // (Session says how it went)
     if (remastered && !profile.empty()) {
         if (window != nullptr) {  // (the window as it is left: the next time it opens so)
             remember_window(window, remastered->settings);
         }
         if (const auto saved = save_settings(profile, remastered->settings); !saved) {
-            std::println(stderr, "vikings-remaster: the profile: {}", saved.error());
+            log::warn("the profile: {}", saved.error());
+        } else {
+            log::info("the settings saved");
         }
     }
     if (gpu != nullptr) {
@@ -1332,15 +1387,22 @@ int main(int argc, char* argv[]) try {
         SDL_DestroyWindow(window);
         SDL_Quit();
     }
+    log::info("the game ends{}", status == EXIT_SUCCESS ? "" : " with an error");
     return status;
-} catch (const std::exception& error) {
-    std::fputs("vikings-remaster: fatal: ", stderr);
-    std::fputs(error.what(), stderr);
-    std::fputs("\n", stderr);
-    lvr::show_why(error.what());
-    return EXIT_FAILURE;
-} catch (...) {
-    std::fputs("vikings-remaster: fatal: unhandled exception\n", stderr);
-    lvr::show_why("unhandled exception");
-    return EXIT_FAILURE;
+}
+
+}  // namespace
+}  // namespace lvr
+
+int main(int argc, char* argv[]) {
+    std::optional<lvr::log::Started> logging;  // (until the last line below is written)
+    try {
+        return lvr::play(argc, argv, logging);
+    } catch (const std::exception& error) {
+        lvr::fatal(error.what());
+        return EXIT_FAILURE;
+    } catch (...) {
+        lvr::fatal("unhandled exception");
+        return EXIT_FAILURE;
+    }
 }

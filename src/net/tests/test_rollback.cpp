@@ -29,6 +29,7 @@ TEST_CASE("rollback: alone, every step runs once, with nothing to wait for or ru
     CHECK(rollback.step() == 50);
     CHECK(rollback.confirmed() == 50);
     CHECK(rollback.steps_run_again() == 0);
+    CHECK(rollback.rollbacks() == 0);
     CHECK_FALSE(rollback.advance());  // no input for the next yet
 }
 
@@ -53,6 +54,10 @@ TEST_CASE("rollback: a remote input that comes otherwise than predicted has the 
     REQUIRE(rollback.advance());
     REQUIRE(straight.advance());
     CHECK(rollback.steps_run_again() > 0);
+    // Once, from the first step predicted wrong: his inputs for steps 0-3 are none, as predicted; 4 and 5 aren't.
+    CHECK(rollback.rollbacks() == 1);
+    CHECK(rollback.deepest_rollback() == 2);
+    CHECK(straight.rollbacks() == 0);
     CHECK(game.state == alone.state);
     CHECK(game.shown.size() == 7);  // each shown once, the ones run again not again
 }

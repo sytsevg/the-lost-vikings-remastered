@@ -256,6 +256,10 @@ void Match::put_right() {
                       .state = rollback_.state_before(from)},
                Channel::kReliable);
         rollback_.forget_hashes(player);  // (what he says next is of the state sent)
+        if (const auto held_back = resyncs_said_.pass(c.now_ms())) {
+            log::warn("{}: {} out of step: the host's state sent, of step {} (resync #{}){}", game_and_step(),
+                      who(player), from, sent, *held_back == 0 ? "" : std::format(" ({} more held back)", *held_back));
+        }
     }
 }
 
@@ -275,6 +279,11 @@ std::expected<void, std::string> Match::take_resync(const Resync& resync) {
     // The hashes of steps from there on go again, of the state taken (those sent were of the one before).
     std::erase_if(hashes_, [&resync](const auto& sent) { return sent.first >= resync.step; });
     hash_sent_ = first_hashed(resync.step);
+    if (const auto held_back = resyncs_said_.pass(c.now_ms())) {
+        log::warn("{}: out of step: the host's state taken, of step {} (resync #{}){}{}", game_and_step(), resync.step,
+                  resync.resyncs, unsteady() ? ", the network unsteady" : "",
+                  *held_back == 0 ? "" : std::format(" ({} more held back)", *held_back));
+    }
     return {};
 }
 
@@ -294,6 +303,9 @@ std::optional<std::string> Match::held_up() {
             if (const std::optional<int> whom = waiting_for(); whom && *whom > 0) {
                 const int peer = c.peer_of(*whom);
                 const std::uint32_t from = rollback_.known(*whom);
+                log::warn("{}: {} let go: the game held up {} s for him", game_and_step(), who(*whom), kHeldMs / 1000);
+                ++holds_;  // (a hold as any other: the next is counted from now)
+                longest_hold_ = std::max(longest_hold_, *held);
                 leaves(*whom);  // (the others told, his Viking passed on)
                 if (peer >= 0) {
                     c.send_to_peer(peer, Leave{.player = static_cast<std::uint8_t>(*whom), .from = from},
@@ -400,6 +412,7 @@ void Match::welcome_under_way(int peer, const Hello& hello) {
         refused = "the game is full";
     }
     if (refused) {
+        log::info("{}: a hello turned away: {}", game_and_step(), *refused);
         c.send_to_peer(peer, Refused{.why = *refused}, Channel::kReliable);
         c.drop_peer(peer);
         return;
@@ -428,6 +441,8 @@ void Match::welcome_under_way(int peer, const Hello& hello) {
                    .presence = presence_from(rollback_, from)},
            Channel::kReliable);
     rollback_.arrive(place, arrives);
+    log::info("{}: {} joins the game under way, from the state of step {}, arriving at step {}", game_and_step(),
+              who(place), from, arrives);
     c.broadcast(Arrive{.player = static_cast<std::uint8_t>(place), .at = arrives, .name = c.names().at(at)},
                 Channel::kReliable);
 }
@@ -437,6 +452,7 @@ void Match::leaves(int player) {
         return;
     }
     const std::uint32_t from = rollback_.known(player);  // what he gave counts; after that, nothing
+    log::info("{}: {} left (his inputs up to step {} count)", game_and_step(), who(player), from);
     rollback_.leave(player, from);
     gone_.at(static_cast<std::size_t>(player)) = true;
     connection_->unseat(player);  // (the place is free to come into again)
@@ -463,6 +479,7 @@ bool Match::step() {
         if (!held_since_) {
             held_since_ = connection_->now_ms();
         }
+        held_for_ = waiting_for();
     };
     if (rollback_.ahead()) {
         rollback_.catch_up();  // a refresh to let the others catch up
@@ -477,7 +494,17 @@ bool Match::step() {
         return false;
     }
     waited_ = 0;
+    if (const std::optional<std::uint32_t> held = held_ms(); held && *held >= kNoticedMs) {  // (it was seen)
+        ++holds_;
+        longest_hold_ = std::max(longest_hold_, *held);
+        if (const auto held_back = holds_said_.pass(connection_->now_ms())) {
+            log::info("{}: held up {:.1f} s{}{}", game_and_step(), *held / 1000.0,
+                      held_for_ ? std::format(" for {}", who(*held_for_)) : std::string{},
+                      *held_back == 0 ? "" : std::format(" ({} more held back)", *held_back));
+        }
+    }
     held_since_.reset();
+    held_for_.reset();
     return true;
 }
 
@@ -501,6 +528,34 @@ std::optional<int> Match::waiting_for() const {
         }
     }
     return slowest;
+}
+
+std::string Match::who(int player) const {
+    const std::vector<std::string>& names = connection_->names();
+    if (player >= 0 && std::cmp_less(player, names.size()) && !names.at(static_cast<std::size_t>(player)).empty()) {
+        return std::format("player {} ({})", player + 1, names.at(static_cast<std::size_t>(player)));
+    }
+    return std::format("player {}", player + 1);
+}
+
+std::string Match::game_and_step() const {
+    return std::format("game {} step {}", connection_->game(), rollback_.step());
+}
+
+std::string Match::summary() const {
+    const Connection& c = *connection_;
+    int resyncs = 0;
+    for (int player = 0; player < kMostPlayers; ++player) {
+        if (c.hosting() ? player > 0 : player == c.player()) {
+            resyncs += resyncs_.at(static_cast<std::size_t>(player));
+        }
+    }
+    return std::format(
+        "ended at step {}: {} resync(s) {}; held up {} time(s){}; {} rollback(s), the deepest {} step(s), {} "
+        "step(s) run again",
+        rollback_.step(), resyncs, c.hosting() ? "sent" : "taken", holds_,
+        holds_ == 0 ? std::string{} : std::format(", the longest {:.1f} s", longest_hold_ / 1000.0),
+        rollback_.rollbacks(), rollback_.deepest_rollback(), rollback_.steps_run_again());
 }
 
 void Match::back_to_lobby() {

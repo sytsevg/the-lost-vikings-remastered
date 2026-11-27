@@ -5,9 +5,15 @@
 // the host lets a guest go after ten seconds, a guest goes when the host doesn't answer.
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <iterator>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "log/log.hpp"
 #include "net/tests/table.hpp"
 
 using namespace lvr::net;
@@ -130,6 +136,8 @@ TEST_CASE(
     }
     CHECK(guest.match->unsteady());
     CHECK_FALSE(host.match->unsteady());
+    CHECK(host.match->summary().contains(std::format("{} resync(s) sent", Match::kUnsteadyResyncs)));
+    CHECK(guest.match->summary().contains(std::format("{} resync(s) taken", Match::kUnsteadyResyncs)));
     table.wait(static_cast<int>(Match::kUnsteadyMs / kRefreshMs) + 1);
     CHECK_FALSE(guest.match->unsteady());
     CHECK(guest.error.empty());
@@ -138,6 +146,13 @@ TEST_CASE(
 TEST_CASE(
     "match: a guest whose game is stuck (his machine still there) holds the game up; the host lets him go after ten "
     "seconds, and the game goes on for the others; he is told so") {
+    const std::filesystem::path folder = std::filesystem::temp_directory_path() / "lvr-test-match-let-go";
+    std::filesystem::remove_all(folder);
+    std::optional<lvr::log::Started> logging;  // (what the machines say of it, read below)
+    if (auto started = lvr::log::start(folder, {.name = "test", .file_bytes = 1'000'000, .files = 1, .echo = false})) {
+        logging.emplace(std::move(*started));
+    }
+    REQUIRE(logging);
     Table<> table{{.delay_ms = 20, .jitter_ms = 10, .loss_percent = 10, .late_ms = 100, .behind_ms = 0}};
     Machine<>& host = table.host();
     Machine<>& first = table.join("first");
@@ -155,6 +170,7 @@ TEST_CASE(
     CHECK(host.at_step() <= at + static_cast<std::uint32_t>(Match::kWindow));
     CHECK(host.connection->peer_of(1) >= 0);
     REQUIRE(table.until([&] { return host.connection->peer_of(1) < 0; }));
+    CHECK(host.match->summary().contains("held up 1 time(s), the longest 10."));
     CHECK(table.network.now() - held_from >= Match::kHeldMs);
     CHECK(table.network.now() - held_from < Match::kHeldMs + 500);
     const std::uint32_t freed = host.at_step();
@@ -167,6 +183,15 @@ TEST_CASE(
     table.leave(first);
     table.wait(120);
     CHECK(table.same_game());
+    logging.reset();
+    std::string said;
+    for (const auto& file : std::filesystem::directory_iterator{folder}) {
+        std::ifstream in{file.path()};
+        said.append(std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{});
+    }
+    CHECK(said.contains("[warn]  [Match::held_up]: game 1 step "));
+    CHECK(said.contains(": player 2 (FIRST) let go: the game held up 10 s for him"));
+    CHECK(said.contains("[info]  [Match::leaves]: game 1 step "));
 }
 
 TEST_CASE("match: a host whose game is stuck holds the game up; the guest goes after ten seconds, no answer from him") {

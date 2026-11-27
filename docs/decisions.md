@@ -244,6 +244,9 @@ directly, so links go to his website.
   up: `[2026-11-27 21:03:15.042] [info]  [Places::host]: hosting on port 47230`. A file past 10 MB is followed by
   a new one, and the newest ten of the log's files are kept (a co-op game's log in the same folder is left alone).
   Not started (a dump, a tool's run, the tests), a warning or an error goes to stderr, the rest nowhere.
+- A log may be shown to anyone (pasted into an issue), so it holds nothing of the player's but his name in the game:
+  no address (the one a guest joins is written "the host"; machines are peer numbers) and no path in full (what is
+  beside the game from its folder, the rest of the home folder from `~`). `log::hide` takes them out of every line.
 - Up to 10,000 lines wait to be written; past that they are dropped and counted. A run that ends, by any return or
   error, writes every line it said; one that crashes may lose the last few.
 - What may come again and again is throttled (`log::Throttle`, on the caller's own clock), and the next line let
@@ -255,8 +258,10 @@ directly, so links go to his website.
 - Co-op says only what is worth looking into, as it happens: the input delay chosen and the round trips it was
   chosen by; UDP silent and the fast messages over TCP, and UDP back (throttled); the game held up for a player
   (once the box shows it), for how long, and the player let go after 10 s; a connection dropped after 10 s of
-  silence; out of step at a step, and each resync. What goes on all the time is only counted, and said when the
-  game ends: inputs sent again, rollbacks and the deepest, the round trips' least, mean and most.
+  silence; out of step at a step, and each resync. Every 10 s each connection says how it went: the round trips'
+  p50, p90 and p99 (a ping every half second), which way what is sent both ways came first (UDP or TCP, in
+  percent), and the bytes a second each way. A game's end says the rest: the resyncs, the holds and the longest,
+  the rollbacks and the deepest.
 - Not fmtlog or spdlog: each brings fmt, a second way of formatting beside `std::format`, and fmtlog has no rotation
   and isn't tested with Clang on Windows. The game says too little for their speed to matter.
 
